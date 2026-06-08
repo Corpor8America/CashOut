@@ -1,7 +1,7 @@
 # Spening
 
 A self-hosted personal finance tracker that connects to your bank accounts via
-[Plaid](https://plaid.com) and shows your spening in a simple web interface.
+[Plaid](https://plaid.com) and shows your spending in a simple web interface.
 
 ## Features
 - Link bank/credit card accounts via Plaid
