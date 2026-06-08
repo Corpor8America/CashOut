@@ -31,7 +31,7 @@ A self-hosted personal finance tracker that connects to your bank accounts via
 
 ```bash
 cp .env.example .env   # fill in values
-docker compose -f docker-compose.dev.yml up db -d
+docker compose -f docker-compose.dev.yml up -d
 cd Spening
 dotnet run
 ```
