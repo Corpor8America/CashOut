@@ -1,0 +1,179 @@
+@page "/accounts"
+@using Microsoft.JSInterop
+@inject HttpClient Http
+@inject IJSRuntime JS
+@implements IDisposable
+
+<h2>Linked Accounts</h2>
+
+@if (_error != null)
+{
+    <p style="color:red">@_error</p>
+}
+
+@if (_loading)
+{
+    <p>Loading...</p>
+}
+else if (_accounts.Count == 0)
+{
+    <p>No accounts linked yet.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Institution</th>
+                <th>Name</th>
+                <th>Account #</th>
+                <th>Type</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var acct in _accounts)
+            {
+                <tr>
+                    <td>@acct.Institution</td>
+                    <td>@acct.Name</td>
+                    <td>••••@acct.Mask</td>
+                    <td>@acct.Subtype</td>
+                    <td>
+                        @if (_confirmRemoveId == acct.Id)
+                        {
+                            <span>Sure? </span>
+                            <button @onclick="() => ConfirmRemove(acct.Id)">Yes, remove</button>
+                            <button @onclick="CancelRemove">Cancel</button>
+                        }
+                        else
+                        {
+                            <button @onclick="() => RequestRemove(acct.Id)">Remove</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<br />
+<button @onclick="StartLinkFlow" disabled="@_linking">
+    @(_linking ? "Connecting..." : "Add Account")
+</button>
+
+@if (_newAccounts.Count > 0)
+{
+    <p style="color:green">Added @_newAccounts.Count account(s) successfully.</p>
+}
+
+@* Plaid Link SDK — loaded only on this page *@
+<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+<script src="~/plaidLink.js"></script>
+
+@code {
+    private List<AccountDto> _accounts = new();
+    private List<object> _newAccounts = new();
+    private bool _loading = true;
+    private bool _linking = false;
+    private string? _error;
+    private Guid? _confirmRemoveId;
+    private DotNetObjectReference<Accounts>? _dotNetRef;
+
+    protected override async Task OnInitializedAsync() => await LoadAccounts();
+
+    private async Task LoadAccounts()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts")
+                        ?? new();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load accounts: {ex.Message}";
+        }
+        finally { _loading = false; }
+    }
+
+    private async Task StartLinkFlow()
+    {
+        _linking = true;
+        _error = null;
+        _newAccounts.Clear();
+
+        try
+        {
+            var resp = await Http.PostAsync("api/plaid/link-token", null);
+            resp.EnsureSuccessStatusCode();
+            var json = await resp.Content.ReadFromJsonAsync<LinkTokenResponse>();
+
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("speningPlaid.open", json!.LinkToken, _dotNetRef);
+            // Control returns here; actual success/exit handled by JS callbacks below
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not start Plaid Link: {ex.Message}";
+            _linking = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPlaidSuccess(string publicToken)
+    {
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/plaid/exchange",
+                new { PublicToken = publicToken });
+            resp.EnsureSuccessStatusCode();
+            _newAccounts = await resp.Content.ReadFromJsonAsync<List<object>>() ?? new();
+            await LoadAccounts();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Account linking failed: {ex.Message}";
+        }
+        finally
+        {
+            _linking = false;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public Task OnPlaidExit()
+    {
+        _linking = false;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private void RequestRemove(Guid id) => _confirmRemoveId = id;
+    private void CancelRemove() => _confirmRemoveId = null;
+
+    private async Task ConfirmRemove(Guid id)
+    {
+        _error = null;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/accounts/{id}");
+            resp.EnsureSuccessStatusCode();
+            await LoadAccounts();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Remove failed: {ex.Message}";
+        }
+        finally { _confirmRemoveId = null; }
+    }
+
+    public void Dispose() => _dotNetRef?.Dispose();
+
+    // Local DTOs
+    private record AccountDto(Guid Id, string Name, string Mask,
+        string Subtype, string Institution);
+    private record LinkTokenResponse(string LinkToken);
+}

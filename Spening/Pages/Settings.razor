@@ -1,0 +1,88 @@
+@page "/settings"
+@inject HttpClient Http
+
+<h2>Settings</h2>
+
+@if (_error != null) { <div class="alert-error">@_error</div> }
+@if (_saved) { <div class="alert-success">Settings saved.</div> }
+
+@if (_loading)
+{
+    <p class="text-muted">Loading...</p>
+}
+else
+{
+    <table style="max-width:480px">
+        <tbody>
+            <tr>
+                <td><strong>Year</strong></td>
+                <td>
+                    <input type="number" @bind="_year" style="width:100px" />
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Plaid Environment</strong></td>
+                <td>
+                    <select @bind="_environment">
+                        <option value="sandbox">sandbox</option>
+                        <option value="development">development</option>
+                        <option value="production">production</option>
+                    </select>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    @if (_environment == "production")
+    {
+        <div class="alert-error" style="margin-top:1rem">
+            ⚠ Production mode uses real financial data. Ensure
+            <code>PLAID_PRODUCTION_SECRET</code> is set correctly.
+        </div>
+    }
+
+    <br />
+    <button class="btn-primary" @onclick="Save" disabled="@_saving">
+        @(_saving ? "Saving..." : "Save Settings")
+    </button>
+}
+
+@code {
+    private int _year = DateTime.Now.Year;
+    private string _environment = "sandbox";
+    private bool _loading = true, _saving, _saved;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var settings = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/settings")
+                           ?? new();
+            if (settings.TryGetValue("output_year", out var y) && int.TryParse(y, out var yi))
+                _year = yi;
+            if (settings.TryGetValue("plaid_environment", out var e))
+                _environment = e;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task Save()
+    {
+        _saving = true; _saved = false; _error = null;
+        try
+        {
+            var payload = new Dictionary<string, string>
+            {
+                ["output_year"] = _year.ToString(),
+                ["plaid_environment"] = _environment
+            };
+            var resp = await Http.PutAsJsonAsync("api/settings", payload);
+            resp.EnsureSuccessStatusCode();
+            _saved = true;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _saving = false; }
+    }
+}

@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: spening
+      POSTGRES_USER: spening
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U spening" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    image: yourusername/spening:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SANDBOX_SECRET=${PLAID_SANDBOX_SECRET}
+      - PLAID_PRODUCTION_SECRET=${PLAID_PRODUCTION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ConnectionStrings__Default=Host=db;Database=spening;Username=spening;Password=${DB_PASSWORD}
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata:

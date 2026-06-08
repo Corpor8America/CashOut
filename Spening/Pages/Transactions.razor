@@ -1,0 +1,143 @@
+@page "/transactions"
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h2>Transactions</h2>
+
+@if (_error != null)
+{
+    <div class="alert-error">@_error</div>
+}
+@if (_message != null)
+{
+    <div class="alert-success">@_message</div>
+}
+
+<div class="toolbar">
+    <button class="btn-primary" @onclick="Sync" disabled="@_busy">
+        @(_syncing ? "Syncing..." : "Sync")
+    </button>
+    <button @onclick="Fetch" disabled="@_busy">
+        @(_fetching ? "Fetching..." : "Fetch Full Year")
+    </button>
+    <span style="margin-left:auto">
+        <label>Year: </label>
+        <input type="number" @bind="_filterYear" style="width:80px" />
+    </span>
+    <select @bind="_filterCategory">
+        <option value="">All categories</option>
+        @foreach (var cat in _categories)
+        {
+            <option value="@cat">@cat</option>
+        }
+    </select>
+    <button @onclick="ApplyFilter" disabled="@_loading">Filter</button>
+    <a href="api/transactions/export?year=@_filterYear" target="_blank">
+        <button type="button">Export CSV</button>
+    </a>
+</div>
+
+@if (_loading)
+{
+    <p class="text-muted">Loading...</p>
+}
+else if (_transactions.Count == 0)
+{
+    <p class="text-muted">No transactions found. Try syncing or adjusting your filters.</p>
+}
+else
+{
+    <p class="text-muted" style="margin-bottom:0.75rem">
+        Showing @_transactions.Count transaction(s)
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Merchant</th>
+                <th>Category</th>
+                <th class="text-right">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var t in _transactions)
+            {
+                <tr>
+                    <td>@t.Date.ToString("MMM d, yyyy")</td>
+                    <td>@t.Name</td>
+                    <td class="text-muted">@(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)</td>
+                    <td class="text-right">@t.Amount.ToString("C")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<TransactionDto> _transactions = new();
+    private List<string> _categories = new();
+    private int _filterYear = DateTime.Now.Year;
+    private string _filterCategory = "";
+    private bool _loading, _busy, _syncing, _fetching;
+    private string? _error, _message;
+
+    protected override async Task OnInitializedAsync() => await LoadTransactions();
+
+    private async Task LoadTransactions()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            var url = $"api/transactions?year={_filterYear}";
+            if (!string.IsNullOrEmpty(_filterCategory))
+                url += $"&category={Uri.EscapeDataString(_filterCategory)}";
+
+            _transactions = await Http.GetFromJsonAsync<List<TransactionDto>>(url) ?? new();
+            _categories = _transactions
+                .Select(t => t.Category)
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Distinct()
+                .OrderBy(c => c)
+                .ToList();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task Sync()
+    {
+        _busy = _syncing = true; _message = null; _error = null;
+        try
+        {
+            var resp = await Http.PostAsync("api/transactions/sync", null);
+            resp.EnsureSuccessStatusCode();
+            var result = await resp.Content.ReadFromJsonAsync<SyncResult>();
+            _message = $"Sync complete — {result!.Added} added, {result.Removed} removed.";
+            await LoadTransactions();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = _syncing = false; }
+    }
+
+    private async Task Fetch()
+    {
+        _busy = _fetching = true; _message = null; _error = null;
+        try
+        {
+            var resp = await Http.PostAsync("api/transactions/fetch", null);
+            resp.EnsureSuccessStatusCode();
+            var result = await resp.Content.ReadFromJsonAsync<FetchResult>();
+            _message = $"Fetch complete — {result!.Written} transactions written.";
+            await LoadTransactions();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = _fetching = false; }
+    }
+
+    private async Task ApplyFilter() => await LoadTransactions();
+
+    private record TransactionDto(string TransactionId, string AccountId, DateOnly Date,
+        string Name, decimal Amount, string Category);
+    private record SyncResult(int Added, int Removed);
+    private record FetchResult(int Written);
+}

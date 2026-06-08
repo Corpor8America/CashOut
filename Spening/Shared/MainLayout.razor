@@ -1,0 +1,14 @@
+@inherits LayoutComponentBase
+
+<div class="layout">
+    <nav class="sidebar">
+        <div class="app-title">💰 Spening</div>
+        <NavLink href="/accounts">Accounts</NavLink>
+        <NavLink href="/transactions">Transactions</NavLink>
+        <NavLink href="/reports">Reports</NavLink>
+        <NavLink href="/settings">Settings</NavLink>
+    </nav>
+    <main class="content">
+        @Body
+    </main>
+</div>

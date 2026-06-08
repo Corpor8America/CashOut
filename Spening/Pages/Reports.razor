@@ -1,0 +1,253 @@
+@page "/reports"
+@inject HttpClient Http
+
+<h2>Reports</h2>
+
+@if (_error != null)
+{
+    <div class="alert-error">@_error</div>
+}
+
+<div class="toolbar">
+    <label>Year: </label>
+    <input type="number" @bind="_year" style="width:80px" />
+    <button @onclick="Refresh" disabled="@_loading">Refresh</button>
+</div>
+
+<div class="tabs">
+    @foreach (var tab in _tabs)
+    {
+        <button class="tab @(tab == _activeTab ? "active" : "")"
+                @onclick="() => SetTab(tab)">@tab</button>
+    }
+</div>
+
+@if (_loading)
+{
+    <p class="text-muted">Loading...</p>
+}
+else
+{
+    @if (_activeTab == "Monthly")
+    {
+        <div class="toolbar">
+            <a href="api/reports/monthly?year=@_year&format=csv" target="_blank">
+                <button type="button" class="btn-sm">Export CSV</button>
+            </a>
+        </div>
+        <table>
+            <thead>
+                <tr><th>Month</th><th class="text-right">Total</th><th class="text-right">Transactions</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _monthly)
+                {
+                    <tr>
+                        <td>@r.Label</td>
+                        <td class="text-right">@r.Total.ToString("C")</td>
+                        <td class="text-right">@r.Count</td>
+                    </tr>
+                }
+                <tr class="total-row">
+                    <td>Total</td>
+                    <td class="text-right">@_monthly.Sum(r => r.Total).ToString("C")</td>
+                    <td class="text-right">@_monthly.Sum(r => r.Count)</td>
+                </tr>
+            </tbody>
+        </table>
+    }
+
+    @if (_activeTab == "By Category")
+    {
+        <div class="toolbar">
+            <a href="api/reports/category?year=@_year&format=csv" target="_blank">
+                <button type="button" class="btn-sm">Export CSV</button>
+            </a>
+        </div>
+        <table>
+            <thead>
+                <tr><th>Category</th><th class="text-right">Total</th><th class="text-right">% of Spend</th><th class="text-right">Transactions</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _categories)
+                {
+                    <tr>
+                        <td>@r.Category</td>
+                        <td class="text-right">@r.Total.ToString("C")</td>
+                        <td class="text-right">@r.PctOfSpend%</td>
+                        <td class="text-right">@r.Count</td>
+                    </tr>
+                }
+                <tr class="total-row">
+                    <td>Total</td>
+                    <td class="text-right">@_categories.Sum(r => r.Total).ToString("C")</td>
+                    <td class="text-right">100%</td>
+                    <td class="text-right">@_categories.Sum(r => r.Count)</td>
+                </tr>
+            </tbody>
+        </table>
+    }
+
+    @if (_activeTab == "Pivot")
+    {
+        @if (_pivot != null)
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Month</th>
+                        @foreach (var cat in _pivot.Categories)
+                        {
+                            <th class="text-right" title="@cat">
+                                @(cat.Length > 12 ? cat[..11] + "…" : cat)
+                            </th>
+                        }
+                        <th class="text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _pivot.Rows)
+                    {
+                        <tr>
+                            <td>@row.Label</td>
+                            @for (int i = 0; i < row.Values.Count; i++)
+                            {
+                                <td class="text-right">
+                                    @(row.Values[i] == 0 ? "—" : row.Values[i].ToString("C"))
+                                </td>
+                            }
+                            <td class="text-right">@row.RowTotal.ToString("C")</td>
+                        </tr>
+                    }
+                    <tr class="total-row">
+                        <td>Total</td>
+                        @foreach (var ct in _pivot.ColumnTotals)
+                        {
+                            <td class="text-right">@ct.ToString("C")</td>
+                        }
+                        <td class="text-right">@_pivot.GrandTotal.ToString("C")</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="text-muted" style="margin-top:0.5rem">Showing top 8 categories by spend.</p>
+        }
+    }
+
+    @if (_activeTab == "Top Merchants")
+    {
+        <div class="toolbar">
+            <label>Top: </label>
+            <input type="number" @bind="_topN" style="width:60px" min="1" max="100" />
+            <button @onclick="Refresh" class="btn-sm">Apply</button>
+            <a href="api/reports/merchants?year=@_year&topN=@_topN&format=csv" target="_blank">
+                <button type="button" class="btn-sm">Export CSV</button>
+            </a>
+        </div>
+        <table>
+            <thead>
+                <tr><th>Merchant</th><th class="text-right">Total</th><th class="text-right">Visits</th><th class="text-right">Avg/Visit</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var r in _merchants)
+                {
+                    <tr>
+                        <td>@r.Name</td>
+                        <td class="text-right">@r.Total.ToString("C")</td>
+                        <td class="text-right">@r.Count</td>
+                        <td class="text-right">@r.AvgPerVisit.ToString("C")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+
+    @if (_activeTab == "Largest")
+    {
+        <div class="toolbar">
+            <label>Top: </label>
+            <input type="number" @bind="_topN" style="width:60px" min="1" max="100" />
+            <button @onclick="Refresh" class="btn-sm">Apply</button>
+            <a href="api/reports/largest?year=@_year&topN=@_topN&format=csv" target="_blank">
+                <button type="button" class="btn-sm">Export CSV</button>
+            </a>
+        </div>
+        <table>
+            <thead>
+                <tr><th>Date</th><th>Merchant</th><th>Category</th><th class="text-right">Amount</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _largest)
+                {
+                    <tr>
+                        <td>@t.Date.ToString("MMM d, yyyy")</td>
+                        <td>@t.Name</td>
+                        <td class="text-muted">@(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)</td>
+                        <td class="text-right">@t.Amount.ToString("C")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+}
+
+@code {
+    private readonly string[] _tabs = { "Monthly", "By Category", "Pivot", "Top Merchants", "Largest" };
+    private string _activeTab = "Monthly";
+    private int _year = DateTime.Now.Year;
+    private int _topN = 10;
+    private bool _loading;
+    private string? _error;
+
+    private List<MonthlyRow> _monthly = new();
+    private List<CategoryRow> _categories = new();
+    private PivotResult? _pivot;
+    private List<MerchantRow> _merchants = new();
+    private List<TransactionDto> _largest = new();
+
+    protected override async Task OnInitializedAsync() => await Refresh();
+
+    private async Task SetTab(string tab)
+    {
+        _activeTab = tab;
+        await Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            if (_activeTab == "Monthly")
+                _monthly = await Http.GetFromJsonAsync<List<MonthlyRow>>(
+                    $"api/reports/monthly?year={_year}") ?? new();
+
+            else if (_activeTab == "By Category")
+                _categories = await Http.GetFromJsonAsync<List<CategoryRow>>(
+                    $"api/reports/category?year={_year}") ?? new();
+
+            else if (_activeTab == "Pivot")
+                _pivot = await Http.GetFromJsonAsync<PivotResult>(
+                    $"api/reports/pivot?year={_year}");
+
+            else if (_activeTab == "Top Merchants")
+                _merchants = await Http.GetFromJsonAsync<List<MerchantRow>>(
+                    $"api/reports/merchants?year={_year}&topN={_topN}") ?? new();
+
+            else if (_activeTab == "Largest")
+                _largest = await Http.GetFromJsonAsync<List<TransactionDto>>(
+                    $"api/reports/largest?year={_year}&topN={_topN}") ?? new();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    // Mirror the record types from ReportService so JSON deserialization works
+    private record MonthlyRow(string Month, string Label, decimal Total, int Count);
+    private record CategoryRow(string Category, decimal Total, int Count, decimal PctOfSpend);
+    private record MerchantRow(string Name, decimal Total, int Count, decimal AvgPerVisit);
+    private record PivotRow(string Month, string Label, List<decimal> Values, decimal RowTotal);
+    private record PivotResult(List<string> Categories, List<PivotRow> Rows,
+        decimal GrandTotal, List<decimal> ColumnTotals);
+    private record TransactionDto(string TransactionId, string AccountId, DateOnly Date,
+        string Name, decimal Amount, string Category);
+}
