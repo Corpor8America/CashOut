@@ -5,14 +5,13 @@ WORKDIR /src
 # Copy csproj and restore first — Docker layer cache means this only
 # re-runs when the .csproj changes, not on every code change.
 COPY Spening/Spening.csproj ./
-RUN dotnet restore
+RUN dotnet nuget locals all --clear && dotnet restore
 
 # Copy all source and publish
 COPY Spening/ ./
 RUN dotnet publish Spening.csproj \
     --configuration Release \
-    --output /app/publish \
-    --no-restore
+    --output /app/publish
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
