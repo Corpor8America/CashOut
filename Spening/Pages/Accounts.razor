@@ -2,22 +2,23 @@
 @using Microsoft.JSInterop
 @inject HttpClient Http
 @inject IJSRuntime JS
+@inject ILogger<Accounts> Logger
 @implements IDisposable
 
 <h2>Linked Accounts</h2>
 
 @if (_error != null)
 {
-    <p style="color:red">@_error</p>
+    <div class="alert-error">@_error</div>
 }
 
 @if (_loading)
 {
-    <p>Loading...</p>
+    <p class="text-muted">Loading...</p>
 }
 else if (_accounts.Count == 0)
 {
-    <p>No accounts linked yet.</p>
+    <p class="text-muted">No accounts linked yet.</p>
 }
 else
 {
@@ -48,7 +49,7 @@ else
                         }
                         else
                         {
-                            <button @onclick="() => RequestRemove(acct.Id)">Remove</button>
+                            <button class="btn-danger btn-sm" @onclick="() => RequestRemove(acct.Id)">Remove</button>
                         }
                     </td>
                 </tr>
@@ -58,29 +59,48 @@ else
 }
 
 <br />
-<button @onclick="StartLinkFlow" disabled="@_linking">
+<button class="btn-primary" @onclick="StartLinkFlow" disabled="@_linking">
     @(_linking ? "Connecting..." : "Add Account")
 </button>
 
 @if (_newAccounts.Count > 0)
 {
-    <p style="color:green">Added @_newAccounts.Count account(s) successfully.</p>
+    <div class="alert-success" style="margin-top:1rem">Added @_newAccounts.Count account(s) successfully.</div>
 }
-
-@* Plaid Link SDK — loaded only on this page *@
-<script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
-<script src="~/plaidLink.js"></script>
 
 @code {
     private List<AccountDto> _accounts = new();
     private List<object> _newAccounts = new();
     private bool _loading = true;
     private bool _linking = false;
+    private bool _isRendered = false;   // true only after first real browser render
     private string? _error;
     private Guid? _confirmRemoveId;
     private DotNetObjectReference<Accounts>? _dotNetRef;
 
-    protected override async Task OnInitializedAsync() => await LoadAccounts();
+    protected override async Task OnInitializedAsync()
+    {
+        Logger.LogInformation("Accounts: OnInitializedAsync");
+        await LoadAccounts();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            Logger.LogInformation("Accounts: first real browser render complete");
+            _isRendered = true;
+            // Confirm JS interop is working at all
+            try
+            {
+                await JS.InvokeVoidAsync("console.log", "[Blazor] Accounts page JS interop OK");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Accounts: JS interop failed on first render");
+            }
+        }
+    }
 
     private async Task LoadAccounts()
     {
@@ -88,11 +108,13 @@ else
         _error = null;
         try
         {
-            _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts")
-                        ?? new();
+            Logger.LogInformation("Accounts: fetching api/accounts");
+            _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new();
+            Logger.LogInformation("Accounts: got {Count} accounts", _accounts.Count);
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Accounts: LoadAccounts failed");
             _error = $"Failed to load accounts: {ex.Message}";
         }
         finally { _loading = false; }
@@ -100,30 +122,56 @@ else
 
     private async Task StartLinkFlow()
     {
+        Logger.LogInformation("Accounts: StartLinkFlow clicked, _isRendered={IsRendered}", _isRendered);
+
+        if (!_isRendered)
+        {
+            _error = "Page not fully loaded yet, please wait a moment and try again.";
+            StateHasChanged();
+            return;
+        }
+
         _linking = true;
         _error = null;
         _newAccounts.Clear();
+        StateHasChanged();
 
         try
         {
+            Logger.LogInformation("Accounts: requesting link token from api/plaid/link-token");
             var resp = await Http.PostAsync("api/plaid/link-token", null);
-            resp.EnsureSuccessStatusCode();
-            var json = await resp.Content.ReadFromJsonAsync<LinkTokenResponse>();
 
+            Logger.LogInformation("Accounts: link-token response status={Status}", resp.StatusCode);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                throw new Exception($"HTTP {(int)resp.StatusCode}: {body}");
+            }
+
+            var json = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            var linkToken = json?["link_token"] ?? throw new Exception("link_token missing from response");
+            Logger.LogInformation("Accounts: got link token, invoking speningPlaid.open");
+
+            _dotNetRef?.Dispose();
             _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("speningPlaid.open", json!.LinkToken, _dotNetRef);
-            // Control returns here; actual success/exit handled by JS callbacks below
+
+            await JS.InvokeVoidAsync("speningPlaid.open", linkToken, _dotNetRef);
+            Logger.LogInformation("Accounts: speningPlaid.open invoked successfully");
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Accounts: StartLinkFlow failed");
             _error = $"Could not start Plaid Link: {ex.Message}";
             _linking = false;
+            StateHasChanged();
         }
     }
 
     [JSInvokable]
     public async Task OnPlaidSuccess(string publicToken)
     {
+        Logger.LogInformation("Accounts: OnPlaidSuccess called");
         try
         {
             var resp = await Http.PostAsJsonAsync("api/plaid/exchange",
@@ -134,6 +182,7 @@ else
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "Accounts: OnPlaidSuccess exchange failed");
             _error = $"Account linking failed: {ex.Message}";
         }
         finally
@@ -146,6 +195,17 @@ else
     [JSInvokable]
     public Task OnPlaidExit()
     {
+        Logger.LogInformation("Accounts: OnPlaidExit called");
+        _linking = false;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnPlaidError(string message)
+    {
+        Logger.LogError("Accounts: OnPlaidError: {Message}", message);
+        _error = message;
         _linking = false;
         StateHasChanged();
         return Task.CompletedTask;
@@ -170,10 +230,12 @@ else
         finally { _confirmRemoveId = null; }
     }
 
-    public void Dispose() => _dotNetRef?.Dispose();
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+        _dotNetRef = null;
+    }
 
-    // Local DTOs
     private record AccountDto(Guid Id, string Name, string Mask,
         string Subtype, string Institution);
-    private record LinkTokenResponse(string LinkToken);
 }

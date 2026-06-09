@@ -1,4 +1,4 @@
-@page "/"
+@page "/{**catchall}"
 @namespace Spening.Pages
 @addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
 <!DOCTYPE html>
@@ -8,10 +8,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spening</title>
     <link rel="stylesheet" href="~/app.css" />
-    <link rel="stylesheet" href="~/_content/Microsoft.AspNetCore.Components.WebAssembly.Authentication/AuthenticationService.js" />
 </head>
 <body>
-    <component type="typeof(App)" render-mode="ServerPrerendered" />
+    <component type="typeof(App)" render-mode="Server" />
+    <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js"></script>
+    <script src="~/plaidLink.js"></script>
     <script src="_framework/blazor.server.js"></script>
 </body>
 </html>

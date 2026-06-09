@@ -1,27 +1,63 @@
-// Loaded once on the Accounts page.
-// Blazor calls window.speningPlaid.open(linkToken, dotNetRef)
-// On success, invokes dotNetRef.invokeMethodAsync('OnPlaidSuccess', publicToken)
-// On exit/cancel, invokes dotNetRef.invokeMethodAsync('OnPlaidExit')
-
 window.speningPlaid = {
     handler: null,
 
     open: function (linkToken, dotNetRef) {
-        if (!window.Plaid) {
-            console.error('Plaid Link SDK not loaded.');
-            return;
-        }
+        console.log('[Plaid] open() called, linkToken prefix:', linkToken ? linkToken.substring(0, 20) + '...' : 'NULL');
 
-        this.handler = window.Plaid.create({
-            token: linkToken,
-            onSuccess: function (public_token, metadata) {
-                dotNetRef.invokeMethodAsync('OnPlaidSuccess', public_token);
-            },
-            onExit: function (err, metadata) {
-                dotNetRef.invokeMethodAsync('OnPlaidExit');
+        var attempts = 0;
+        var maxAttempts = 50;
+
+        var tryOpen = function () {
+            attempts++;
+
+            if (typeof window.Plaid === 'undefined') {
+                if (attempts >= maxAttempts) {
+                    var msg = 'Plaid SDK failed to load after 5s. Check network/CSP.';
+                    console.error('[Plaid]', msg);
+                    dotNetRef.invokeMethodAsync('OnPlaidError', msg);
+                    return;
+                }
+                if (attempts === 1) console.log('[Plaid] window.Plaid not ready yet, polling...');
+                setTimeout(tryOpen, 100);
+                return;
             }
-        });
 
-        this.handler.open();
+            console.log('[Plaid] window.Plaid is ready, creating handler...');
+
+            try {
+                window.speningPlaid.handler = window.Plaid.create({
+                    token: linkToken,
+                    onSuccess: function (public_token, metadata) {
+                        console.log('[Plaid] onSuccess, exchanging token...');
+                        dotNetRef.invokeMethodAsync('OnPlaidSuccess', public_token);
+                    },
+                    onExit: function (err, metadata) {
+                        console.log('[Plaid] onExit, err:', err);
+                        dotNetRef.invokeMethodAsync('OnPlaidExit');
+                    },
+                    onEvent: function (eventName, metadata) {
+                        console.log('[Plaid] event:', eventName);
+                    }
+                });
+
+                console.log('[Plaid] handler created, calling open()...');
+                window.speningPlaid.handler.open();
+                console.log('[Plaid] handler.open() returned');
+            } catch (e) {
+                console.error('[Plaid] exception during create/open:', e);
+                dotNetRef.invokeMethodAsync('OnPlaidError', 'Failed to open Plaid Link: ' + e.message);
+            }
+        };
+
+        tryOpen();
+    },
+
+    destroy: function () {
+        if (window.speningPlaid.handler) {
+            try { window.speningPlaid.handler.destroy(); } catch (e) { }
+            window.speningPlaid.handler = null;
+        }
     }
 };
+
+console.log('[Plaid] plaidLink.js loaded');

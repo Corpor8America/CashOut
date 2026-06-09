@@ -26,10 +26,23 @@ builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
 
 // ── HttpClient for Blazor pages calling local API endpoints ───────────────
-builder.Services.AddScoped(sp =>
+// NavigationManager.BaseUri is unreliable during SSR (can be empty).
+// Instead, derive the base address from the app's configured URLs at startup.
+builder.Services.AddScoped<HttpClient>(sp =>
 {
-    var nav = sp.GetRequiredService<NavigationManager>();
-    return new HttpClient { BaseAddress = new Uri(nav.BaseUri) };
+    // ASPNETCORE_URLS or the Kestrel config tells us where we're listening.
+    // Fall back to the standard Docker port if nothing is set.
+    var urls = builder.Configuration["ASPNETCORE_URLS"]
+               ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
+               ?? "http://localhost:8080";
+
+    // Take the first URL (handles "http://+:8080" → "http://localhost:8080")
+    var firstUrl = urls.Split(';')[0]
+        .Replace("http://+:", "http://localhost:")
+        .Replace("https://+:", "https://localhost:")
+        .TrimEnd('/');
+
+    return new HttpClient { BaseAddress = new Uri(firstUrl + "/") };
 });
 
 var app = builder.Build();

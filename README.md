@@ -42,3 +42,10 @@ dotnet run
 docker compose pull
 docker compose up -d
 ```
+### Local update
+```bash
+docker compose -f docker-compose.dev.yml down
+docker compose -f docker-compose.dev.yml build --no-cache
+docker image prune -f
+docker compose -f docker-compose.dev.yml up -d
+```
