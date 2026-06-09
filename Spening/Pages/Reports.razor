@@ -10,15 +10,19 @@
 
 <div class="toolbar">
     <label>Year: </label>
-    <input type="number" @bind="_year" style="width:80px" />
+    <select @bind="_year" @bind:after="Refresh">
+        @foreach (var y in _availableYears)
+        {
+            <option value="@y">@y</option>
+        }
+    </select>
     <button @onclick="Refresh" disabled="@_loading">Refresh</button>
 </div>
 
 <div class="tabs">
     @foreach (var tab in _tabs)
     {
-        <button class="tab @(tab == _activeTab ? "active" : "")"
-                @onclick="() => SetTab(tab)">@tab</button>
+        <button class="tab @(tab == _activeTab ? "active" : "")" @onclick="() => SetTab(tab)">@tab</button>
     }
 </div>
 
@@ -37,7 +41,11 @@ else
         </div>
         <table>
             <thead>
-                <tr><th>Month</th><th class="text-right">Total</th><th class="text-right">Transactions</th></tr>
+                <tr>
+                    <th>Month</th>
+                    <th class="text-right">Total</th>
+                    <th class="text-right">Transactions</th>
+                </tr>
             </thead>
             <tbody>
                 @foreach (var r in _monthly)
@@ -66,7 +74,12 @@ else
         </div>
         <table>
             <thead>
-                <tr><th>Category</th><th class="text-right">Total</th><th class="text-right">% of Spend</th><th class="text-right">Transactions</th></tr>
+                <tr>
+                    <th>Category</th>
+                    <th class="text-right">Total</th>
+                    <th class="text-right">% of Spend</th>
+                    <th class="text-right">Transactions</th>
+                </tr>
             </thead>
             <tbody>
                 @foreach (var r in _categories)
@@ -145,7 +158,12 @@ else
         </div>
         <table>
             <thead>
-                <tr><th>Merchant</th><th class="text-right">Total</th><th class="text-right">Visits</th><th class="text-right">Avg/Visit</th></tr>
+                <tr>
+                    <th>Merchant</th>
+                    <th class="text-right">Total</th>
+                    <th class="text-right">Visits</th>
+                    <th class="text-right">Avg/Visit</th>
+                </tr>
             </thead>
             <tbody>
                 @foreach (var r in _merchants)
@@ -173,7 +191,12 @@ else
         </div>
         <table>
             <thead>
-                <tr><th>Date</th><th>Merchant</th><th>Category</th><th class="text-right">Amount</th></tr>
+                <tr>
+                    <th>Date</th>
+                    <th>Merchant</th>
+                    <th>Category</th>
+                    <th class="text-right">Amount</th>
+                </tr>
             </thead>
             <tbody>
                 @foreach (var t in _largest)
@@ -197,6 +220,7 @@ else
     private int _topN = 10;
     private bool _loading;
     private string? _error;
+    private List<int> _availableYears = new();
 
     private List<MonthlyRow> _monthly = new();
     private List<CategoryRow> _categories = new();
@@ -204,7 +228,26 @@ else
     private List<MerchantRow> _merchants = new();
     private List<TransactionDto> _largest = new();
 
-    protected override async Task OnInitializedAsync() => await Refresh();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadYears();
+        await Refresh();
+    }
+
+    private async Task LoadYears()
+    {
+        try
+        {
+            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years") ?? new();
+            if (_availableYears.Count > 0)
+                _year = _availableYears[0];
+        }
+        catch
+        {
+            _availableYears = Enumerable.Range(DateTime.Now.Year - 6, 7)
+                .OrderByDescending(y => y).ToList();
+        }
+    }
 
     private async Task SetTab(string tab)
     {
@@ -241,7 +284,6 @@ else
         finally { _loading = false; }
     }
 
-    // Mirror the record types from ReportService so JSON deserialization works
     private record MonthlyRow(string Month, string Label, decimal Total, int Count);
     private record CategoryRow(string Category, decimal Total, int Count, decimal PctOfSpend);
     private record MerchantRow(string Name, decimal Total, int Count, decimal AvgPerVisit);

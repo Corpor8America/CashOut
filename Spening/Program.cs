@@ -20,23 +20,28 @@ builder.Services.AddControllers();
 // ── Services ──────────────────────────────────────────────────────────────
 builder.Services.AddSingleton<EncryptionService>();
 builder.Services.AddScoped<SettingsService>();
-builder.Services.AddHttpClient<PlaidService>();
-builder.Services.AddScoped<PlaidService>();
+// AddHttpClient<T> registers PlaidService as a typed HttpClient consumer with
+// proper socket pooling via IHttpClientFactory. Do NOT also call AddScoped<PlaidService>
+// as that would override this registration with a plain scoped instance.
+// Plaid-Version header is set centrally here so all requests use a consistent API version.
+builder.Services.AddHttpClient<PlaidService>(client =>
+{
+    client.DefaultRequestHeaders.Add("Plaid-Version", "2020-09-14");
+});
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
 
 // ── HttpClient for Blazor pages calling local API endpoints ───────────────
-// NavigationManager.BaseUri is unreliable during SSR (can be empty).
-// Instead, derive the base address from the app's configured URLs at startup.
+// Derive the base address from ASPNETCORE_URLS so it works in both dev and Docker.
+// In dev, launchSettings sets the URL to http://localhost:5200.
+// In Docker, ASPNETCORE_URLS is set to http://+:8080 which we normalize to localhost.
 builder.Services.AddScoped<HttpClient>(sp =>
 {
-    // ASPNETCORE_URLS or the Kestrel config tells us where we're listening.
-    // Fall back to the standard Docker port if nothing is set.
     var urls = builder.Configuration["ASPNETCORE_URLS"]
                ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
-               ?? "http://localhost:8080";
+               ?? (builder.Environment.IsDevelopment() ? "http://localhost:5200" : "http://localhost:8080");
 
-    // Take the first URL (handles "http://+:8080" → "http://localhost:8080")
+    // Normalize "http://+:PORT" → "http://localhost:PORT"
     var firstUrl = urls.Split(';')[0]
         .Replace("http://+:", "http://localhost:")
         .Replace("https://+:", "https://localhost:")
@@ -56,6 +61,21 @@ using (var scope = app.Services.CreateScope())
 
 app.UseStaticFiles();
 app.UseRouting();
+
+// Gate the debug controller to Development environment only
+if (!app.Environment.IsDevelopment())
+{
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api/debug"))
+        {
+            context.Response.StatusCode = 404;
+            return;
+        }
+        await next();
+    });
+}
+
 app.MapControllers();
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");

@@ -79,9 +79,12 @@ public class PlaidService
             access_token = plainAccessToken
         });
 
-        var institutionId = json.GetProperty("item")
-            .TryGetProperty("institution_id", out var inst)
+        // Capture both institution_id and item_id for stable group-delete
+        var item = json.GetProperty("item");
+        var institutionId = item.TryGetProperty("institution_id", out var inst)
             ? inst.GetString() ?? "" : "";
+        var itemId = item.TryGetProperty("item_id", out var iid)
+            ? iid.GetString() ?? "" : "";
 
         var institutionName = institutionId != ""
             ? await FetchInstitutionName(institutionId)
@@ -97,6 +100,7 @@ public class PlaidService
                 Id = Guid.NewGuid(),
                 AccessToken = encryptedToken,
                 AccountId = a.GetProperty("account_id").GetString()!,
+                ItemId = itemId,
                 Mask = a.TryGetProperty("mask", out var m) ? m.GetString() ?? "" : "",
                 Name = a.GetProperty("name").GetString()!,
                 Subtype = a.TryGetProperty("subtype", out var s) ? s.GetString() ?? "" : "",
@@ -113,6 +117,7 @@ public class PlaidService
             else
             {
                 existing.AccessToken = encryptedToken;
+                existing.ItemId = itemId;
                 existing.Name = account.Name;
                 existing.Institution = institutionName;
                 _db.LinkedAccounts.Update(existing);
@@ -146,21 +151,35 @@ public class PlaidService
 
     /// <summary>
     /// Revokes the Plaid Item server-side and removes all associated accounts from the DB.
+    /// If the Plaid revocation call fails (e.g. token already invalid), local records are
+    /// still deleted so the user is never left with an unremovable dangling account.
     /// </summary>
-    public async Task RemoveItem(string encryptedAccessToken)
+    public async Task RemoveItem(string encryptedAccessToken, string itemId)
     {
-        var plainToken = _encryption.Decrypt(encryptedAccessToken);
-
-        await Post("/item/remove", new
+        // Best-effort remote revocation — don't let Plaid errors block local cleanup
+        try
         {
-            client_id = ClientId,
-            secret = await Secret(),
-            access_token = plainToken
-        });
+            var plainToken = _encryption.Decrypt(encryptedAccessToken);
+            await Post("/item/remove", new
+            {
+                client_id = ClientId,
+                secret = await Secret(),
+                access_token = plainToken
+            });
+        }
+        catch (Exception ex)
+        {
+            // Log but continue — local deletion must still happen
+            Console.Error.WriteLine(
+                $"[PlaidService] RemoveItem: Plaid revocation failed (will still delete locally): {ex.Message}");
+        }
 
-        // Remove all accounts sharing this token
-        var toRemove = _db.LinkedAccounts
-            .Where(a => a.AccessToken == encryptedAccessToken);
+        // Delete by stable ItemId rather than encrypted token to handle re-link scenarios
+        // where the same Item has different ciphertexts across accounts
+        IQueryable<LinkedAccount> toRemove = string.IsNullOrEmpty(itemId)
+            ? _db.LinkedAccounts.Where(a => a.AccessToken == encryptedAccessToken) // fallback
+            : _db.LinkedAccounts.Where(a => a.ItemId == itemId);
+
         _db.LinkedAccounts.RemoveRange(toRemove);
         await _db.SaveChangesAsync();
     }
@@ -230,7 +249,7 @@ public class PlaidService
                 added.Add(MapTransaction(t));
 
             foreach (var t in json.GetProperty("modified").EnumerateArray())
-                added.Add(MapTransaction(t));  // modified are treated as upserts
+                added.Add(MapTransaction(t));  // modified treated as upserts
 
             foreach (var t in json.GetProperty("removed").EnumerateArray())
                 removedIds.Add(t.GetProperty("transaction_id").GetString()!);
@@ -244,27 +263,51 @@ public class PlaidService
 
     /// <summary>
     /// Fetches all transactions for a calendar year using /transactions/get.
+    /// Paginates using count/offset until all transactions are retrieved.
     /// Does not update sync cursor.
     /// </summary>
     public async Task<List<Transaction>> FetchTransactions(
         string encryptedAccessToken, int year)
     {
         var plainToken = _encryption.Decrypt(encryptedAccessToken);
+        var allTransactions = new List<Transaction>();
+        const int pageSize = 500;
+        int offset = 0;
+        int totalTransactions;
 
-        var json = await Post("/transactions/get", new
+        do
         {
-            client_id = ClientId,
-            secret = await Secret(),
-            access_token = plainToken,
-            start_date = $"{year}-01-01",
-            end_date = $"{year}-12-31",
-            options = new { include_personal_finance_category = true }
-        });
+            var json = await Post("/transactions/get", new
+            {
+                client_id = ClientId,
+                secret = await Secret(),
+                access_token = plainToken,
+                start_date = $"{year}-01-01",
+                end_date = $"{year}-12-31",
+                options = new
+                {
+                    include_personal_finance_category = true,
+                    count = pageSize,
+                    offset = offset
+                }
+            });
 
-        return json.GetProperty("transactions")
-            .EnumerateArray()
-            .Select(MapTransaction)
-            .ToList();
+            totalTransactions = json.GetProperty("total_transactions").GetInt32();
+
+            var page = json.GetProperty("transactions")
+                .EnumerateArray()
+                .Select(MapTransaction)
+                .ToList();
+
+            allTransactions.AddRange(page);
+            offset += page.Count;
+
+            // Safety valve: if Plaid returns 0 items unexpectedly, stop to avoid infinite loop
+            if (page.Count == 0) break;
+
+        } while (allTransactions.Count < totalTransactions);
+
+        return allTransactions;
     }
 
     private static Transaction MapTransaction(JsonElement t) => new()

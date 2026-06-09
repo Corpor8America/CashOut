@@ -6,37 +6,87 @@ public class SettingsService
 
     public SettingsService(AppDbContext db) => _db = db;
 
-    public async Task<string> Get(string key, string defaultValue = "")
-    {
-        var row = await _db.AppSettings.FindAsync(key);
-        return row?.Value ?? defaultValue;
-    }
+    // ── Read / Write ──────────────────────────────────────────────────────
 
-    public async Task Set(string key, string value)
+    private async Task<AppSetting> GetRow()
     {
-        var row = await _db.AppSettings.FindAsync(key);
+        var row = await _db.AppSettings.FindAsync(1);
         if (row == null)
         {
-            _db.AppSettings.Add(new AppSetting { Key = key, Value = value });
+            // Seed a default row if somehow missing (shouldn't happen after migration)
+            row = new AppSetting { Id = 1, PlaidEnvironment = "sandbox" };
+            _db.AppSettings.Add(row);
+            await _db.SaveChangesAsync();
         }
-        else
-        {
-            row.Value = value;
-            _db.AppSettings.Update(row);
-        }
+        return row;
+    }
+
+    public async Task<string> GetPlaidEnvironment()
+    {
+        var row = await GetRow();
+        return row.PlaidEnvironment;
+    }
+
+    public async Task SetPlaidEnvironment(string environment)
+    {
+        var row = await GetRow();
+        row.PlaidEnvironment = environment;
+        _db.AppSettings.Update(row);
         await _db.SaveChangesAsync();
     }
 
-    public async Task<Dictionary<string, string>> GetAll()
+    /// <summary>
+    /// Returns the year of the most recent transaction in the database.
+    /// Falls back to the current calendar year if there are no transactions.
+    /// This replaces the old static `output_year` setting per featureChanges.md.
+    /// </summary>
+    public async Task<int> GetOutputYear()
     {
-        return await _db.AppSettings
-            .ToDictionaryAsync(s => s.Key, s => s.Value);
+        var maxDate = await _db.Transactions
+            .OrderByDescending(t => t.Date)
+            .Select(t => (DateOnly?)t.Date)
+            .FirstOrDefaultAsync();
+
+        return maxDate?.Year ?? DateTime.UtcNow.Year;
     }
 
-    // Convenience helpers
-    public async Task<string> GetPlaidEnvironment() =>
-        await Get("plaid_environment", "sandbox");
+    /// <summary>
+    /// Returns a list of available years (up to 7) for the year picker dropdown,
+    /// derived from actual transaction data. Always includes the current year.
+    /// </summary>
+    public async Task<List<int>> GetAvailableYears()
+    {
+        var currentYear = DateTime.UtcNow.Year;
+        var minYear = currentYear - 6; // 7 years inclusive
 
-    public async Task<int> GetOutputYear() =>
-        int.TryParse(await Get("output_year"), out var y) ? y : DateTime.UtcNow.Year;
+        var yearsWithData = await _db.Transactions
+            .Where(t => t.Date.Year >= minYear)
+            .Select(t => t.Date.Year)
+            .Distinct()
+            .OrderByDescending(y => y)
+            .ToListAsync();
+
+        // Always include current year even if no transactions yet
+        if (!yearsWithData.Contains(currentYear))
+            yearsWithData.Insert(0, currentYear);
+
+        return yearsWithData;
+    }
+
+    // ── GetAll: for backward compatibility with frontend dict consumers ───
+
+    /// <summary>
+    /// Returns settings as a dictionary for API consumers.
+    /// output_year is now dynamic (derived from last transaction), not stored.
+    /// </summary>
+    public async Task<Dictionary<string, string>> GetAll()
+    {
+        var row = await GetRow();
+        var outputYear = await GetOutputYear();
+        return new Dictionary<string, string>
+        {
+            ["plaid_environment"] = row.PlaidEnvironment,
+            ["output_year"] = outputYear.ToString()
+        };
+    }
 }

@@ -22,7 +22,12 @@
     </button>
     <span style="margin-left:auto">
         <label>Year: </label>
-        <input type="number" @bind="_filterYear" style="width:80px" />
+        <select @bind="_filterYear" @bind:after="ApplyFilter">
+            @foreach (var y in _availableYears)
+            {
+                <option value="@y">@y</option>
+            }
+        </select>
     </span>
     <select @bind="_filterCategory">
         <option value="">All categories</option>
@@ -76,12 +81,35 @@ else
 @code {
     private List<TransactionDto> _transactions = new();
     private List<string> _categories = new();
+    private List<int> _availableYears = new();
     private int _filterYear = DateTime.Now.Year;
     private string _filterCategory = "";
     private bool _loading, _busy, _syncing, _fetching;
     private string? _error, _message;
 
-    protected override async Task OnInitializedAsync() => await LoadTransactions();
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadYears();
+        await LoadTransactions();
+    }
+
+    private async Task LoadYears()
+    {
+        try
+        {
+            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years") ?? new();
+
+            // Set filter year to the most recent year with data (first in descending list)
+            if (_availableYears.Count > 0)
+                _filterYear = _availableYears[0];
+        }
+        catch
+        {
+            // Fallback: just show current year if the endpoint fails
+            _availableYears = Enumerable.Range(DateTime.Now.Year - 6, 7)
+                .OrderByDescending(y => y).ToList();
+        }
+    }
 
     private async Task LoadTransactions()
     {
@@ -113,6 +141,7 @@ else
             resp.EnsureSuccessStatusCode();
             var result = await resp.Content.ReadFromJsonAsync<SyncResult>();
             _message = $"Sync complete — {result!.Added} added, {result.Removed} removed.";
+            await LoadYears();
             await LoadTransactions();
         }
         catch (Exception ex) { _error = ex.Message; }
@@ -128,6 +157,7 @@ else
             resp.EnsureSuccessStatusCode();
             var result = await resp.Content.ReadFromJsonAsync<FetchResult>();
             _message = $"Fetch complete — {result!.Written} transactions written.";
+            await LoadYears();
             await LoadTransactions();
         }
         catch (Exception ex) { _error = ex.Message; }
