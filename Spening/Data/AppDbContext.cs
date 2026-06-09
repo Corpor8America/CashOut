@@ -17,6 +17,10 @@ public class AppDbContext : DbContext
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.AccountId).IsRequired();
             e.HasIndex(x => x.AccountId).IsUnique();
+            // ItemId groups all accounts belonging to one Plaid Item (bank login).
+            // Indexed for efficient group-delete during RemoveItem.
+            e.Property(x => x.ItemId).IsRequired().HasDefaultValue("");
+            e.HasIndex(x => x.ItemId);
             e.Property(x => x.CreatedAt)
              .HasDefaultValueSql("now()");
         });
@@ -33,13 +37,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<AppSetting>(e =>
         {
             e.ToTable("app_settings");
-            e.HasKey(x => x.Key);
-
-            // Seed default settings
-            e.HasData(
-                new AppSetting { Key = "plaid_environment", Value = "sandbox" },
-                new AppSetting { Key = "output_year", Value = DateTime.UtcNow.Year.ToString() }
-            );
+            e.HasKey(x => x.Id);
+            // Single row: Id = 1. Seed defaults here.
+            e.HasData(new AppSetting { Id = 1, PlaidEnvironment = "sandbox" });
         });
     }
 }

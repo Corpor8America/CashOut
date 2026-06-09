@@ -29,7 +29,7 @@ public class AccountsController : ControllerBase
                 a.Subtype,
                 a.Institution,
                 a.CreatedAt
-                // AccessToken intentionally excluded from response
+                // AccessToken and ItemId intentionally excluded from response
             })
             .ToListAsync();
 
@@ -42,8 +42,10 @@ public class AccountsController : ControllerBase
         var account = await _db.LinkedAccounts.FindAsync(id);
         if (account == null) return NotFound();
 
-        await _plaid.RemoveItem(account.AccessToken);
-        // RemoveItem handles DB deletion internally
+        // Pass ItemId so RemoveItem can group-delete by stable Plaid identifier.
+        // RemoveItem handles DB deletion internally and will still delete locally
+        // even if the Plaid revocation call fails.
+        await _plaid.RemoveItem(account.AccessToken, account.ItemId);
         return NoContent();
     }
 }

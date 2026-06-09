@@ -17,7 +17,11 @@ public class TransactionService
 
     // ── Sync ──────────────────────────────────────────────────────────────
 
-    /// <summary>Runs incremental sync across all linked accounts.</summary>
+    /// <summary>
+    /// Runs incremental sync across all linked accounts.
+    /// Each account's cursor is saved immediately after its own successful merge
+    /// so a failure on one account doesn't corrupt another account's cursor position.
+    /// </summary>
     public async Task<(int added, int removed)> SyncAll()
     {
         var accounts = await _db.LinkedAccounts.ToListAsync();
@@ -25,24 +29,40 @@ public class TransactionService
 
         foreach (var acct in accounts)
         {
-            var (newTxns, removedIds, nextCursor) =
-                await _plaid.SyncTransactions(acct.AccessToken, acct.SyncCursor);
+            try
+            {
+                var (newTxns, removedIds, nextCursor) =
+                    await _plaid.SyncTransactions(acct.AccessToken, acct.SyncCursor);
 
-            var (a, r) = await Merge(newTxns, removedIds);
-            totalAdded += a;
-            totalRemoved += r;
+                var (a, r) = await Merge(newTxns, removedIds);
+                totalAdded += a;
+                totalRemoved += r;
 
-            acct.SyncCursor = nextCursor;
-            _db.LinkedAccounts.Update(acct);
+                // Save cursor per-account immediately after successful merge.
+                // If the next account's sync fails, this account's cursor is already
+                // persisted and won't re-fetch transactions on the next run.
+                acct.SyncCursor = nextCursor;
+                _db.LinkedAccounts.Update(acct);
+                await _db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                // Log and continue — one bad account shouldn't block others
+                Console.Error.WriteLine(
+                    $"[TransactionService] SyncAll: failed for account {acct.AccountId}: {ex.Message}");
+            }
         }
 
-        await _db.SaveChangesAsync();
         return (totalAdded, totalRemoved);
     }
 
     // ── Fetch ─────────────────────────────────────────────────────────────
 
-    /// <summary>Full re-fetch of the configured year across all accounts.</summary>
+    /// <summary>
+    /// Full re-fetch of the configured year across all accounts.
+    /// Returns the total number of transactions processed (inserted + updated),
+    /// not just newly inserted rows.
+    /// </summary>
     public async Task<int> FetchAll()
     {
         var year = await _settings.GetOutputYear();
@@ -55,8 +75,9 @@ public class TransactionService
             all.AddRange(txns);
         }
 
-        var (_, added, _) = await MergeWithTotal(all, new List<string>());
-        return added;
+        await MergeAll(all, new List<string>());
+        // Return the total count processed so the UI shows a meaningful number
+        return all.Count;
     }
 
     // ── Merge ─────────────────────────────────────────────────────────────
@@ -64,12 +85,16 @@ public class TransactionService
     private async Task<(int added, int removed)> Merge(
         List<Transaction> incoming, List<string> removedIds)
     {
-        var (_, added, removed) = await MergeWithTotal(incoming, removedIds);
-        return (added, removed);
+        int added = await MergeAll(incoming, removedIds);
+        return (added, removedIds.Count);
     }
 
-    private async Task<(int total, int added, int removed)> MergeWithTotal(
-        List<Transaction> incoming, List<string> removedIds)
+    /// <summary>
+    /// Upserts incoming transactions and deletes removed ones.
+    /// Uses a bulk ID lookup instead of per-row FindAsync to avoid N+1 queries.
+    /// Returns the count of newly inserted rows.
+    /// </summary>
+    private async Task<int> MergeAll(List<Transaction> incoming, List<string> removedIds)
     {
         // Remove deleted transactions
         if (removedIds.Count > 0)
@@ -81,31 +106,47 @@ public class TransactionService
         }
 
         int added = 0;
-        foreach (var txn in incoming)
+
+        if (incoming.Count > 0)
         {
-            var existing = await _db.Transactions.FindAsync(txn.TransactionId);
-            if (existing == null)
+            // Bulk-load all existing IDs in one query instead of one FindAsync per row.
+            // For a full-year fetch of 1,000+ transactions this reduces round-trips from
+            // N (one per transaction) to 1.
+            var incomingIds = incoming.Select(t => t.TransactionId).ToHashSet();
+            var existingIds = await _db.Transactions
+                .Where(t => incomingIds.Contains(t.TransactionId))
+                .Select(t => t.TransactionId)
+                .ToHashSetAsync();
+
+            // Also load the existing entity objects for those that need updating
+            var existingEntities = await _db.Transactions
+                .Where(t => incomingIds.Contains(t.TransactionId))
+                .ToDictionaryAsync(t => t.TransactionId);
+
+            foreach (var txn in incoming)
             {
-                txn.CreatedAt = DateTime.UtcNow;
-                txn.UpdatedAt = DateTime.UtcNow;
-                _db.Transactions.Add(txn);
-                added++;
-            }
-            else
-            {
-                existing.Name = txn.Name;
-                existing.Amount = txn.Amount;
-                existing.Category = txn.Category;
-                existing.Date = txn.Date;
-                existing.UpdatedAt = DateTime.UtcNow;
-                _db.Transactions.Update(existing);
+                if (!existingIds.Contains(txn.TransactionId))
+                {
+                    txn.CreatedAt = DateTime.UtcNow;
+                    txn.UpdatedAt = DateTime.UtcNow;
+                    _db.Transactions.Add(txn);
+                    added++;
+                }
+                else
+                {
+                    var existing = existingEntities[txn.TransactionId];
+                    existing.Name = txn.Name;
+                    existing.Amount = txn.Amount;
+                    existing.Category = txn.Category;
+                    existing.Date = txn.Date;
+                    existing.UpdatedAt = DateTime.UtcNow;
+                    _db.Transactions.Update(existing);
+                }
             }
         }
 
         await _db.SaveChangesAsync();
-
-        var total = await _db.Transactions.CountAsync();
-        return (total, added, removedIds.Count);
+        return added;
     }
 
     // ── Query ─────────────────────────────────────────────────────────────
@@ -129,7 +170,11 @@ public class TransactionService
 
     // ── CSV Export ────────────────────────────────────────────────────────
 
-    public async Task<byte[]> ExportCsv(int? year = null)
+    /// <summary>
+    /// Exports transactions for the given year as CSV bytes.
+    /// Year is required — callers should resolve a default before calling.
+    /// </summary>
+    public async Task<byte[]> ExportCsv(int year)
     {
         var transactions = await Query(year);
         var sb = new StringBuilder();

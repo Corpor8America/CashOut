@@ -3,8 +3,14 @@
 
 <h2>Settings</h2>
 
-@if (_error != null) { <div class="alert-error">@_error</div> }
-@if (_saved) { <div class="alert-success">Settings saved.</div> }
+@if (_error != null)
+{
+    <div class="alert-error">@_error</div>
+}
+@if (_saved)
+{
+    <div class="alert-success">Settings saved.</div>
+}
 
 @if (_loading)
 {
@@ -15,12 +21,6 @@ else
     <table style="max-width:480px">
         <tbody>
             <tr>
-                <td><strong>Year</strong></td>
-                <td>
-                    <input type="number" @bind="_year" style="width:100px" />
-                </td>
-            </tr>
-            <tr>
                 <td><strong>Plaid Environment</strong></td>
                 <td>
                     <select @bind="_environment">
@@ -28,6 +28,12 @@ else
                         <option value="development">development</option>
                         <option value="production">production</option>
                     </select>
+                </td>
+            </tr>
+            <tr>
+                <td><strong>Active Year</strong></td>
+                <td>
+                    <span class="text-muted">@_outputYear (from most recent transaction)</span>
                 </td>
             </tr>
         </tbody>
@@ -48,8 +54,8 @@ else
 }
 
 @code {
-    private int _year = DateTime.Now.Year;
     private string _environment = "sandbox";
+    private int _outputYear = DateTime.Now.Year;
     private bool _loading = true, _saving, _saved;
     private string? _error;
 
@@ -59,10 +65,10 @@ else
         {
             var settings = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/settings")
                            ?? new();
-            if (settings.TryGetValue("output_year", out var y) && int.TryParse(y, out var yi))
-                _year = yi;
             if (settings.TryGetValue("plaid_environment", out var e))
                 _environment = e;
+            if (settings.TryGetValue("output_year", out var y) && int.TryParse(y, out var yi))
+                _outputYear = yi;
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
@@ -75,7 +81,6 @@ else
         {
             var payload = new Dictionary<string, string>
             {
-                ["output_year"] = _year.ToString(),
                 ["plaid_environment"] = _environment
             };
             var resp = await Http.PutAsJsonAsync("api/settings", payload);
