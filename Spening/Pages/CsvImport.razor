@@ -1,0 +1,289 @@
+@page "/csv-import/{AccountId}"
+@inject HttpClient Http
+@inject NavigationManager Nav
+
+<h2>CSV Import</h2>
+
+@if (!string.IsNullOrEmpty(AccountId))
+{
+    <p class="text-muted" style="margin-bottom:1.25rem">
+        Account: <strong>@AccountId</strong>
+    </p>
+}
+
+@if (_error != null) { <div class="alert-error">@_error</div> }
+@if (_message != null) { <div class="alert-success">@_message</div> }
+
+@if (_step == Step.Upload)
+{
+    <h3>Step 1: Upload CSV</h3>
+    <p class="text-muted" style="margin-bottom:0.75rem">
+        Upload a CSV file from your bank. You'll map the columns next.
+    </p>
+    <InputFile OnChange="OnFileSelected" accept=".csv" style="margin-bottom:1rem" />
+    @if (_uploading)
+    {
+        <p class="text-muted">Parsing...</p>
+    }
+}
+
+@if (_step == Step.Map && _preview != null)
+{
+    <h3>Step 2: Map Columns</h3>
+
+    @if (_missingColumns.Count > 0)
+    {
+        <div class="alert-error">
+            The saved mapping is missing columns: <strong>@string.Join(", ", _missingColumns)</strong>.
+            Please update the mapping below.
+        </div>
+    }
+
+    <p class="text-muted" style="margin-bottom:0.75rem">
+        Match your CSV columns to Spening fields. Required: Date, Description, and at least one amount column.
+    </p>
+
+    <!-- Preview table -->
+    <div style="overflow-x:auto;margin-bottom:1.25rem">
+        <table style="font-size:0.8rem">
+            <thead>
+                <tr>@foreach (var h in _preview.Headers) { <th>@h</th> }</tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _preview.Rows)
+                {
+                    <tr>@foreach (var cell in row) { <td>@cell</td> }</tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="mapping-grid">
+        <label>Date column *</label>
+        <select @bind="_mapping.DateColumn">
+            <option value="">— select —</option>
+            @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
+        </select>
+
+        <label>Description column *</label>
+        <select @bind="_mapping.DescriptionColumn">
+            <option value="">— select —</option>
+            @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
+        </select>
+
+        <label>Amount type *</label>
+        <select @bind="_amountType">
+            <option value="split">Separate Credit + Debit columns</option>
+            <option value="single">Single signed amount column</option>
+        </select>
+
+        @if (_amountType == "split")
+        {
+            <label>Credit column</label>
+            <select @bind="_mapping.CreditColumn">
+                <option value="">— none —</option>
+                @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
+            </select>
+
+            <label>Debit column</label>
+            <select @bind="_mapping.DebitColumn">
+                <option value="">— none —</option>
+                @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
+            </select>
+        }
+        else
+        {
+            <label>Amount column</label>
+            <select @bind="_mapping.AmountColumn">
+                <option value="">— select —</option>
+                @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
+            </select>
+        }
+
+        <label>Category column</label>
+        <select @bind="_mapping.CategoryColumn">
+            <option value="">— none —</option>
+            @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
+        </select>
+    </div>
+
+    <div class="toolbar">
+        <button class="btn-primary" @onclick="RunImport" disabled="@_importing">
+            @(_importing ? "Importing..." : "Import CSV")
+        </button>
+        <button @onclick="() => _step = Step.Upload">← Back</button>
+    </div>
+}
+
+@if (_step == Step.Result && _result != null)
+{
+    <h3>Import Complete</h3>
+    <table style="max-width:360px;margin-bottom:1.25rem">
+        <tbody>
+            <tr><td>Rows imported</td><td class="text-right"><strong>@_result.Imported</strong></td></tr>
+            <tr><td>Duplicates skipped</td><td class="text-right">@_result.SkippedDuplicates</td></tr>
+            <tr><td>Other skipped</td><td class="text-right">@_result.SkippedRows.Count</td></tr>
+        </tbody>
+    </table>
+
+    @if (_result.SkippedRows.Count > 0)
+    {
+        <details class="skipped-rows">
+            <summary>@_result.SkippedRows.Count row(s) skipped — click to review</summary>
+            <table style="margin:0;border-radius:0">
+                <thead>
+                    <tr><th>#</th><th>Data</th><th>Reason</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in _result.SkippedRows)
+                    {
+                        <tr>
+                            <td>@row.RowNumber</td>
+                            <td class="text-muted" style="font-size:0.8em">@row.RawData</td>
+                            <td>@row.Reason</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </details>
+        <div style="margin-top:0.75rem">
+            <a href="api/csv-import/@AccountId/skipped-export" target="_blank">
+                <button type="button" class="btn-sm">Download Skipped Rows CSV</button>
+            </a>
+        </div>
+    }
+
+    <div class="toolbar" style="margin-top:1.25rem">
+        <button class="btn-primary" @onclick="() => Nav.NavigateTo($\"/transactions\")">
+            View Transactions
+        </button>
+        <button @onclick="Reset">Import Another File</button>
+    </div>
+}
+
+@code {
+    [Parameter] public string AccountId { get; set; } = "";
+
+    enum Step { Upload, Map, Result }
+    Step _step = Step.Upload;
+
+    private CsvPreview? _preview;
+    private CsvMappingProfile _mapping = new();
+    private string _amountType = "split";
+    private ImportResult? _result;
+    private List<string> _missingColumns = new();
+
+    private bool _uploading, _importing;
+    private string? _csvContent;
+    private string? _error, _message;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Try to load existing mapping profile
+        try
+        {
+            var profile = await Http.GetFromJsonAsync<CsvMappingProfile>(
+                $"api/csv-import/{AccountId}/profile");
+            if (profile != null) _mapping = profile;
+        }
+        catch { /* No profile yet — fine */ }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _uploading = true; _error = null;
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10 MB
+            using var reader = new System.IO.StreamReader(stream);
+            _csvContent = await reader.ReadToEndAsync();
+
+            // Preview
+            using var form = new MultipartFormDataContent();
+            using var content = new StringContent(_csvContent);
+            form.Add(new StreamContent(new System.IO.MemoryStream(
+                System.Text.Encoding.UTF8.GetBytes(_csvContent))), "file", file.Name);
+
+            var resp = await Http.PostAsync($"api/csv-import/{AccountId}/preview", form);
+            resp.EnsureSuccessStatusCode();
+            _preview = await resp.Content.ReadFromJsonAsync<CsvPreview>();
+
+            // Check if saved mapping is still valid
+            if (_mapping.DateColumn != "")
+            {
+                var headers = _preview?.Headers ?? Array.Empty<string>();
+                _missingColumns = _mapping.MappedColumns()
+                    .Where(col => !headers.Select(h => h.ToLowerInvariant()).Contains(col))
+                    .ToList();
+            }
+
+            // Detect amount type from saved mapping
+            if (!string.IsNullOrEmpty(_mapping.AmountColumn))
+                _amountType = "single";
+
+            _step = Step.Map;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _uploading = false; }
+    }
+
+    private async Task RunImport()
+    {
+        if (_csvContent == null) return;
+        _importing = true; _error = null;
+
+        // Apply amount type
+        if (_amountType == "single")
+        {
+            _mapping.CreditColumn = null;
+            _mapping.DebitColumn = null;
+        }
+        else
+        {
+            _mapping.AmountColumn = null;
+        }
+
+        try
+        {
+            // Save mapping profile
+            await Http.PostAsJsonAsync($"api/csv-import/{AccountId}/profile", _mapping);
+
+            // Run import
+            using var form = new MultipartFormDataContent();
+            form.Add(new StreamContent(new System.IO.MemoryStream(
+                System.Text.Encoding.UTF8.GetBytes(_csvContent))), "file", "import.csv");
+
+            var resp = await Http.PostAsync($"api/csv-import/{AccountId}/import", form);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+                _error = err?["error"] ?? "Import failed.";
+                return;
+            }
+
+            _result = await resp.Content.ReadFromJsonAsync<ImportResult>();
+            _step = Step.Result;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _importing = false; }
+    }
+
+    private void Reset()
+    {
+        _step = Step.Upload;
+        _preview = null;
+        _result = null;
+        _csvContent = null;
+        _error = null;
+        _message = null;
+        _missingColumns.Clear();
+    }
+
+    // Local mirror of server types for JSON deserialization
+    private record CsvPreview(string[] Headers, string[][] Rows);
+    private record SkippedRow(int RowNumber, string RawData, string Reason);
+    private record ImportResult(int Imported, int SkippedDuplicates, List<SkippedRow> SkippedRows);
+}

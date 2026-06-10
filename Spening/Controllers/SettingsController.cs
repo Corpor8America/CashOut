@@ -9,8 +9,9 @@ public class SettingsController : ControllerBase
     public SettingsController(SettingsService settings) => _settings = settings;
 
     /// <summary>
-    /// Returns current settings. output_year is dynamic (derived from last transaction)
-    /// and is read-only — it cannot be set via PUT.
+    /// Returns current settings.
+    /// - plaid_environment: read-only, from PLAID_ENV environment variable
+    /// - output_year: read-only, derived from most recent transaction
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetAll() =>
@@ -22,29 +23,15 @@ public class SettingsController : ControllerBase
         Ok(await _settings.GetAvailableYears());
 
     [HttpPut]
-    public async Task<IActionResult> Update([FromBody] Dictionary<string, string> updates)
+    public IActionResult Update()
     {
-        foreach (var (key, value) in updates)
+        // All settings are now read-only via the API.
+        // plaid_environment: set via PLAID_ENV environment variable
+        // output_year: derived from most recent transaction
+        return BadRequest(new
         {
-            switch (key)
-            {
-                case "plaid_environment":
-                    if (!new[] { "sandbox", "development", "production" }.Contains(value))
-                        return BadRequest(new { error = $"Invalid environment: {value}" });
-                    await _settings.SetPlaidEnvironment(value);
-                    break;
-
-                case "output_year":
-                    // output_year is now dynamic and cannot be set manually
-                    return BadRequest(new
-                    {
-                        error = "output_year is read-only. It is derived from your most recent transaction."
-                    });
-
-                default:
-                    return BadRequest(new { error = $"Unknown setting key: {key}" });
-            }
-        }
-        return Ok(await _settings.GetAll());
+            error = "Settings are managed via environment variables. " +
+                    "Set PLAID_ENV to configure the Plaid environment (sandbox/development/production)."
+        });
     }
 }

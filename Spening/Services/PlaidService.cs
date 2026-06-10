@@ -26,9 +26,9 @@ public class PlaidService
 
     // ── Helpers ───────────────────────────────────────────────────────────
 
-    private async Task<string> BaseUrl()
+    private string BaseUrl()
     {
-        var env = await _settings.GetPlaidEnvironment();
+        var env = _settings.GetPlaidEnvironment();
         return env switch
         {
             "production" => "https://production.plaid.com",
@@ -42,9 +42,9 @@ public class PlaidService
         ?? Environment.GetEnvironmentVariable("PLAID_CLIENT_ID")
         ?? throw new InvalidOperationException("PLAID_CLIENT_ID is not set.");
 
-    private async Task<string> Secret()
+    private string Secret()
     {
-        var env = await _settings.GetPlaidEnvironment();
+        var env = _settings.GetPlaidEnvironment();
         var key = env == "production" ? "PLAID_PRODUCTION_SECRET" : "PLAID_SANDBOX_SECRET";
         return _config[key]
             ?? Environment.GetEnvironmentVariable(key)
@@ -53,7 +53,7 @@ public class PlaidService
 
     private async Task<JsonElement> Post(string path, object body)
     {
-        var url = await BaseUrl() + path;
+        var url = BaseUrl() + path;
         var response = await _http.PostAsJsonAsync(url, body);
         if (!response.IsSuccessStatusCode)
         {
@@ -64,22 +64,50 @@ public class PlaidService
         return await response.Content.ReadFromJsonAsync<JsonElement>();
     }
 
+    // ── Link Token ────────────────────────────────────────────────────────
+
+    public async Task<string> CreateLinkToken()
+    {
+        var json = await Post("/link/token/create", new
+        {
+            client_id = ClientId,
+            secret = Secret(),
+            client_name = "Spening",
+            language = "en",
+            country_codes = new[] { "US" },
+            user = new { client_user_id = "spening-user" },
+            products = new[] { "transactions" }
+        });
+
+        return json.GetProperty("link_token").GetString()!;
+    }
+
+    // ── Token Exchange ────────────────────────────────────────────────────
+
+    public async Task<List<LinkedAccount>> ExchangeAndPersist(string publicToken)
+    {
+        var json = await Post("/item/public_token/exchange", new
+        {
+            client_id = ClientId,
+            secret = Secret(),
+            public_token = publicToken
+        });
+
+        var plainAccessToken = json.GetProperty("access_token").GetString()!;
+        return await FetchAndPersistAccounts(plainAccessToken);
+    }
+
     // ── Accounts ──────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Fetches accounts from Plaid for a given access token and persists them.
-    /// Called after token exchange in Phase 3.
-    /// </summary>
     public async Task<List<LinkedAccount>> FetchAndPersistAccounts(string plainAccessToken)
     {
         var json = await Post("/accounts/get", new
         {
             client_id = ClientId,
-            secret = await Secret(),
+            secret = Secret(),
             access_token = plainAccessToken
         });
 
-        // Capture both institution_id and item_id for stable group-delete
         var item = json.GetProperty("item");
         var institutionId = item.TryGetProperty("institution_id", out var inst)
             ? inst.GetString() ?? "" : "";
@@ -108,7 +136,6 @@ public class PlaidService
                 CreatedAt = DateTime.UtcNow
             };
 
-            // Upsert — avoid duplicates if re-linking
             var existing = await _db.LinkedAccounts
                 .FirstOrDefaultAsync(x => x.AccountId == account.AccountId);
 
@@ -137,7 +164,7 @@ public class PlaidService
             var json = await Post("/institutions/get_by_id", new
             {
                 client_id = ClientId,
-                secret = await Secret(),
+                secret = Secret(),
                 institution_id = institutionId,
                 country_codes = new[] { "US" }
             });
@@ -149,82 +176,34 @@ public class PlaidService
         }
     }
 
-    /// <summary>
-    /// Revokes the Plaid Item server-side and removes all associated accounts from the DB.
-    /// If the Plaid revocation call fails (e.g. token already invalid), local records are
-    /// still deleted so the user is never left with an unremovable dangling account.
-    /// </summary>
     public async Task RemoveItem(string encryptedAccessToken, string itemId)
     {
-        // Best-effort remote revocation — don't let Plaid errors block local cleanup
         try
         {
             var plainToken = _encryption.Decrypt(encryptedAccessToken);
             await Post("/item/remove", new
             {
                 client_id = ClientId,
-                secret = await Secret(),
+                secret = Secret(),
                 access_token = plainToken
             });
         }
         catch (Exception ex)
         {
-            // Log but continue — local deletion must still happen
             Console.Error.WriteLine(
                 $"[PlaidService] RemoveItem: Plaid revocation failed (will still delete locally): {ex.Message}");
         }
 
-        // Delete by stable ItemId rather than encrypted token to handle re-link scenarios
-        // where the same Item has different ciphertexts across accounts
         IQueryable<LinkedAccount> toRemove = string.IsNullOrEmpty(itemId)
-            ? _db.LinkedAccounts.Where(a => a.AccessToken == encryptedAccessToken) // fallback
+            ? _db.LinkedAccounts.Where(a => a.AccessToken == encryptedAccessToken)
             : _db.LinkedAccounts.Where(a => a.ItemId == itemId);
 
         _db.LinkedAccounts.RemoveRange(toRemove);
         await _db.SaveChangesAsync();
     }
 
-    public async Task<string> CreateLinkToken()
-    {
-        var json = await Post("/link/token/create", new
-        {
-            client_id = ClientId,
-            secret = await Secret(),
-            client_name = "Spening",
-            language = "en",
-            country_codes = new[] { "US" },
-            user = new { client_user_id = "spening-user" },
-            products = new[] { "transactions" }
-        });
-
-        return json.GetProperty("link_token").GetString()!;
-    }
-
-    /// <summary>
-    /// Exchanges a public_token (from Plaid Link) for a persistent access_token,
-    /// then fetches and persists all accounts associated with the new Item.
-    /// Returns the list of newly added LinkedAccount records.
-    /// </summary>
-    public async Task<List<LinkedAccount>> ExchangeAndPersist(string publicToken)
-    {
-        var json = await Post("/item/public_token/exchange", new
-        {
-            client_id = ClientId,
-            secret = await Secret(),
-            public_token = publicToken
-        });
-
-        var plainAccessToken = json.GetProperty("access_token").GetString()!;
-        return await FetchAndPersistAccounts(plainAccessToken);
-    }
-
     // ── Transactions ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Runs a full cursor-based sync for one account's access token.
-    /// Loops until has_more is false. Returns all added/modified transactions,
-    /// all removed transaction IDs, and the new cursor to persist.
-    /// </summary>
     public async Task<(List<Transaction> added, List<string> removedIds, string nextCursor)>
         SyncTransactions(string encryptedAccessToken, string? currentCursor)
     {
@@ -239,7 +218,7 @@ public class PlaidService
             var json = await Post("/transactions/sync", new
             {
                 client_id = ClientId,
-                secret = await Secret(),
+                secret = Secret(),
                 access_token = plainToken,
                 cursor = cursor,
                 options = new { include_personal_finance_category = true }
@@ -249,7 +228,7 @@ public class PlaidService
                 added.Add(MapTransaction(t));
 
             foreach (var t in json.GetProperty("modified").EnumerateArray())
-                added.Add(MapTransaction(t));  // modified treated as upserts
+                added.Add(MapTransaction(t));
 
             foreach (var t in json.GetProperty("removed").EnumerateArray())
                 removedIds.Add(t.GetProperty("transaction_id").GetString()!);
@@ -261,11 +240,6 @@ public class PlaidService
         return (added, removedIds, cursor);
     }
 
-    /// <summary>
-    /// Fetches all transactions for a calendar year using /transactions/get.
-    /// Paginates using count/offset until all transactions are retrieved.
-    /// Does not update sync cursor.
-    /// </summary>
     public async Task<List<Transaction>> FetchTransactions(
         string encryptedAccessToken, int year)
     {
@@ -280,7 +254,7 @@ public class PlaidService
             var json = await Post("/transactions/get", new
             {
                 client_id = ClientId,
-                secret = await Secret(),
+                secret = Secret(),
                 access_token = plainToken,
                 start_date = $"{year}-01-01",
                 end_date = $"{year}-12-31",
@@ -302,7 +276,6 @@ public class PlaidService
             allTransactions.AddRange(page);
             offset += page.Count;
 
-            // Safety valve: if Plaid returns 0 items unexpectedly, stop to avoid infinite loop
             if (page.Count == 0) break;
 
         } while (allTransactions.Count < totalTransactions);
@@ -324,10 +297,10 @@ public class PlaidService
                    && cat.ValueKind == JsonValueKind.Array
                    ? string.Join(" > ", cat.EnumerateArray().Select(x => x.GetString()))
                    : "",
+        Source = TransactionSource.Plaid,
         CreatedAt = DateTime.UtcNow,
         UpdatedAt = DateTime.UtcNow
     };
 
-    /// <summary>Returns the decrypted access token for a given account. Used by sync/fetch.</summary>
     public string DecryptToken(string encryptedToken) => _encryption.Decrypt(encryptedToken);
 }

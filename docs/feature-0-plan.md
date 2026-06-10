@@ -6,154 +6,182 @@ Features are grouped into phases based on dependency, shared context, and requir
 
 ---
 
-# Phase 1 — Core Infrastructure & Configuration  
-These features must be implemented first because all other systems depend on them.
+## Progress Tracker
+
+### Phase 1 — Core Infrastructure & Configuration
+
+#### Feature 1 — Application Versioning ✅ COMPLETE
+- [x] `VERSION` file created at repo root (value: `1.0.0`)
+- [x] `Spening.csproj` updated to copy `VERSION` into publish output
+- [x] `VersionController.cs` created — exposes `GET /api/version`
+- [x] `docker-publish.yml` updated to read `VERSION` and embed as image label
+- [x] `Settings.razor` updated to display version (reads from `/api/version`)
+
+#### Feature 2 — Plaid Environment Variables ✅ COMPLETE
+- [x] `PLAID_ENV` env var added as the authoritative Plaid environment source
+- [x] `SettingsService` refactored — `GetPlaidEnvironment()` now reads `PLAID_ENV` (sync, no DB hit)
+- [x] `PlaidService` updated — all `await Secret()` / `await BaseUrl()` calls made synchronous
+- [x] `AppSetting` model stripped of `PlaidEnvironment` column (DB table is now just an anchor row)
+- [x] `AppDbContext` updated accordingly
+- [x] `SettingsController` updated — `PUT /api/settings` now returns 400 (all settings read-only)
+- [x] `Settings.razor` updated — shows plaid_environment as read-only with env var hint
+- [x] `.env.example` updated to include `PLAID_ENV`
+
+---
+
+### Phase 2 — Account Architecture
+
+#### Feature 3 — Account Types: Linked vs Manual ✅ COMPLETE
+- [x] `ManualAccount.cs` model created
+- [x] `AppDbContext` updated — `ManualAccounts` DbSet added
+- [x] `ManualAccountsController.cs` created — `GET/POST/DELETE /api/manual-accounts`
+- [x] `ManualAccounts.razor` page created at `/manual-accounts`
+- [x] `MainLayout.razor` updated — separate "Linked Accounts" and "Manual Accounts" nav items with section labels
+- [x] `app.css` updated — nav section labels, CSV import styles
+
+---
+
+### Phase 3 — Data Normalization Layer
+
+#### Feature 4 — Business Normalization ✅ COMPLETE
+- [x] `RawBusiness.cs` model created
+- [x] `BusinessAlias.cs` model created
+- [x] `RawBusinessAliasMap.cs` pivot model created
+- [x] `AppDbContext` updated — all three new DbSets + EF configuration
+- [x] `BusinessNormalizationService.cs` created — GetOrCreateRawBusiness, Resolve, GetAliasId, admin ops
+- [x] `BusinessNormalizationController.cs` created — CRUD for businesses, aliases, mappings
+
+---
+
+### Phase 4 — Ingestion Systems
+
+#### Feature 5 — CSV Import System ✅ COMPLETE
+- [x] `Transaction` model updated — `Source` enum, `DedupKey`, `RawBusinessId`, `AliasId` fields
+- [x] `CsvMappingProfile.cs` model created
+- [x] `AppDbContext` updated — `CsvMappingProfiles` DbSet added
+- [x] `CsvImportService.cs` created — preview, profile management, import with dedup + skipped rows
+- [x] `CsvImportController.cs` created — preview, import, profile, skipped export endpoints
+- [x] `CsvImport.razor` page created at `/csv-import/{AccountId}` — 3-step upload → map → result
+- [x] `app.css` updated — `.file-drop`, `.mapping-grid`, `.skipped-rows` styles
+
+#### Feature 6 — Plaid Sync System ✅ COMPLETE
+- [x] `TransactionService` updated — CSV protection (never delete/modify `Source == CSV` rows)
+- [x] `TransactionService` updated — INVALID_CURSOR handling (resets cursor, full resync)
+- [x] `TransactionService` updated — business normalization integrated into Plaid merge path
+- [x] `TransactionService` updated — category priority enforced (alias > raw business > plaid)
+- [x] `PlaidService` updated — all methods synchronous for env config (no more async Secret/BaseUrl)
+- [x] `TransactionService.ExportCsv` updated — includes `Source` column in output
+
+---
+
+## Remaining Work (Migration)
+
+A new EF Core migration must be generated to apply all schema changes:
+
+```bash
+cd Spening
+dotnet ef migrations add FeatureExpansion --output-dir Data/Migrations
+dotnet ef database update
+```
+
+### Schema changes in this migration:
+- `app_settings`: drop `PlaidEnvironment` column (table becomes an anchor-only row)
+- `linked_accounts`: already has `ItemId` from previous migration
+- `transactions`: add `source text NOT NULL DEFAULT 'Plaid'`, `dedup_key text`, `raw_business_id int`, `alias_id int`
+- NEW: `manual_accounts` table
+- NEW: `raw_businesses` table
+- NEW: `business_aliases` table
+- NEW: `raw_business_alias_map` table
+- NEW: `csv_mapping_profiles` table
+
+---
+
+## Files Changed / Created in This Session
+
+| File | Status |
+|---|---|
+| `VERSION` | NEW |
+| `Spening/Spening.csproj` | MODIFIED — copies VERSION to publish |
+| `Spening/Controllers/VersionController.cs` | NEW |
+| `.github/workflows/docker-publish.yml` | MODIFIED — reads VERSION, adds label |
+| `.env.example` | MODIFIED — adds PLAID_ENV |
+| `Spening/Services/SettingsService.cs` | MODIFIED — PLAID_ENV from env var |
+| `Spening/Services/PlaidService.cs` | MODIFIED — sync env config, CSV-safe |
+| `Spening/Models/AppSetting.cs` | MODIFIED — stripped to Id-only |
+| `Spening/Data/AppDbContext.cs` | MODIFIED — all new models registered |
+| `Spening/Controllers/SettingsController.cs` | MODIFIED — PUT returns 400 |
+| `Spening/Pages/Settings.razor` | MODIFIED — read-only, shows version |
+| `Spening/Models/ManualAccount.cs` | NEW |
+| `Spening/Controllers/ManualAccountsController.cs` | NEW |
+| `Spening/Pages/ManualAccounts.razor` | NEW |
+| `Spening/Shared/MainLayout.razor` | MODIFIED — nav sections |
+| `Spening/wwwroot/app.css` | MODIFIED — nav labels, CSV styles |
+| `Spening/Models/RawBusiness.cs` | NEW |
+| `Spening/Models/BusinessAlias.cs` | NEW |
+| `Spening/Models/RawBusinessAliasMap.cs` | NEW |
+| `Spening/Services/BusinessNormalizationService.cs` | NEW |
+| `Spening/Controllers/BusinessNormalizationController.cs` | NEW |
+| `Spening/Models/Transaction.cs` | MODIFIED — Source, DedupKey, RawBusinessId, AliasId |
+| `Spening/Models/CsvMappingProfile.cs` | NEW |
+| `Spening/Services/CsvImportService.cs` | NEW |
+| `Spening/Controllers/CsvImportController.cs` | NEW |
+| `Spening/Pages/CsvImport.razor` | NEW |
+| `Spening/Services/TransactionService.cs` | MODIFIED — normalization, CSV protection, cursor reset |
+| `Spening/Program.cs` | MODIFIED — new service registrations |
+
+---
+
+## If Resuming After Token Interruption
+
+All 6 features are implemented. The only remaining task is generating the EF Core migration:
+
+```bash
+cd Spening
+dotnet ef migrations add FeatureExpansion --output-dir Data/Migrations
+dotnet ef database update
+```
+
+If the migration fails due to AppSetting model changes (dropping PlaidEnvironment column),
+the migration may need to be hand-edited to handle the column drop gracefully since the
+column exists in the DB from the previous `fixings` migration.
+
+---
+
+# Original Plan Below (Reference)
+
+## Phase 1 — Core Infrastructure & Configuration
 
 ## 1. Application Versioning  
 File: `feature-1-application-version.md`
 
-Purpose:  
-- Establish a single authoritative version source  
-- Enable CI version enforcement  
-- Provide version visibility to backend and UI  
-
-Why first:  
-- CI/CD and Docker workflows depend on this  
-- Ensures all future features ship with proper versioning  
-
----
-
 ## 2. Plaid Environment Variables  
 File: `feature-2-plaid-variables.md`
 
-Purpose:  
-- Move Plaid secrets/config out of the database  
-- Standardize environment‑based configuration  
-- Ensure secure and consistent Plaid initialization  
-
-Why second:  
-- Required before implementing Linked Accounts or Plaid Sync  
-- Ensures the backend starts with correct Plaid configuration  
-
----
-
-# Phase 2 — Account Architecture  
-These features define the structure of accounts and ingestion paths.
+## Phase 2 — Account Architecture
 
 ## 3. Account Types: Linked vs Manual  
 File: `feature-3-accounttypes.md`
 
-Purpose:  
-- Establish two ingestion paths  
-- Define CSV‑only vs Plaid‑connected behavior  
-- Provide UI separation  
-
-Why this phase:  
-- CSV Import and Plaid Sync both depend on account type  
-- Must exist before ingestion logic is implemented  
-
----
-
-# Phase 3 — Data Normalization Layer  
-This layer is required before any ingestion system (CSV or Plaid) can function correctly.
+## Phase 3 — Data Normalization Layer
 
 ## 4. Business Normalization  
 File: `feature-4-business-normalization.md`
 
-Purpose:  
-- Normalize raw merchant names  
-- Provide aliasing and category override system  
-- Ensure deterministic categorization  
-
-Why now:  
-- CSV Import and Plaid Sync both rely on RawBusinesses, Aliases, and category priority  
-- Must be implemented before ingestion logic  
-
----
-
-# Phase 4 — Ingestion Systems  
-These features define how data enters the system.  
-They depend on all previous phases.
+## Phase 4 — Ingestion Systems
 
 ## 5. CSV Import System  
 File: `feature-5-csv-import.md`
 
-Purpose:  
-- Map CSV columns  
-- Deduplicate rows  
-- Handle credit/debit logic  
-- Surface skipped rows  
-- Maintain mapping profiles  
-
-Dependencies:  
-- Account Types (Manual vs Linked)  
-- Business Normalization  
-- Credit/Debit schema  
-
-Why before Plaid Sync:  
-- CSV import is simpler  
-- Helps validate normalization and transaction schema  
-
----
-
 ## 6. Plaid Sync System  
 File: `feature-6-plaid-sync.md`
 
-Purpose:  
-- Incremental Plaid sync  
-- Pending→posted transitions  
-- Add/update/remove logic  
-- Cursor handling  
-- CSV protection  
-- Business normalization integration  
+## Summary Table
 
-Dependencies:  
-- Plaid environment variables  
-- Account Types  
-- Business Normalization  
-- CSV Import (for shared transaction model)  
-
-Why last:  
-- Most complex ingestion path  
-- Requires all foundational systems to be in place  
-
----
-
-# Summary Table
-
-| Phase | Feature | File |
-|-------|---------|------|
-| 1 | Application Versioning | feature-1-application-version.md |
-| 1 | Plaid Environment Variables | feature-2-plaid-variables.md |
-| 2 | Account Types | feature-3-accounttypes.md |
-| 3 | Business Normalization | feature-4-business-normalization.md |
-| 4 | CSV Import System | feature-5-csv-import.md |
-| 4 | Plaid Sync System | feature-6-plaid-sync.md |
-
----
-
-# Execution Workflow (Agent‑Friendly)
-
-1. **Initialize core infrastructure**  
-   - Implement versioning  
-   - Implement Plaid environment variable loading  
-
-2. **Define account architecture**  
-   - Add Linked + Manual account types  
-   - Update UI navigation  
-
-3. **Implement normalization layer**  
-   - RawBusinesses  
-   - Aliases  
-   - RawBusinessAliasMap  
-   - Category priority logic  
-
-4. **Implement ingestion systems**  
-   - CSV Import (mapping, dedup, skipped rows, profiles)  
-   - Plaid Sync (cursor, add/update/remove, pending→posted)  
-
-5. **Verify integration**  
-   - Ensure CSV and Plaid both feed into normalization  
-   - Ensure account types enforce correct ingestion rules  
-   - Ensure versioning and environment variables are respected  
-
+| Phase | Feature | File | Status |
+|-------|---------|------|--------|
+| 1 | Application Versioning | feature-1-application-version.md | ✅ |
+| 1 | Plaid Environment Variables | feature-2-plaid-variables.md | ✅ |
+| 2 | Account Types | feature-3-accounttypes.md | ✅ |
+| 3 | Business Normalization | feature-4-business-normalization.md | ✅ |
+| 4 | CSV Import System | feature-5-csv-import.md | ✅ |
+| 4 | Plaid Sync System | feature-6-plaid-sync.md | ✅ |

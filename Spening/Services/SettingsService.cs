@@ -3,8 +3,13 @@ using Microsoft.EntityFrameworkCore;
 public class SettingsService
 {
     private readonly AppDbContext _db;
+    private readonly IConfiguration _config;
 
-    public SettingsService(AppDbContext db) => _db = db;
+    public SettingsService(AppDbContext db, IConfiguration config)
+    {
+        _db = db;
+        _config = config;
+    }
 
     // ── Read / Write ──────────────────────────────────────────────────────
 
@@ -13,32 +18,37 @@ public class SettingsService
         var row = await _db.AppSettings.FindAsync(1);
         if (row == null)
         {
-            // Seed a default row if somehow missing (shouldn't happen after migration)
-            row = new AppSetting { Id = 1, PlaidEnvironment = "sandbox" };
+            row = new AppSetting { Id = 1 };
             _db.AppSettings.Add(row);
             await _db.SaveChangesAsync();
         }
         return row;
     }
 
-    public async Task<string> GetPlaidEnvironment()
+    /// <summary>
+    /// Reads the Plaid environment from the PLAID_ENV environment variable.
+    /// Falls back to ASPNETCORE_ENVIRONMENT-based default (sandbox for non-production).
+    /// The DB no longer stores this value — it is deployment configuration.
+    /// </summary>
+    public string GetPlaidEnvironment()
     {
-        var row = await GetRow();
-        return row.PlaidEnvironment;
-    }
+        var env = _config["PLAID_ENV"]
+            ?? Environment.GetEnvironmentVariable("PLAID_ENV");
 
-    public async Task SetPlaidEnvironment(string environment)
-    {
-        var row = await GetRow();
-        row.PlaidEnvironment = environment;
-        _db.AppSettings.Update(row);
-        await _db.SaveChangesAsync();
+        if (!string.IsNullOrWhiteSpace(env))
+        {
+            env = env.Trim().ToLowerInvariant();
+            if (env is "sandbox" or "development" or "production")
+                return env;
+        }
+
+        // Sensible default: sandbox unless explicitly configured otherwise
+        return "sandbox";
     }
 
     /// <summary>
     /// Returns the year of the most recent transaction in the database.
     /// Falls back to the current calendar year if there are no transactions.
-    /// This replaces the old static `output_year` setting per featureChanges.md.
     /// </summary>
     public async Task<int> GetOutputYear()
     {
@@ -66,26 +76,23 @@ public class SettingsService
             .OrderByDescending(y => y)
             .ToListAsync();
 
-        // Always include current year even if no transactions yet
         if (!yearsWithData.Contains(currentYear))
             yearsWithData.Insert(0, currentYear);
 
         return yearsWithData;
     }
 
-    // ── GetAll: for backward compatibility with frontend dict consumers ───
-
     /// <summary>
     /// Returns settings as a dictionary for API consumers.
-    /// output_year is now dynamic (derived from last transaction), not stored.
+    /// plaid_environment is now read-only (from env var, not DB).
+    /// output_year is dynamic (derived from last transaction).
     /// </summary>
     public async Task<Dictionary<string, string>> GetAll()
     {
-        var row = await GetRow();
         var outputYear = await GetOutputYear();
         return new Dictionary<string, string>
         {
-            ["plaid_environment"] = row.PlaidEnvironment,
+            ["plaid_environment"] = GetPlaidEnvironment(),
             ["output_year"] = outputYear.ToString()
         };
     }
