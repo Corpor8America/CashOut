@@ -11,8 +11,14 @@
     </p>
 }
 
-@if (_error != null) { <div class="alert-error">@_error</div> }
-@if (_message != null) { <div class="alert-success">@_message</div> }
+@if (_error != null)
+{
+    <div class="alert-error">@_error</div>
+}
+@if (_message != null)
+{
+    <div class="alert-success">@_message</div>
+}
 
 @if (_step == Step.Upload)
 {
@@ -47,72 +53,96 @@
     <div style="overflow-x:auto;margin-bottom:1.25rem">
         <table style="font-size:0.8rem">
             <thead>
-                <tr>@foreach (var h in _preview.Headers) { <th>@h</th> }</tr>
-            </thead>
-            <tbody>
-                @foreach (var row in _preview.Rows)
-                {
-                    <tr>@foreach (var cell in row) { <td>@cell</td> }</tr>
+                <tr>@foreach (var h in _preview.Headers) {
+                    <th>@h</th>
                 }
-            </tbody>
-        </table>
-    </div>
-
-    <div class="mapping-grid">
-        <label>Date column *</label>
-        <select @bind="_mapping.DateColumn">
-            <option value="">— select —</option>
-            @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
-        </select>
-
-        <label>Description column *</label>
-        <select @bind="_mapping.DescriptionColumn">
-            <option value="">— select —</option>
-            @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
-        </select>
-
-        <label>Amount type *</label>
-        <select @bind="_amountType">
-            <option value="split">Separate Credit + Debit columns</option>
-            <option value="single">Single signed amount column</option>
-        </select>
-
-        @if (_amountType == "split")
-        {
-            <label>Credit column</label>
-            <select @bind="_mapping.CreditColumn">
-                <option value="">— none —</option>
-                @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
-            </select>
-
-            <label>Debit column</label>
-            <select @bind="_mapping.DebitColumn">
-                <option value="">— none —</option>
-                @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
-            </select>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in _preview.Rows)
+            {
+                <tr>@foreach (var cell in row) {
+                    <td>@cell</td>
+                }
+            </tr>
         }
-        else
-        {
-            <label>Amount column</label>
-            <select @bind="_mapping.AmountColumn">
-                <option value="">— select —</option>
-                @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
-            </select>
-        }
+    </tbody>
+</table>
+</div>
 
-        <label>Category column</label>
-        <select @bind="_mapping.CategoryColumn">
+<div class="mapping-grid">
+    <label>Date column *</label>
+    <select @bind="_mapping.DateColumn">
+        <option value="">— select —</option>
+        @foreach (var h in _preview.Headers)
+        {
+            <option value="@h">@h</option>
+        }
+    </select>
+
+    <label>Description column *</label>
+    <select @bind="_mapping.DescriptionColumn">
+        <option value="">— select —</option>
+        @foreach (var h in _preview.Headers)
+        {
+            <option value="@h">@h</option>
+        }
+    </select>
+
+    <label>Amount type *</label>
+    <select @bind="_amountType">
+        <option value="split">Separate Credit + Debit columns</option>
+        <option value="single">Single signed amount column</option>
+    </select>
+
+    @if (_amountType == "split")
+    {
+        <label>Credit column</label>
+        <select @bind="_mapping.CreditColumn">
             <option value="">— none —</option>
-            @foreach (var h in _preview.Headers) { <option value="@h">@h</option> }
+            @foreach (var h in _preview.Headers)
+            {
+                <option value="@h">@h</option>
+            }
         </select>
-    </div>
 
-    <div class="toolbar">
-        <button class="btn-primary" @onclick="RunImport" disabled="@_importing">
-            @(_importing ? "Importing..." : "Import CSV")
-        </button>
-        <button @onclick="() => _step = Step.Upload">← Back</button>
-    </div>
+        <label>Debit column</label>
+        <select @bind="_mapping.DebitColumn">
+            <option value="">— none —</option>
+            @foreach (var h in _preview.Headers)
+            {
+                <option value="@h">@h</option>
+            }
+        </select>
+    }
+    else
+    {
+        <label>Amount column</label>
+        <select @bind="_mapping.AmountColumn">
+            <option value="">— select —</option>
+            @foreach (var h in _preview.Headers)
+            {
+                <option value="@h">@h</option>
+            }
+        </select>
+    }
+
+    <label>Category column</label>
+    <select @bind="_mapping.CategoryColumn">
+        <option value="">— none —</option>
+        @foreach (var h in _preview.Headers)
+        {
+            <option value="@h">@h</option>
+        }
+    </select>
+</div>
+
+<div class="toolbar">
+    <button class="btn-primary" @onclick="RunImport" disabled="@_importing">
+        @(_importing ? "Importing..." : "Import CSV")
+    </button>
+    <button @onclick="() => _step = Step.Upload">← Back</button>
+</div>
 }
 
 @if (_step == Step.Result && _result != null)
@@ -120,9 +150,18 @@
     <h3>Import Complete</h3>
     <table style="max-width:360px;margin-bottom:1.25rem">
         <tbody>
-            <tr><td>Rows imported</td><td class="text-right"><strong>@_result.Imported</strong></td></tr>
-            <tr><td>Duplicates skipped</td><td class="text-right">@_result.SkippedDuplicates</td></tr>
-            <tr><td>Other skipped</td><td class="text-right">@_result.SkippedRows.Count</td></tr>
+            <tr>
+                <td>Rows imported</td>
+                <td class="text-right"><strong>@_result.Imported</strong></td>
+            </tr>
+            <tr>
+                <td>Duplicates skipped</td>
+                <td class="text-right">@_result.SkippedDuplicates</td>
+            </tr>
+            <tr>
+                <td>Other skipped</td>
+                <td class="text-right">@_result.SkippedRows.Count</td>
+            </tr>
         </tbody>
     </table>
 
@@ -132,7 +171,11 @@
             <summary>@_result.SkippedRows.Count row(s) skipped — click to review</summary>
             <table style="margin:0;border-radius:0">
                 <thead>
-                    <tr><th>#</th><th>Data</th><th>Reason</th></tr>
+                    <tr>
+                        <th>#</th>
+                        <th>Data</th>
+                        <th>Reason</th>
+                    </tr>
                 </thead>
                 <tbody>
                     @foreach (var row in _result.SkippedRows)
@@ -154,7 +197,7 @@
     }
 
     <div class="toolbar" style="margin-top:1.25rem">
-        <button class="btn-primary" @onclick="() => Nav.NavigateTo($\"/transactions\")">
+        <button class="btn-primary" @onclick="GoToTransactions">
             View Transactions
         </button>
         <button @onclick="Reset">Import Another File</button>
@@ -270,6 +313,12 @@
         catch (Exception ex) { _error = ex.Message; }
         finally { _importing = false; }
     }
+
+    private void GoToTransactions()
+    {
+        Nav.NavigateTo("/transactions");
+    }
+
 
     private void Reset()
     {

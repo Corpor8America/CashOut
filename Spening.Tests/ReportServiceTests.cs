@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Spening.Tests;
@@ -16,7 +17,17 @@ public class ReportServiceTests
         return new AppDbContext(opts);
     }
 
-    private static SettingsService BuildSettings(AppDbContext db) => new(db);
+    private static IConfiguration BuildConfig(Dictionary<string, string>? initialData = null)
+    {
+        IEnumerable<KeyValuePair<string, string?>> data =
+        initialData ?? new Dictionary<string, string?>() { { "PLAID_ENV", "production" } };
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(data)
+            .Build();
+    }
+
+    private static SettingsService BuildSettings(AppDbContext db) => new(db, BuildConfig());
 
     private static Transaction MakeTxn(
         string id, int year, int month, int day,
@@ -37,7 +48,6 @@ public class ReportServiceTests
         string dbName, IEnumerable<Transaction> transactions)
     {
         var db = BuildDb(dbName);
-        db.AppSettings.Add(new AppSetting { PlaidEnvironment = "sandbox" });
         db.Transactions.AddRange(transactions);
         await db.SaveChangesAsync();
 

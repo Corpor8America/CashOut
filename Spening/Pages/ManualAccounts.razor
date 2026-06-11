@@ -1,0 +1,129 @@
+@page "/manual-accounts"
+@inject HttpClient Http
+
+<h2>Manual Accounts</h2>
+<p class="text-muted" style="margin-bottom:1.25rem">
+    CSV-only accounts — no Plaid connection. Import transactions via CSV upload.
+</p>
+
+@if (_error != null)
+{
+    <div class="alert-error">@_error</div>
+}
+@if (_message != null)
+{
+    <div class="alert-success">@_message</div>
+}
+
+@if (_loading)
+{
+    <p class="text-muted">Loading...</p>
+}
+else if (_accounts.Count == 0)
+{
+    <p class="text-muted">No manual accounts yet. Add one below.</p>
+}
+else
+{
+    <table style="margin-bottom:1.5rem">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Description</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var acct in _accounts)
+            {
+                <tr>
+                    <td>@acct.Name</td>
+                    <td class="text-muted">@(string.IsNullOrEmpty(acct.Description) ? "—" : acct.Description)</td>
+                    <td class="text-muted">@acct.CreatedAt.ToString("MMM d, yyyy")</td>
+                    <td>
+                        @if (_confirmDeleteId == acct.Id)
+                        {
+                            <span>Delete and remove all transactions? </span>
+                            <button @onclick="() => ConfirmDelete(acct.Id)">Yes</button>
+                            <button @onclick="CancelDelete">Cancel</button>
+                        }
+                        else
+                        {
+                            <button class="btn-danger btn-sm" @onclick="() => RequestDelete(acct.Id)">Delete</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+<h3>Add Manual Account</h3>
+<div class="toolbar" style="margin-top:0.75rem">
+    <input type="text" @bind="_newName" placeholder="Account name" style="width:200px" />
+    <input type="text" @bind="_newDescription" placeholder="Description (optional)" style="width:220px" />
+    <button class="btn-primary" @onclick="AddAccount" disabled="@_adding">
+        @(_adding ? "Adding..." : "Add Account")
+    </button>
+</div>
+
+@code {
+    private List<AccountDto> _accounts = new();
+    private bool _loading = true;
+    private bool _adding;
+    private string _newName = "";
+    private string _newDescription = "";
+    private Guid? _confirmDeleteId;
+    private string? _error, _message;
+
+    protected override async Task OnInitializedAsync() => await LoadAccounts();
+
+    private async Task LoadAccounts()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/manual-accounts") ?? new();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task AddAccount()
+    {
+        if (string.IsNullOrWhiteSpace(_newName)) return;
+        _adding = true; _message = null; _error = null;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/manual-accounts",
+                new { Name = _newName, Description = _newDescription });
+            resp.EnsureSuccessStatusCode();
+            _newName = "";
+            _newDescription = "";
+            _message = "Account added.";
+            await LoadAccounts();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _adding = false; }
+    }
+
+    private void RequestDelete(Guid id) => _confirmDeleteId = id;
+    private void CancelDelete() => _confirmDeleteId = null;
+
+    private async Task ConfirmDelete(Guid id)
+    {
+        _error = null; _message = null;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/manual-accounts/{id}");
+            resp.EnsureSuccessStatusCode();
+            _message = "Account and its transactions deleted.";
+            await LoadAccounts();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _confirmDeleteId = null; }
+    }
+
+    private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
+}

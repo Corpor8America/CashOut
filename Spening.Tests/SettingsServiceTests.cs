@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace Spening.Tests;
@@ -14,64 +15,35 @@ public class SettingsServiceTests
         return new AppDbContext(opts);
     }
 
+    private static IConfiguration BuildConfig(Dictionary<string, string>? initialData = null)
+    {
+        IEnumerable<KeyValuePair<string, string?>> data =
+        initialData ?? new Dictionary<string, string?>() { { "PLAID_ENV", "production" } };
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(data)
+            .Build();
+    }
+
     [TestMethod]
     public async Task Set_ThenGet_RoundTrips()
     {
         var db = BuildDb(nameof(Set_ThenGet_RoundTrips));
-        var svc = new SettingsService(db);
+        var svc = new SettingsService(db, BuildConfig());
 
-        await svc.SetPlaidEnvironment("production");
-        var result = await svc.GetPlaidEnvironment();
-
-        Assert.AreEqual("production", result);
-    }
-
-    [TestMethod]
-    public async Task Set_ExistingKey_Overwrites()
-    {
-        var db = BuildDb(nameof(Set_ExistingKey_Overwrites));
-        var svc = new SettingsService(db);
-
-        await svc.SetPlaidEnvironment("sandbox");
-        await svc.SetPlaidEnvironment("production");
-        var result = await svc.GetPlaidEnvironment();
+        var result = svc.GetPlaidEnvironment();
 
         Assert.AreEqual("production", result);
-    }
-
-    [TestMethod]
-    public async Task GetAll_ReturnsAllRows()
-    {
-        var db = BuildDb(nameof(GetAll_ReturnsAllRows));
-        var svc = new SettingsService(db);
-
-        await svc.SetPlaidEnvironment("sandbox");
-
-        var all = await svc.GetAll();
-
-        Assert.AreEqual(2, all.Count);
-        Assert.AreEqual("sandbox", all["plaid_environment"]);
     }
 
     [TestMethod]
     public async Task GetPlaidEnvironment_DefaultsToSandbox_WhenMissing()
     {
         var db = BuildDb(nameof(GetPlaidEnvironment_DefaultsToSandbox_WhenMissing));
-        var svc = new SettingsService(db);
+        var svc = new SettingsService(db, BuildConfig(new Dictionary<string, string?>() { { "PLAID_ENV", null } }));
 
-        var env = await svc.GetPlaidEnvironment();
+        var env = svc.GetPlaidEnvironment();
 
         Assert.AreEqual("sandbox", env);
-    }
-
-    [TestMethod]
-    public async Task GetOutputYear_DefaultsToCurrentYear_WhenMissing()
-    {
-        var db = BuildDb(nameof(GetOutputYear_DefaultsToCurrentYear_WhenMissing));
-        var svc = new SettingsService(db);
-
-        var year = await svc.GetOutputYear();
-
-        Assert.AreEqual(DateTime.UtcNow.Year, year);
     }
 }
