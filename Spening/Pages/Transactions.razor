@@ -71,7 +71,10 @@ else
                     <td>@t.Date.ToString("MMM d, yyyy")</td>
                     <td>@t.Name</td>
                     <td class="text-muted">@(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)</td>
-                    <td class="text-right">@t.Amount.ToString("C")</td>
+                    <td class="text-right" style="color:@(t.Credit != null ? "black" : "red")">
+                        @((t.Credit ?? -t.Debit ?? 0).ToString("C"))
+                    </td>
+
                 </tr>
             }
         </tbody>
@@ -166,8 +169,17 @@ else
 
     private async Task ApplyFilter() => await LoadTransactions();
 
-    private record TransactionDto(string TransactionId, string AccountId, DateOnly Date,
-        string Name, decimal Amount, string Category);
+    private record TransactionDto(
+        string TransactionId,
+        string AccountId,
+        DateOnly Date,
+        string Name,
+        decimal? Credit,
+        decimal? Debit,
+        decimal Amount,
+        string Category
+    );
+
     private record SyncResult(int Added, int Removed);
     private record FetchResult(int Written);
 }

@@ -45,6 +45,9 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.TransactionId);
             e.Property(x => x.TransactionId).ValueGeneratedNever();
             e.Property(x => x.Source).HasConversion<string>().IsRequired();
+            e.Property(x => x.Credit).IsRequired(false);
+            e.Property(x => x.Debit).IsRequired(false);
+            e.Property(x => x.Amount).IsRequired();
             e.Property(x => x.DedupKey).IsRequired(false);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
@@ -55,7 +58,6 @@ public class AppDbContext : DbContext
         {
             e.ToTable("app_settings");
             e.HasKey(x => x.Id);
-            // Seed a single anchor row — no payload columns needed yet
             e.HasData(new AppSetting { Id = 1 });
         });
 
@@ -65,7 +67,6 @@ public class AppDbContext : DbContext
             e.ToTable("raw_businesses");
             e.HasKey(x => x.Id);
             e.Property(x => x.RawName).IsRequired();
-            // Case-insensitive unique index — handled at DB level
             e.HasIndex(x => x.RawName).IsUnique();
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
@@ -86,7 +87,7 @@ public class AppDbContext : DbContext
         {
             e.ToTable("raw_business_alias_map");
             e.HasKey(x => x.Id);
-            e.HasIndex(x => x.RawBusinessId).IsUnique(); // one alias per raw business
+            e.HasIndex(x => x.RawBusinessId).IsUnique();
             e.HasOne(x => x.RawBusiness).WithMany().HasForeignKey(x => x.RawBusinessId);
             e.HasOne(x => x.Alias).WithMany().HasForeignKey(x => x.AliasId);
         });

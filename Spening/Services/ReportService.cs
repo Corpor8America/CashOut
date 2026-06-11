@@ -15,6 +15,10 @@ public class ReportService
 
     // ── Shared ────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Returns expense transactions for the year.
+    /// Amount > 0 means Debit > Credit (net outflow) — consistent with the sign spec.
+    /// </summary>
     private async Task<List<Transaction>> GetExpenses(int year)
     {
         return await _db.Transactions
@@ -74,7 +78,6 @@ public class ReportService
             .OrderBy(m => m)
             .ToList();
 
-        // Top 8 categories by total spend
         var topCats = expenses
             .GroupBy(t => string.IsNullOrWhiteSpace(t.Category)
                 ? "(uncategorized)" : t.Category)
@@ -83,7 +86,6 @@ public class ReportService
             .Select(g => g.Key)
             .ToList();
 
-        // Build lookup: (month, category) → total
         var lookup = expenses
             .Where(t => topCats.Contains(
                 string.IsNullOrWhiteSpace(t.Category) ? "(uncategorized)" : t.Category))
@@ -104,8 +106,7 @@ public class ReportService
         }).ToList();
 
         return new PivotResult(topCats, rows, rows.Select(r => r.RowTotal).Sum(),
-            topCats.Select(c => rows.Sum(r =>
-                r.Values[topCats.IndexOf(c)])).ToList());
+            topCats.Select(c => rows.Sum(r => r.Values[topCats.IndexOf(c)])).ToList());
     }
 
     private static string ParseMonthLabel(string ym)
@@ -180,9 +181,13 @@ public class ReportService
     public async Task<byte[]> LargestCsv(int topN = 10, int? year = null)
     {
         var rows = await GetLargest(topN, year);
-        var sb = new StringBuilder("Date,Merchant,Category,Amount\n");
+        var sb = new StringBuilder("Date,Merchant,Category,Debit,Credit,Amount\n");
         foreach (var t in rows)
-            sb.AppendLine($"{t.Date},{Esc(t.Name)},{Esc(t.Category)},{t.Amount}");
+            sb.AppendLine(
+                $"{t.Date},{Esc(t.Name)},{Esc(t.Category)}," +
+                $"{t.Debit?.ToString(CultureInfo.InvariantCulture) ?? ""}," +
+                $"{t.Credit?.ToString(CultureInfo.InvariantCulture) ?? ""}," +
+                $"{t.Amount.ToString(CultureInfo.InvariantCulture)}");
         return Encoding.UTF8.GetBytes(sb.ToString());
     }
 

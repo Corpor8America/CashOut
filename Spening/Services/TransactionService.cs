@@ -50,7 +50,6 @@ public class TransactionService
                 catch (InvalidOperationException ex) when (
                     ex.Message.Contains("INVALID_CURSOR") || ex.Message.Contains("invalid cursor"))
                 {
-                    // Reset cursor and perform a full resync
                     Console.WriteLine(
                         $"[TransactionService] INVALID_CURSOR for account {acct.AccountId} — resetting cursor and resyncing.");
                     acct.SyncCursor = null;
@@ -158,22 +157,16 @@ public class TransactionService
                 }
                 else
                 {
-                    // Update fields — but preserve user-set category/alias overrides.
-                    // Only update the alias/rawBusiness links if they haven't been user-modified.
                     existing.Name = txn.Name;
+                    existing.Credit = txn.Credit;
+                    existing.Debit = txn.Debit;
                     existing.Amount = txn.Amount;
                     existing.Date = txn.Date;
                     existing.UpdatedAt = DateTime.UtcNow;
-
-                    // Only update category if the transaction hasn't been user-overridden.
-                    // Since we don't have an explicit "user-edited" flag yet, we update
-                    // normalization links but leave a pre-existing non-empty category intact
-                    // if no alias is mapped (respecting raw business category as the override).
                     existing.RawBusinessId = rawBusinessId;
                     existing.AliasId = aliasId;
                     if (aliasId.HasValue || string.IsNullOrEmpty(existing.Category))
                         existing.Category = effectiveCategory;
-
                     _db.Transactions.Update(existing);
                 }
             }
@@ -212,13 +205,15 @@ public class TransactionService
     {
         var transactions = await Query(year);
         var sb = new StringBuilder();
-        sb.AppendLine("Date,Name,Amount,Category,Source,TransactionId,AccountId");
+        sb.AppendLine("Date,Name,Debit,Credit,Amount,Category,Source,TransactionId,AccountId");
 
         foreach (var t in transactions)
         {
             sb.AppendLine(
                 $"{t.Date}," +
                 $"{EscapeCsv(t.Name)}," +
+                $"{t.Debit?.ToString(CultureInfo.InvariantCulture) ?? ""}," +
+                $"{t.Credit?.ToString(CultureInfo.InvariantCulture) ?? ""}," +
                 $"{t.Amount.ToString(CultureInfo.InvariantCulture)}," +
                 $"{EscapeCsv(t.Category)}," +
                 $"{t.Source}," +

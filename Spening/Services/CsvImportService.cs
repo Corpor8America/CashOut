@@ -25,7 +25,6 @@ public class CsvImportService
 
     public async Task<CsvMappingProfile> SaveProfile(string accountId, CsvMappingProfile profile)
     {
-        // Get next version number
         var maxVersion = await _db.CsvMappingProfiles
             .Where(p => p.AccountId == accountId)
             .MaxAsync(p => (int?)p.Version) ?? 0;
@@ -41,10 +40,6 @@ public class CsvImportService
 
     // ── CSV Preview ───────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Parses CSV content and returns headers + up to 5 preview rows.
-    /// Used by the UI mapping step.
-    /// </summary>
     public CsvPreview Preview(string csvContent)
     {
         var rows = ParseCsv(csvContent);
@@ -57,10 +52,6 @@ public class CsvImportService
 
     // ── Profile Validation ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Checks whether all mapped columns exist in the provided CSV headers.
-    /// Returns null if valid, or a list of missing column names.
-    /// </summary>
     public List<string>? ValidateProfile(CsvMappingProfile profile, string[] csvHeaders)
     {
         var headerSet = csvHeaders.Select(h => h.ToLowerInvariant()).ToHashSet();
@@ -82,14 +73,12 @@ public class CsvImportService
         var headers = rows[0].Select(h => h.ToLowerInvariant()).ToList();
         var dataRows = rows.Skip(1).ToList();
 
-        // Validate profile against actual headers
         var headerArr = rows[0];
         var missing = ValidateProfile(profile, headerArr);
         if (missing != null)
             throw new InvalidOperationException(
                 $"CSV mapping is invalid — missing columns: {string.Join(", ", missing)}. Please remap.");
 
-        // Helper to get column index by name
         int ColIdx(string? colName) => string.IsNullOrEmpty(colName) ? -1
             : headers.IndexOf(colName.ToLowerInvariant());
 
@@ -100,7 +89,6 @@ public class CsvImportService
         var amountIdx = ColIdx(profile.AmountColumn);
         var categoryIdx = ColIdx(profile.CategoryColumn);
 
-        // Load existing dedup keys for this account in one query
         var existingDedupKeys = await _db.Transactions
             .Where(t => t.AccountId == accountId && t.DedupKey != null)
             .Select(t => t.DedupKey!)
@@ -113,9 +101,8 @@ public class CsvImportService
         for (int rowNum = 0; rowNum < dataRows.Count; rowNum++)
         {
             var row = dataRows[rowNum];
-            var rawRowNum = rowNum + 2; // 1-based, accounting for header row
+            var rawRowNum = rowNum + 2; // 1-based + header
 
-            // Build dedup key from raw mapped column values
             var dedupKey = BuildDedupKey(row, dateIdx, descIdx, creditIdx, debitIdx, amountIdx, categoryIdx);
 
             if (existingDedupKeys.Contains(dedupKey))
@@ -132,31 +119,30 @@ public class CsvImportService
                 continue;
             }
 
-            // Parse amount
-            decimal credit = 0, debit = 0;
-            string skipReason = "";
+            // ── Amount normalization (Section 4 & 5 of sign spec) ─────────
+            decimal? credit;
+            decimal? debit;
+            decimal amount;
 
             if (amountIdx >= 0)
             {
-                // Single amount column
+                // Section 5.2 — single amount column: apply universal rule
                 var rawAmt = GetField(row, amountIdx);
                 if (!TryParseAmount(rawAmt, out var parsed))
                 {
                     skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row), "Amount could not be parsed"));
                     continue;
                 }
-                if (parsed > 0) credit = parsed;
-                else if (parsed < 0) debit = Math.Abs(parsed);
-                // Zero amounts: skip
-                else
+                if (parsed == 0)
                 {
                     skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row), "Amount is zero"));
                     continue;
                 }
+                (credit, debit, amount) = Transaction.NormalizeSingleAmount(parsed);
             }
             else
             {
-                // Separate credit/debit columns
+                // Section 5.1 — separate Credit / Debit columns
                 var rawCredit = GetField(row, creditIdx);
                 var rawDebit = GetField(row, debitIdx);
 
@@ -169,7 +155,6 @@ public class CsvImportService
                         "Both Credit and Debit contain values"));
                     continue;
                 }
-
                 if (!hasCredit && !hasDebit)
                 {
                     skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row),
@@ -177,21 +162,37 @@ public class CsvImportService
                     continue;
                 }
 
-                if (hasCredit && !TryParseAmount(rawCredit, out credit))
+                decimal? parsedCredit = null;
+                decimal? parsedDebit = null;
+
+                if (hasCredit)
                 {
-                    skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row),
-                        "Credit amount could not be parsed"));
-                    continue;
+                    if (!TryParseAmount(rawCredit, out var c))
+                    {
+                        skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row),
+                            "Credit amount could not be parsed"));
+                        continue;
+                    }
+                    parsedCredit = c;
+                }
+                if (hasDebit)
+                {
+                    if (!TryParseAmount(rawDebit, out var d))
+                    {
+                        skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row),
+                            "Debit amount could not be parsed"));
+                        continue;
+                    }
+                    parsedDebit = d;
                 }
 
-                if (hasDebit && !TryParseAmount(rawDebit, out debit))
+                (credit, debit, amount) = Transaction.NormalizeSplitColumns(parsedCredit, parsedDebit);
+
+                if (credit == null && debit == null)
                 {
-                    skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row),
-                        "Debit amount could not be parsed"));
+                    skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row), "Amount is zero"));
                     continue;
                 }
-
-                debit = Math.Abs(debit);
             }
 
             var description = GetField(row, descIdx);
@@ -207,7 +208,6 @@ public class CsvImportService
             var rawBusinessId = await _normalization.GetOrCreateRawBusiness(description, category);
             var aliasId = await _normalization.GetAliasId(rawBusinessId);
 
-            // Effective category via priority
             var effectiveCategory = category;
             if (aliasId.HasValue)
             {
@@ -222,9 +222,6 @@ public class CsvImportService
                     effectiveCategory = raw.Category;
             }
 
-            // amount convention: positive = expense (debit), negative = income (credit)
-            var amount = debit > 0 ? debit : -credit;
-
             var txn = new Transaction
             {
                 TransactionId = $"csv-{Guid.NewGuid()}",
@@ -232,6 +229,8 @@ public class CsvImportService
                 Source = TransactionSource.CSV,
                 Date = date,
                 Name = description,
+                Credit = credit,
+                Debit = debit,
                 Amount = amount,
                 Category = effectiveCategory,
                 RawBusinessId = rawBusinessId,
@@ -260,7 +259,6 @@ public class CsvImportService
         result = 0;
         if (string.IsNullOrWhiteSpace(raw)) return false;
 
-        // Strip $, commas, spaces
         var cleaned = raw.Replace("$", "").Replace(",", "").Trim();
 
         // Handle parentheses as negative: (123.45) → -123.45
@@ -278,7 +276,7 @@ public class CsvImportService
             .Select(i => row[i].Trim());
         var combined = string.Join("|", values);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(combined));
-        return Convert.ToHexString(hash)[..16]; // 64-bit prefix — collision-resistant enough for this use
+        return Convert.ToHexString(hash)[..16];
     }
 
     private static string TruncateRow(string[] row, int maxLen = 80)
@@ -287,10 +285,6 @@ public class CsvImportService
         return joined.Length > maxLen ? joined[..maxLen] + "…" : joined;
     }
 
-    /// <summary>
-    /// Minimal RFC 4180-compliant CSV parser.
-    /// Returns a list of rows, each as a string array of fields.
-    /// </summary>
     private static List<string[]> ParseCsv(string content)
     {
         var result = new List<string[]>();
@@ -318,11 +312,7 @@ public class CsvImportService
             {
                 if (c == '"')
                 {
-                    if (i + 1 < line.Length && line[i + 1] == '"')
-                    {
-                        sb.Append('"');
-                        i++;
-                    }
+                    if (i + 1 < line.Length && line[i + 1] == '"') { sb.Append('"'); i++; }
                     else inQuotes = false;
                 }
                 else sb.Append(c);
@@ -342,9 +332,7 @@ public class CsvImportService
 // ── Result types ──────────────────────────────────────────────────────────────
 
 public record CsvPreview(string[] Headers, string[][] Rows);
-
 public record SkippedRow(int RowNumber, string RawData, string Reason);
-
 public record ImportResult(int Imported, int SkippedDuplicates, List<SkippedRow> SkippedRows)
 {
     public int TotalSkipped => SkippedDuplicates + SkippedRows.Count;

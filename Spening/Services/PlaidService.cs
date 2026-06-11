@@ -283,24 +283,44 @@ public class PlaidService
         return allTransactions;
     }
 
-    private static Transaction MapTransaction(JsonElement t) => new()
+    /// <summary>
+    /// Maps a Plaid JSON transaction element to the internal Transaction model.
+    ///
+    /// Plaid sign convention: positive = money leaving the account (expense/debit),
+    /// negative = money entering the account (income/refund/credit).
+    ///
+    /// This is normalized using the universal rule (Section 4 of the sign spec):
+    ///   externalAmount &lt; 0 → Credit = abs(amount), Debit = null
+    ///   externalAmount >= 0 → Debit = amount,        Credit = null
+    ///
+    /// Amount is stored as Debit - Credit so expenses remain positive.
+    /// </summary>
+    private static Transaction MapTransaction(JsonElement t)
     {
-        TransactionId = t.GetProperty("transaction_id").GetString()!,
-        AccountId = t.GetProperty("account_id").GetString()!,
-        Date = DateOnly.Parse(t.GetProperty("date").GetString()!),
-        Name = t.GetProperty("name").GetString()!,
-        Amount = t.GetProperty("amount").GetDecimal(),
-        Category = t.TryGetProperty("personal_finance_category", out var pfc)
-                   && pfc.ValueKind == JsonValueKind.Object
-                   ? pfc.GetProperty("primary").GetString() ?? ""
-                   : t.TryGetProperty("category", out var cat)
-                   && cat.ValueKind == JsonValueKind.Array
-                   ? string.Join(" > ", cat.EnumerateArray().Select(x => x.GetString()))
-                   : "",
-        Source = TransactionSource.Plaid,
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow
-    };
+        var externalAmount = t.GetProperty("amount").GetDecimal();
+        var (credit, debit, amount) = Transaction.NormalizeSingleAmount(externalAmount);
+
+        return new Transaction
+        {
+            TransactionId = t.GetProperty("transaction_id").GetString()!,
+            AccountId = t.GetProperty("account_id").GetString()!,
+            Date = DateOnly.Parse(t.GetProperty("date").GetString()!),
+            Name = t.GetProperty("name").GetString()!,
+            Credit = credit,
+            Debit = debit,
+            Amount = amount,
+            Category = t.TryGetProperty("personal_finance_category", out var pfc)
+                       && pfc.ValueKind == JsonValueKind.Object
+                       ? pfc.GetProperty("primary").GetString() ?? ""
+                       : t.TryGetProperty("category", out var cat)
+                       && cat.ValueKind == JsonValueKind.Array
+                       ? string.Join(" > ", cat.EnumerateArray().Select(x => x.GetString()))
+                       : "",
+            Source = TransactionSource.Plaid,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+    }
 
     public string DecryptToken(string encryptedToken) => _encryption.Decrypt(encryptedToken);
 }

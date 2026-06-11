@@ -1,7 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Components;
+using System.Globalization;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Force US culture for currency formatting
+var culture = new CultureInfo("en-US");
+CultureInfo.DefaultThreadCurrentCulture = culture;
+CultureInfo.DefaultThreadCurrentUICulture = culture;
 
 // ── Database ──────────────────────────────────────────────────────────────
 var connectionString = builder.Configuration.GetConnectionString("Default")
