@@ -42,15 +42,19 @@ else
                     <td class="text-muted">@(string.IsNullOrEmpty(acct.Description) ? "—" : acct.Description)</td>
                     <td class="text-muted">@acct.CreatedAt.ToString("MMM d, yyyy")</td>
                     <td>
+                        <a href="/csv-import/@acct.Id">
+                            <button type="button" class="btn-sm btn-primary">Import CSV</button>
+                        </a>
                         @if (_confirmDeleteId == acct.Id)
                         {
-                            <span>Delete and remove all transactions? </span>
+                            <span style="margin-left:0.5rem">Delete and remove all transactions? </span>
                             <button @onclick="() => ConfirmDelete(acct.Id)">Yes</button>
                             <button @onclick="CancelDelete">Cancel</button>
                         }
                         else
                         {
-                            <button class="btn-danger btn-sm" @onclick="() => RequestDelete(acct.Id)">Delete</button>
+                            <button class="btn-danger btn-sm" style="margin-left:0.5rem"
+                                    @onclick="() => RequestDelete(acct.Id)">Delete</button>
                         }
                     </td>
                 </tr>
