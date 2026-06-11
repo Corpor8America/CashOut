@@ -17,31 +17,35 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddControllers();
 
+// Enable IFormFile support for CSV upload endpoints
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+{
+    o.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10 MB
+});
+
 // ── Services ──────────────────────────────────────────────────────────────
 builder.Services.AddSingleton<EncryptionService>();
 builder.Services.AddScoped<SettingsService>();
+
 // AddHttpClient<T> registers PlaidService as a typed HttpClient consumer with
-// proper socket pooling via IHttpClientFactory. Do NOT also call AddScoped<PlaidService>
-// as that would override this registration with a plain scoped instance.
-// Plaid-Version header is set centrally here so all requests use a consistent API version.
+// proper socket pooling via IHttpClientFactory. Do NOT also call AddScoped<PlaidService>.
 builder.Services.AddHttpClient<PlaidService>(client =>
 {
     client.DefaultRequestHeaders.Add("Plaid-Version", "2020-09-14");
 });
+
+builder.Services.AddScoped<BusinessNormalizationService>();
+builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
 
 // ── HttpClient for Blazor pages calling local API endpoints ───────────────
-// Derive the base address from ASPNETCORE_URLS so it works in both dev and Docker.
-// In dev, launchSettings sets the URL to http://localhost:5200.
-// In Docker, ASPNETCORE_URLS is set to http://+:8080 which we normalize to localhost.
 builder.Services.AddScoped<HttpClient>(sp =>
 {
     var urls = builder.Configuration["ASPNETCORE_URLS"]
                ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS")
                ?? (builder.Environment.IsDevelopment() ? "http://localhost:5200" : "http://localhost:8080");
 
-    // Normalize "http://+:PORT" → "http://localhost:PORT"
     var firstUrl = urls.Split(';')[0]
         .Replace("http://+:", "http://localhost:")
         .Replace("https://+:", "https://localhost:")

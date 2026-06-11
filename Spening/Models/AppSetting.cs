@@ -1,10 +1,10 @@
 /// <summary>
 /// Application settings stored as a single typed row (Id = 1).
-/// Using a structured model rather than a key-value store gives compile-time safety
-/// and makes the schema self-documenting.
+/// Plaid environment is no longer stored here — it is read from the PLAID_ENV
+/// environment variable at runtime (see SettingsService.GetPlaidEnvironment()).
+/// This table is retained as an anchor for future typed settings columns.
 /// </summary>
 public class AppSetting
 {
     public int Id { get; set; } = 1;
-    public string PlaidEnvironment { get; set; } = "sandbox";
 }
