@@ -30,6 +30,7 @@ services:
       - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
       - PLAID_SANDBOX_SECRET=${PLAID_SANDBOX_SECRET}
       - PLAID_PRODUCTION_SECRET=${PLAID_PRODUCTION_SECRET}
+      - PLAID_ENV=${PLAID_ENV}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - ConnectionStrings__Default=Host=db;Database=spening;Username=spening;Password=${DB_PASSWORD}
       - ASPNETCORE_ENVIRONMENT=Development
