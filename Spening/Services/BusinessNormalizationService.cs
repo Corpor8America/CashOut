@@ -34,7 +34,7 @@ public class BusinessNormalizationService
         var newBusiness = new RawBusiness
         {
             RawName = normalized,
-            Category = initialCategory,
+            CategoryRaw = initialCategory,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         };
@@ -63,8 +63,8 @@ public class BusinessNormalizationService
         {
             var raw = await _db.RawBusinesses.FindAsync(rawBusinessId.Value);
             if (raw != null)
-                return (raw.RawName, string.IsNullOrEmpty(raw.Category)
-                    ? fallbackCategory : raw.Category);
+                return (raw.RawName, string.IsNullOrEmpty(raw.CategoryRaw)
+                    ? fallbackCategory : raw.CategoryRaw);
         }
 
         return ("", fallbackCategory);
@@ -108,7 +108,7 @@ public class BusinessNormalizationService
     {
         var raw = await _db.RawBusinesses.FindAsync(id)
             ?? throw new KeyNotFoundException($"RawBusiness {id} not found.");
-        raw.Category = category;
+        raw.CategoryRaw = category;
         raw.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
     }

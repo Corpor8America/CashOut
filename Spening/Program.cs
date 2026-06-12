@@ -26,7 +26,7 @@ builder.Services.AddControllers();
 // Enable IFormFile support for CSV upload endpoints
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
 {
-    o.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10 MB
+    o.MultipartBodyLengthLimit = 11 * 1024 * 1024; // 11 MB (slightly above 10 MB client limit)
 });
 
 // ── Services ──────────────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ builder.Services.AddHttpClient<PlaidService>(client =>
     client.DefaultRequestHeaders.Add("Plaid-Version", "2020-09-14");
 });
 
-builder.Services.AddScoped<BusinessNormalizationService>();
+builder.Services.AddScoped<MerchantNormalizationService>();
 builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();

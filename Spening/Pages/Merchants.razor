@@ -3,8 +3,9 @@
 
 <h2>Merchants</h2>
 <p class="text-muted" style="margin-bottom:1.5rem">
-    Create aliases to normalize messy merchant names, assign categories, and map raw names to their canonical alias.
-    Alias categories take priority over transaction categories in all reports.
+    Define aliases and match patterns to normalize merchant names automatically during import.
+    Alias categories override all other sources. Merchants without a matching alias are placed
+    in <strong>Unassigned</strong> for manual review.
 </p>
 
 @if (_error != null)
@@ -16,226 +17,272 @@
     <div class="alert-success">@_message</div>
 }
 
-@if (_loading)
-{
-    <p class="text-muted">Loading...</p>
-}
-else
-{
-    <!-- ── Aliases ──────────────────────────────────────────────────── -->
-    <h3>Aliases</h3>
-    <p class="text-muted" style="margin-bottom:0.75rem">
-        Canonical merchant names with their assigned category.
-        When a raw business is mapped to an alias, the alias category overrides everything else.
-    </p>
-
-    @if (_aliases.Count > 0)
-    {
-        <table style="margin-bottom:1rem">
-            <thead>
-                <tr>
-                    <th>Alias Name</th>
-                    <th>Category</th>
-                    <th>Mapped From (raw names)</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var alias in _aliases)
-                {
-                    var mappedRaw = _mappings
-                        .Where(m => m.AliasId == alias.Id)
-                        .Select(m => m.RawBusinessName)
-                        .ToList();
-
-                    <tr>
-                        <td><strong>@alias.AliasName</strong></td>
-                        <td>
-                            @if (_editingAliasId == alias.Id)
-                            {
-                                <input type="text" @bind="_editAliasCategory" style="width:180px"
-                                       @onkeydown="e => OnAliasCategoryKey(e, alias.Id)" />
-                                <button class="btn-sm btn-primary" style="margin-left:0.4rem"
-                                        @onclick="() => SaveAliasCategory(alias.Id)">Save</button>
-                                <button class="btn-sm" style="margin-left:0.25rem" @onclick="CancelEdit">Cancel</button>
-                            }
-                            else
-                            {
-                                <span>@(string.IsNullOrEmpty(alias.Category) ? "—" : alias.Category)</span>
-                                <button class="btn-sm" style="margin-left:0.5rem"
-                                        @onclick="() => StartEditAlias(alias.Id, alias.Category)">Edit</button>
-                            }
-                        </td>
-                        <td class="text-muted" style="font-size:0.82em">
-                            @if (mappedRaw.Count == 0)
-                            {
-                                <span>none yet</span>
-                            }
-                            else
-                            {
-                                @string.Join(", ", mappedRaw.Take(5))
-                                @if (mappedRaw.Count > 5)
-                                {
-                                    <span> +@(mappedRaw.Count - 5) more</span>
-                                }
-                            }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
-    else
-    {
-        <p class="text-muted" style="margin-bottom:1rem">No aliases yet.</p>
-    }
-
-    <!-- Add alias form -->
-    <div class="toolbar" style="margin-bottom:2rem">
-        <input type="text" @bind="_newAliasName" placeholder="Alias name (e.g. Amazon)" style="width:200px" />
-        <input type="text" @bind="_newAliasCategory" placeholder="Category (e.g. SHOPPING)" style="width:200px" />
-        <button class="btn-primary" @onclick="AddAlias" disabled="@_saving">
-            @(_saving ? "Adding..." : "Add Alias")
+<div class="tabs">
+    <button class="tab @(_tab == "aliases" ? "active" : "")" @onclick='() => SetTab("aliases")'>Aliases &amp;
+        Patterns</button>
+        <button class="tab @(_tab == "unmapped" ? "active" : "")" @onclick='() => SetTab("unmapped")'>
+            Unmapped (@_unmapped.Count)
         </button>
+        <button class="tab @(_tab == "test" ? "active" : "")" @onclick='() => SetTab("test")'>Pattern Tester</button>
     </div>
 
-    <!-- ── Raw Businesses ──────────────────────────────────────────── -->
-    <h3>Raw Businesses</h3>
-    <p class="text-muted" style="margin-bottom:0.75rem">
-        Merchant names exactly as they appear in Plaid or CSV data. Assign each to an alias, or set a category directly.
-    </p>
-
-    <div class="toolbar" style="margin-bottom:0.75rem">
-        <input type="text" @bind-value="_rawFilter" @bind-value:event="oninput" placeholder="Filter by name…"
-               style="width:220px" />
-
-    </div>
-
-   
-    var filtered = string.IsNullOrWhiteSpace(_rawFilter)
-        ? _rawBusinesses
-        : _rawBusinesses
-            .Where(b => b.RawName.Contains(_rawFilter, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-    
-    @if (filtered.Count > 0)
+    @if (_loading)
     {
-        <table>
-            <thead>
-                <tr>
-                    <th>Raw Name</th>
-                    <th>Raw Category</th>
-                    <th>Mapped Alias</th>
-                    <th>Effective Category</th>
-                    <th></th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var biz in filtered)
-                {
-                    var mapping = _mappings.FirstOrDefault(m => m.RawBusinessId == biz.Id);
-                    var alias = mapping != null
-                        ? _aliases.FirstOrDefault(a => a.Id == mapping.AliasId)
-                        : null;
-                    var effectiveCategory = !string.IsNullOrEmpty(alias?.Category)
-                        ? alias.Category
-                        : biz.Category;
+        <p class="text-muted">Loading...</p>
+    }
+    else if (_tab == "aliases")
+    {
+        <!-- ── Add alias ──────────────────────────────────────────────── -->
+        <div class="toolbar" style="margin-bottom:1.5rem">
+            <input type="text" @bind="_newAliasName" placeholder="Alias name (e.g. Amazon)" style="width:220px" />
+            <input type="text" @bind="_newAliasCategory" placeholder="Category (optional — leave empty for Unassigned)"
+                   style="width:280px" />
+            <button class="btn-primary" @onclick="AddAlias" disabled="@_saving">
+                @(_saving ? "Adding…" : "Add Alias")
+            </button>
+        </div>
 
-                    <tr>
-                        <td>@biz.RawName</td>
-                        <td>
-                            @if (_editingRawId == biz.Id)
-                            {
-                                <input type=" text" @bind="_editRawCategory" style="width:160px"
-                                       @onkeydown="e => OnRawCategoryKey(e, biz.Id)" />
-                                <button class="btn-sm btn-primary" style="margin-left:0.4rem"
-                                        @onclick="() => SaveRawCategory(biz.Id)">Save</button>
-                                <button class="btn-sm" style="margin-left:0.25rem" @onclick="CancelEdit">Cancel</button>
-                            }
-                            else
-                            {
-                                <span class="text-muted">@(string.IsNullOrEmpty(biz.Category) ? "—" : biz.Category)</span>
-                                <button class="btn-sm" style="margin-left:0.5rem"
-                                        @onclick="() => StartEditRaw(biz.Id, biz.Category)">Edit</button>
-                            }
-                        </td>
-                        <td>
-                            @if (_mappingRawId == biz.Id)
-                            {
-                                <select @bind="_mappingTargetAliasId" style="width:160px">
-                                    <option value="0">— select alias —</option>
-                                    @foreach (var a in _aliases)
-                                    {
-                                        <option value="@a.Id">@a.AliasName</option>
-                                    }
-                                </select>
-                                <button class="btn-sm btn-primary" style="margin-left:0.4rem"
-                                        @onclick="() => SaveMapping(biz.Id)">Map</button>
-                                <button class="btn-sm" style="margin-left:0.25rem" @onclick="CancelMapping">Cancel</button>
-                            }
-                            else if (alias != null)
-                            {
-                                <strong>@alias.AliasName</strong>
-                                <button class="btn-sm btn-danger" style="margin-left:0.5rem"
-                                        @onclick="() => RemoveMapping(biz.Id)">Unmap</button>
-                            }
-                            else
-                            {
-                                <span class="text-muted">none</span>
-                                @if (_aliases.Count > 0)
+        @if (_aliases.Count == 0)
+        {
+            <p class="text-muted">No aliases yet. Add one above to start normalizing merchant names.</p>
+        }
+        else
+        {
+            @foreach (var alias in _aliases)
+            {
+                <div style="background:white;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,0.08);
+                    margin-bottom:1rem;overflow:hidden">
+                    <!-- Alias header -->
+                    <div style="display:flex;align-items:center;gap:0.75rem;padding:0.75rem 1rem;
+                        background:#f3f4f6;border-bottom:1px solid #eee">
+                        <strong style="font-size:1rem">@alias.AliasName</strong>
+                        <span class="text-muted" style="font-size:0.82em">→</span>
+                        @if (_editingAlias == alias.Id)
+                        {
+                            <input type="text" @bind="_editAliasCategory" style="width:220px" placeholder="Category (empty = Unassigned)"
+                                   @onkeydown="e => OnAliasCategoryKey(e, alias.Id)" />
+                            <button class="btn-sm btn-primary" @onclick="() => SaveAliasCategory(alias.Id)">Save</button>
+                            <button class="btn-sm" @onclick="CancelAliasEdit">Cancel</button>
+                        }
+                        else
+                        {
+                            <span style="color:@(string.IsNullOrEmpty(alias.Category) ? "#888" : "#1a1a1a")">
+                                @(string.IsNullOrEmpty(alias.Category) ? "Unassigned" : alias.Category)
+                            </span>
+                            <button class="btn-sm" @onclick="() => StartAliasEdit(alias.Id, alias.Category)">Edit</button>
+                        }
+                    </div>
+
+                    <!-- Patterns -->
+                    <div style="padding:0.75rem 1rem">
+                        <div style="font-size:0.8rem;font-weight:600;text-transform:uppercase;
+                        color:#888;margin-bottom:0.5rem">Match Patterns</div>
+
+                        @if (alias.Patterns.Count == 0)
+                        {
+                            <p class="text-muted" style="font-size:0.85em;margin-bottom:0.5rem">
+                                No patterns yet — this alias won't match any transactions automatically.
+                            </p>
+                        }
+                        else
+                        {
+                            <div style="display:flex;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.75rem">
+                                @foreach (var p in alias.Patterns)
                                 {
-                                    <button class="btn-sm" style="margin-left:0.5rem" @onclick="() => StartMapping(biz.Id)">Map to
-                                        alias</button>
-                                    }
+                                    <span style="display:inline-flex;align-items:center;gap:0.35rem;
+                                        background:#ede9fe;color:#5b21b6;border-radius:4px;
+                                        padding:0.2rem 0.5rem;font-size:0.82rem">
+                                        <span style="opacity:0.6;font-size:0.75em">@p.MatchType</span>
+                                        <code style="font-size:0.85em">@p.Pattern</code>
+                                        <button @onclick="() => DeletePattern(p.Id)" style="background:none;border:none;cursor:pointer;
+                                        color:#7c3aed;padding:0;font-size:0.8rem;line-height:1"
+                                                title="Remove pattern">×</button>
+                                    </span>
                                 }
+                            </div>
+                        }
+
+                        <!-- Add pattern row -->
+                        @if (_addingPatternForAlias == alias.Id)
+                        {
+                            <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+                                <select @bind="_newPatternType" style="width:130px">
+                                    <option value="Contains">Contains</option>
+                                    <option value="StartsWith">Starts With</option>
+                                    <option value="Regex">Regex</option>
+                                </select>
+                                <input type="text" @bind="_newPatternText" placeholder="@PatternPlaceholder(_newPatternType)"
+                                       style="width:300px" @onkeydown="e => OnPatternKey(e, alias.Id)" />
+                                <button class="btn-sm btn-primary" @onclick="() => AddPattern(alias.Id)">Add</button>
+                                <button class="btn-sm" @onclick="CancelAddPattern">Cancel</button>
+                            </div>
+                            <p class="text-muted" style="font-size:0.8em;margin-top:0.4rem">
+                                @PatternHint(_newPatternType)
+                            </p>
+                        }
+                        else
+                        {
+                            <button class="btn-sm" @onclick="() => StartAddPattern(alias.Id)">+ Add Pattern</button>
+                        }
+                    </div>
+                </div>
+            }
+        }
+    }
+    else if (_tab == "unmapped")
+    {
+        <div class="toolbar" style="margin-bottom:1rem">
+            <span class="text-muted">
+                @_unmapped.Count unmapped merchant name(s) — map each to an alias, or it will remain
+                in <strong>Unassigned</strong>.
+            </span>
+            <button class="btn-sm" @onclick="RetroactiveMap" disabled="@_retroMapping" style="margin-left:auto">
+                @(_retroMapping ? "Running…" : "Re-run Pattern Matching")
+            </button>
+        </div>
+
+        <div class="toolbar" style="margin-bottom:0.75rem">
+            <input type="text" @bind-value="_rawFilter" @bind-value:event="oninput" placeholder="Filter by name…"
+                   style="width:260px" />
+        </div>
+
+        
+        var filtered = string.IsNullOrWhiteSpace(_rawFilter)
+            ? _unmapped
+            : _unmapped
+                .Where(b => b.RawName.Contains(_rawFilter, StringComparison.OrdinalIgnoreCase)
+                         || b.RawNameNormalized.Contains(_rawFilter, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+        
+        @if (filtered.Count == 0)
+        {
+            <p class="text-muted">@(string.IsNullOrWhiteSpace(_rawFilter) ? "No unmapped merchants." : "No merchants match that filter.")</p>
+        }
+        else
+        {
+            <table>
+                <thead>
+                    <tr>
+                        <th>Original Name</th>
+                        <th>Normalized</th>
+                        <th>CSV/Plaid Category (ref only)</th>
+                        <th>Map to Alias</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var biz in filtered)
+                    {
+                        <tr>
+                            <td>@biz.RawName</td>
+                            <td class="text-muted" style="font-size:0.85em;font-family:monospace">
+                                @biz.RawNameNormalized
+                            </td>
+                            <td class="text-muted">
+                                @(string.IsNullOrEmpty(biz.CategoryRaw) ? "—" : biz.CategoryRaw)
                             </td>
                             <td>
-                                @if (alias != null && !string.IsNullOrEmpty(alias.Category))
+                                @if (_mappingRawId == biz.Id)
                                 {
-                                    <span style="color:#6c63ff;font-weight:600" title="From alias">
-                                        @alias.Category
-                                    </span>
-                                    <span class="text-muted" style="font-size:0.8em;margin-left:0.3rem">(alias)</span>
-                                }
-                                else if (!string.IsNullOrEmpty(biz.Category))
-                                {
-                                    <span>@biz.Category</span>
+                                    <select @bind="_mappingTargetAliasId" style="width:160px">
+                                        <option value="0">— select alias —</option>
+                                        @foreach (var a in _aliases)
+                                        {
+                                            <option value="@a.Id">@a.AliasName</option>
+                                        }
+                                    </select>
+                                    <button class="btn-sm btn-primary" style="margin-left:0.4rem"
+                                            @onclick="() => SaveMapping(biz.Id)">Map</button>
+                                    <button class="btn-sm" style="margin-left:0.25rem" @onclick="CancelMapping">Cancel</button>
                                 }
                                 else
                                 {
-                                    <span class="text-muted">—</span>
+                                    @if (_aliases.Count > 0)
+                                    {
+                                        <button class="btn-sm" @onclick="() => StartMapping(biz.Id)">Map to alias</button>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted" style="font-size:0.85em">No aliases yet</span>
+                                    }
                                 }
                             </td>
-                            <td></td>
                         </tr>
                     }
                 </tbody>
             </table>
 
-            @if (filtered.Count < _rawBusinesses.Count)
+            @if (filtered.Count < _unmapped.Count)
             {
                 <p class="text-muted" style="margin-top:0.5rem;font-size:0.85em">
-                    Showing @filtered.Count of @_rawBusinesses.Count merchants.
+                    Showing @filtered.Count of @_unmapped.Count unmapped merchants.
                 </p>
             }
         }
-    else
-        {
-            <p class="text-muted">
-                @(string.IsNullOrWhiteSpace(_rawFilter) ? "No raw businesses found." : "No merchants match that filter.")
+    }
+    else if (_tab == "test")
+    {
+        <div style="max-width:620px">
+            <p class="text-muted" style="margin-bottom:1rem">
+                Enter a raw merchant string to see how the normalization pipeline resolves it.
             </p>
-        }
+            <div class="toolbar" style="margin-bottom:1rem">
+                <input type="text" @bind="_testInput" placeholder="e.g. AMZN MKTP US 123456789 (Amazon.com)" style="width:380px"
+                       @onkeydown="OnTestKey" />
+                <button class="btn-primary" @onclick="RunTest" disabled="@_testing">
+                    @(_testing ? "Testing…" : "Test")
+                </button>
+            </div>
+
+            @if (_testResult != null)
+            {
+                <table style="max-width:580px">
+                    <tbody>
+                        <tr>
+                            <td><strong>Raw Input</strong></td>
+                            <td><code>@_testResult.RawInput</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Normalized</strong></td>
+                            <td><code style="color:#5b21b6">@_testResult.Normalized</code></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Matched Alias</strong></td>
+                            <td>
+                                @if (_testResult.MatchedAliasId != null)
+                                {
+                                    <span style="color:#166534;font-weight:600">✓ @_testResult.MatchedAliasName</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">No match — will create RawBusiness</span>
+                                }
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Effective Category</strong></td>
+                            <td>
+                                <span
+                                    style="font-weight:600;color:@(_testResult.EffectiveCategory == "Unassigned" ? "#888" : "#1a1a1a")">
+                                    @_testResult.EffectiveCategory
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            }
+        </div>
     }
 
 @code {
-    // ── State ─────────────────────────────────────────────────────────────
+    private string _tab = "aliases";
 
     private List<AliasDto> _aliases = new();
-    private List<RawBizDto> _rawBusinesses = new();
-    private List<MappingDto> _mappings = new();
-
+    private List<RawBizDto> _unmapped = new();
     private bool _loading = true;
     private bool _saving;
+    private bool _retroMapping;
+    private bool _testing;
     private string? _error, _message;
     private string _rawFilter = "";
 
@@ -243,21 +290,32 @@ else
     private string _newAliasName = "";
     private string _newAliasCategory = "";
 
-    // Inline edit state — alias category
-    private int _editingAliasId;
+    // Alias category edit
+    private int _editingAlias;
     private string _editAliasCategory = "";
 
-    // Inline edit state — raw business category
-    private int _editingRawId;
-    private string _editRawCategory = "";
+    // Pattern form
+    private int _addingPatternForAlias;
+    private string _newPatternText = "";
+    private string _newPatternType = "Contains";
 
-    // Mapping assignment state
+    // Mapping form
     private int _mappingRawId;
     private int _mappingTargetAliasId;
 
-    // ── Lifecycle ─────────────────────────────────────────────────────────
+    // Pattern tester
+    private string _testInput = "";
+    private PatternTestResultDto? _testResult;
 
     protected override async Task OnInitializedAsync() => await LoadAll();
+
+    private async Task SetTab(string tab)
+    {
+        _tab = tab;
+        _message = null;
+        _error = null;
+        await LoadAll();
+    }
 
     private async Task LoadAll()
     {
@@ -265,14 +323,10 @@ else
         try
         {
             var aliasTask = Http.GetFromJsonAsync<List<AliasDto>>("api/normalization/aliases");
-            var bizTask = Http.GetFromJsonAsync<List<RawBizDto>>("api/normalization/businesses");
-            var mapTask = Http.GetFromJsonAsync<List<MappingDto>>("api/normalization/mappings");
-
-            await Task.WhenAll(aliasTask, bizTask, mapTask);
-
+            var unmappedTask = Http.GetFromJsonAsync<List<RawBizDto>>("api/normalization/businesses?unmappedOnly=true");
+            await Task.WhenAll(aliasTask, unmappedTask);
             _aliases = await aliasTask ?? new();
-            _rawBusinesses = await bizTask ?? new();
-            _mappings = await mapTask ?? new();
+            _unmapped = await unmappedTask ?? new();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
@@ -298,11 +352,11 @@ else
         finally { _saving = false; }
     }
 
-    private void StartEditAlias(int id, string current)
+    private void StartAliasEdit(int id, string current)
     {
-        CancelEdit();
-        _editingAliasId = id;
+        _editingAlias = id;
         _editAliasCategory = current;
+        _addingPatternForAlias = 0;
     }
 
     private async Task SaveAliasCategory(int id)
@@ -310,89 +364,119 @@ else
         _error = null;
         try
         {
-            // Alias doesn't have a PATCH endpoint — re-create with same name or use businesses endpoint
-            // The alias category update isn't in the existing controller, so we POST a new alias record
-            // Workaround: update via a custom endpoint. Since only PATCH businesses exists,
-            // we'll call the alias update via a direct PUT on the alias resource.
-            // The backend doesn't expose PATCH alias — let's use the businesses category endpoint pattern.
-            // Actually the controller has PATCH /api/normalization/businesses/{id}/category only.
-            // For aliases we need to add one — but to avoid backend changes we'll use a workaround:
-            // delete + recreate isn't safe (breaks mappings). So we need the backend endpoint.
-            // We'll POST to a path we'll document as needing to be added, OR we can just call it
-            // and it'll 404 gracefully. Let's add it client-side optimistically and note what's needed.
-            var resp = await Http.PatchAsJsonAsync($"api/normalization/aliases/{id}/category",
-                new { Category = _editAliasCategory });
-            if (resp.IsSuccessStatusCode)
-            {
-                _message = "Alias category updated.";
-                await LoadAll();
-            }
-            else
-            {
-                // Endpoint not yet implemented — update locally for now
-                var alias = _aliases.FirstOrDefault(a => a.Id == id);
-                if (alias != null)
-                {
-                    _aliases = _aliases.Select(a => a.Id == id
-                        ? a with { Category = _editAliasCategory } : a).ToList();
-                    _message = "Alias category updated locally (page refresh will reload from server).";
-                }
-            }
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { CancelEdit(); }
-    }
-
-    private async Task OnAliasCategoryKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
-    {
-        if (e.Key == "Enter") await SaveAliasCategory(id);
-        else if (e.Key == "Escape") CancelEdit();
-    }
-
-    // ── Raw Businesses ────────────────────────────────────────────────────
-
-    private void StartEditRaw(int id, string current)
-    {
-        CancelEdit();
-        _editingRawId = id;
-        _editRawCategory = current;
-    }
-
-    private async Task SaveRawCategory(int id)
-    {
-        _error = null;
-        try
-        {
             var resp = await Http.PatchAsJsonAsync(
-                $"api/normalization/businesses/{id}/category",
-                new { Category = _editRawCategory });
+                $"api/normalization/aliases/{id}/category",
+                new { Category = _editAliasCategory });
             resp.EnsureSuccessStatusCode();
             _message = "Category updated.";
             await LoadAll();
         }
         catch (Exception ex) { _error = ex.Message; }
-        finally { CancelEdit(); }
+        finally { CancelAliasEdit(); }
     }
 
-    private async Task OnRawCategoryKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
+    private async Task OnAliasCategoryKey(
+        Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
     {
-        if (e.Key == "Enter") await SaveRawCategory(id);
-        else if (e.Key == "Escape") CancelEdit();
+        if (e.Key == "Enter") await SaveAliasCategory(id);
+        else if (e.Key == "Escape") CancelAliasEdit();
     }
 
-    private void CancelEdit()
+    private void CancelAliasEdit() { _editingAlias = 0; _editAliasCategory = ""; }
+
+    // ── Patterns ──────────────────────────────────────────────────────────
+
+    private void StartAddPattern(int aliasId)
     {
-        _editingAliasId = 0;
-        _editAliasCategory = "";
-        _editingRawId = 0;
-        _editRawCategory = "";
+        _addingPatternForAlias = aliasId;
+        _newPatternText = "";
+        _newPatternType = "Contains";
+        _editingAlias = 0;
     }
 
-    // ── Mappings ──────────────────────────────────────────────────────────
+    private void CancelAddPattern() { _addingPatternForAlias = 0; _newPatternText = ""; }
+
+    private async Task AddPattern(int aliasId)
+    {
+        if (string.IsNullOrWhiteSpace(_newPatternText)) return;
+        _error = null;
+        try
+        {
+            var resp = await Http.PostAsJsonAsync(
+                $"api/normalization/aliases/{aliasId}/patterns",
+                new { Pattern = _newPatternText, MatchType = _newPatternType });
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+                _error = err?["error"] ?? "Failed to add pattern.";
+                return;
+            }
+
+            _message = "Pattern added.";
+            CancelAddPattern();
+            await LoadAll();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task OnPatternKey(
+        Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int aliasId)
+    {
+        if (e.Key == "Enter") await AddPattern(aliasId);
+        else if (e.Key == "Escape") CancelAddPattern();
+    }
+
+    private async Task DeletePattern(int patternId)
+    {
+        _error = null;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/normalization/patterns/{patternId}");
+            resp.EnsureSuccessStatusCode();
+            _message = "Pattern removed.";
+            await LoadAll();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private static string PatternPlaceholder(string type) => type switch
+    {
+        "StartsWith" => "e.g. AMAZON",
+        "Regex" => "e.g. AMAZON.*MKTP",
+        _ => "e.g. AMAZON"
+    };
+
+    private static string PatternHint(string type) => type switch
+    {
+        "Contains" => "Matches if the normalized merchant name contains this text (case-insensitive).",
+        "StartsWith" => "Matches if the normalized merchant name starts with this text.",
+        "Regex" => "Advanced: regular expression matched against the normalized name.",
+        _ => ""
+    };
+
+    // ── Unmapped / Retroactive ────────────────────────────────────────────
+
+    private async Task RetroactiveMap()
+    {
+        _retroMapping = true; _message = null; _error = null;
+        try
+        {
+            var resp = await Http.PostAsync("api/normalization/retroactive-map", null);
+            resp.EnsureSuccessStatusCode();
+            var result = await resp.Content.ReadFromJsonAsync<Dictionary<string, int>>();
+            var count = result?["mapped"] ?? 0;
+            _message = count > 0
+                ? $"{count} merchant(s) newly matched and mapped."
+                : "No new matches found.";
+            await LoadAll();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _retroMapping = false; }
+    }
 
     private void StartMapping(int rawBusinessId)
     {
-        CancelMapping();
         _mappingRawId = rawBusinessId;
         _mappingTargetAliasId = 0;
     }
@@ -406,35 +490,43 @@ else
             var resp = await Http.PostAsJsonAsync("api/normalization/mappings",
                 new { RawBusinessId = rawBusinessId, AliasId = _mappingTargetAliasId });
             resp.EnsureSuccessStatusCode();
-            _message = "Mapping saved.";
+            _message = "Merchant mapped to alias.";
+            CancelMapping();
             await LoadAll();
         }
         catch (Exception ex) { _error = ex.Message; }
-        finally { CancelMapping(); }
     }
 
-    private async Task RemoveMapping(int rawBusinessId)
+    private void CancelMapping() { _mappingRawId = 0; _mappingTargetAliasId = 0; }
+
+    // ── Pattern tester ────────────────────────────────────────────────────
+
+    private async Task RunTest()
     {
-        _error = null;
+        if (string.IsNullOrWhiteSpace(_testInput)) return;
+        _testing = true; _testResult = null; _error = null;
         try
         {
-            var resp = await Http.DeleteAsync($"api/normalization/mappings/{rawBusinessId}");
+            var resp = await Http.PostAsJsonAsync("api/normalization/aliases/test",
+                new { RawInput = _testInput });
             resp.EnsureSuccessStatusCode();
-            _message = "Mapping removed.";
-            await LoadAll();
+            _testResult = await resp.Content.ReadFromJsonAsync<PatternTestResultDto>();
         }
         catch (Exception ex) { _error = ex.Message; }
+        finally { _testing = false; }
     }
 
-    private void CancelMapping()
+    private async Task OnTestKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
-        _mappingRawId = 0;
-        _mappingTargetAliasId = 0;
+        if (e.Key == "Enter") await RunTest();
     }
 
     // ── DTOs ──────────────────────────────────────────────────────────────
 
-    private record AliasDto(int Id, string AliasName, string Category);
-    private record RawBizDto(int Id, string RawName, string Category);
-    private record MappingDto(int Id, int RawBusinessId, string RawBusinessName, int AliasId, string AliasName);
+    private record PatternDto(int Id, int AliasId, string Pattern, string MatchType);
+    private record AliasDto(int Id, string AliasName, string Category, List<PatternDto> Patterns);
+    private record RawBizDto(int Id, string RawName, string RawNameNormalized,
+        string CategoryRaw, bool IsMapped);
+    private record PatternTestResultDto(string RawInput, string Normalized,
+        int? MatchedAliasId, string? MatchedAliasName, string EffectiveCategory);
 }

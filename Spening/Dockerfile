@@ -2,8 +2,10 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
+# Copy only the project file first so Docker caches the restore layer
+# and only re-runs it when dependencies change.
 COPY Spening/Spening.csproj ./
-RUN dotnet nuget locals all --clear && dotnet restore
+RUN dotnet restore
 
 COPY Spening/ ./
 RUN dotnet publish Spening.csproj \
@@ -17,8 +19,6 @@ COPY --from=build /app/publish .
 
 # Non-root user for security.
 # Port 8080 is > 1024 so a non-root user can bind to it on Linux.
-# If you ever change EXPOSE to a privileged port (< 1024, e.g. 80),
-# you will need to either run as root or grant NET_BIND_SERVICE capability.
 RUN adduser --disabled-password --no-create-home appuser
 USER appuser
 

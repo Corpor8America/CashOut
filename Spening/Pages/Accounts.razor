@@ -59,8 +59,20 @@ else
 }
 
 <br />
-<button class="btn-primary" @onclick="StartLinkFlow" disabled="@_linking">
-    @(_linking ? "Connecting..." : "Add Account")
+@* Disabled until first real browser render — JS interop is not available during pre-render *@
+<button class="btn-primary" @onclick="StartLinkFlow" disabled="@(!_isRendered || _linking)">
+    @if (!_isRendered)
+    {
+        <span>Loading…</span>
+    }
+    else if (_linking)
+    {
+        <span>Connecting...</span>
+    }
+    else
+    {
+        <span>Add Account</span>
+    }
 </button>
 
 @if (_newAccounts.Count > 0)
@@ -73,7 +85,7 @@ else
     private List<object> _newAccounts = new();
     private bool _loading = true;
     private bool _linking = false;
-    private bool _isRendered = false;   // true only after first real browser render
+    private bool _isRendered = false;
     private string? _error;
     private Guid? _confirmRemoveId;
     private DotNetObjectReference<Accounts>? _dotNetRef;
@@ -90,7 +102,7 @@ else
         {
             Logger.LogInformation("Accounts: first real browser render complete");
             _isRendered = true;
-            // Confirm JS interop is working at all
+            StateHasChanged();
             try
             {
                 await JS.InvokeVoidAsync("console.log", "[Blazor] Accounts page JS interop OK");
@@ -110,7 +122,6 @@ else
         {
             Logger.LogInformation("Accounts: fetching api/accounts");
             _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new();
-            Logger.LogInformation("Accounts: got {Count} accounts", _accounts.Count);
         }
         catch (Exception ex)
         {
@@ -126,7 +137,7 @@ else
 
         if (!_isRendered)
         {
-            _error = "Page not fully loaded yet, please wait a moment and try again.";
+            _error = "Page not fully loaded yet. Please wait a moment.";
             StateHasChanged();
             return;
         }
@@ -138,10 +149,8 @@ else
 
         try
         {
-            Logger.LogInformation("Accounts: requesting link token from api/plaid/link-token");
+            Logger.LogInformation("Accounts: requesting link token");
             var resp = await Http.PostAsync("api/plaid/link-token", null);
-
-            Logger.LogInformation("Accounts: link-token response status={Status}", resp.StatusCode);
 
             if (!resp.IsSuccessStatusCode)
             {
@@ -151,13 +160,11 @@ else
 
             var json = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
             var linkToken = json?["link_token"] ?? throw new Exception("link_token missing from response");
-            Logger.LogInformation("Accounts: got link token, invoking speningPlaid.open");
 
             _dotNetRef?.Dispose();
             _dotNetRef = DotNetObjectReference.Create(this);
 
             await JS.InvokeVoidAsync("speningPlaid.open", linkToken, _dotNetRef);
-            Logger.LogInformation("Accounts: speningPlaid.open invoked successfully");
         }
         catch (Exception ex)
         {
@@ -171,7 +178,7 @@ else
     [JSInvokable]
     public async Task OnPlaidSuccess(string publicToken)
     {
-        Logger.LogInformation("Accounts: OnPlaidSuccess called");
+        Logger.LogInformation("Accounts: OnPlaidSuccess");
         try
         {
             var resp = await Http.PostAsJsonAsync("api/plaid/exchange",
@@ -195,7 +202,7 @@ else
     [JSInvokable]
     public Task OnPlaidExit()
     {
-        Logger.LogInformation("Accounts: OnPlaidExit called");
+        Logger.LogInformation("Accounts: OnPlaidExit");
         _linking = false;
         StateHasChanged();
         return Task.CompletedTask;

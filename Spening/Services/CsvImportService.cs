@@ -5,9 +5,9 @@ using Microsoft.EntityFrameworkCore;
 public class CsvImportService
 {
     private readonly AppDbContext _db;
-    private readonly BusinessNormalizationService _normalization;
+    private readonly MerchantNormalizationService _normalization;
 
-    public CsvImportService(AppDbContext db, BusinessNormalizationService normalization)
+    public CsvImportService(AppDbContext db, MerchantNormalizationService normalization)
     {
         _db = db;
         _normalization = normalization;
@@ -94,6 +94,14 @@ public class CsvImportService
             .Select(t => t.DedupKey!)
             .ToHashSetAsync();
 
+        // Pre-load normalization data for batch processing
+        var allPatterns = await _db.AliasPatterns
+            .Include(p => p.Alias)
+            .ToListAsync();
+
+        var rawByNormalized = await _db.RawBusinesses
+            .ToDictionaryAsync(b => b.RawNameNormalized);
+
         int imported = 0;
         int skippedDup = 0;
         var skippedRows = new List<SkippedRow>();
@@ -119,14 +127,13 @@ public class CsvImportService
                 continue;
             }
 
-            // ── Amount normalization (Section 4 & 5 of sign spec) ─────────
+            // ── Amount normalization ──────────────────────────────────────
             decimal? credit;
             decimal? debit;
             decimal amount;
 
             if (amountIdx >= 0)
             {
-                // Section 5.2 — single amount column: apply universal rule
                 var rawAmt = GetField(row, amountIdx);
                 if (!TryParseAmount(rawAmt, out var parsed))
                 {
@@ -142,7 +149,6 @@ public class CsvImportService
             }
             else
             {
-                // Section 5.1 — separate Credit / Debit columns
                 var rawCredit = GetField(row, creditIdx);
                 var rawDebit = GetField(row, debitIdx);
 
@@ -175,6 +181,7 @@ public class CsvImportService
                     }
                     parsedCredit = c;
                 }
+
                 if (hasDebit)
                 {
                     if (!TryParseAmount(rawDebit, out var d))
@@ -202,25 +209,12 @@ public class CsvImportService
                 continue;
             }
 
-            var category = GetField(row, categoryIdx);
+            // CSV/Plaid category stored as reference only — not used for categorization
+            var categoryRaw = GetField(row, categoryIdx);
 
-            // Business normalization
-            var rawBusinessId = await _normalization.GetOrCreateRawBusiness(description, category);
-            var aliasId = await _normalization.GetAliasId(rawBusinessId);
-
-            var effectiveCategory = category;
-            if (aliasId.HasValue)
-            {
-                var alias = await _db.BusinessAliases.FindAsync(aliasId.Value);
-                if (!string.IsNullOrEmpty(alias?.Category))
-                    effectiveCategory = alias.Category;
-            }
-            else
-            {
-                var raw = await _db.RawBusinesses.FindAsync(rawBusinessId);
-                if (!string.IsNullOrEmpty(raw?.Category))
-                    effectiveCategory = raw.Category;
-            }
+            // Merchant normalization — always uses "Unassigned" unless alias has category
+            var (aliasId, effectiveCategory) = await _normalization.ResolveBulk(
+                description, categoryRaw, allPatterns, rawByNormalized);
 
             var txn = new Transaction
             {
@@ -233,7 +227,6 @@ public class CsvImportService
                 Debit = debit,
                 Amount = amount,
                 Category = effectiveCategory,
-                RawBusinessId = rawBusinessId,
                 AliasId = aliasId,
                 DedupKey = dedupKey,
                 CreatedAt = DateTime.UtcNow,
@@ -258,13 +251,9 @@ public class CsvImportService
     {
         result = 0;
         if (string.IsNullOrWhiteSpace(raw)) return false;
-
         var cleaned = raw.Replace("$", "").Replace(",", "").Trim();
-
-        // Handle parentheses as negative: (123.45) → -123.45
         if (cleaned.StartsWith('(') && cleaned.EndsWith(')'))
             cleaned = "-" + cleaned[1..^1];
-
         return decimal.TryParse(cleaned, System.Globalization.NumberStyles.Any,
             System.Globalization.CultureInfo.InvariantCulture, out result);
     }

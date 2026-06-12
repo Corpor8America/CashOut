@@ -7,13 +7,13 @@ public class TransactionService
     private readonly AppDbContext _db;
     private readonly PlaidService _plaid;
     private readonly SettingsService _settings;
-    private readonly BusinessNormalizationService _normalization;
+    private readonly MerchantNormalizationService _normalization;
 
     public TransactionService(
         AppDbContext db,
         PlaidService plaid,
         SettingsService settings,
-        BusinessNormalizationService normalization)
+        MerchantNormalizationService normalization)
     {
         _db = db;
         _plaid = plaid;
@@ -51,7 +51,7 @@ public class TransactionService
                     ex.Message.Contains("INVALID_CURSOR") || ex.Message.Contains("invalid cursor"))
                 {
                     Console.WriteLine(
-                        $"[TransactionService] INVALID_CURSOR for account {acct.AccountId} — resetting cursor and resyncing.");
+                        $"[TransactionService] INVALID_CURSOR for account {acct.AccountId} — resetting.");
                     acct.SyncCursor = null;
                     (newTxns, removedIds, nextCursor) =
                         await _plaid.SyncTransactions(acct.AccessToken, null);
@@ -117,37 +117,32 @@ public class TransactionService
 
         if (incoming.Count > 0)
         {
+            // Batch-load existing transactions to avoid N+1
             var incomingIds = incoming.Select(t => t.TransactionId).ToHashSet();
-
             var existingEntities = await _db.Transactions
                 .Where(t => incomingIds.Contains(t.TransactionId))
                 .ToDictionaryAsync(t => t.TransactionId);
 
+            // Batch-load alias patterns and raw businesses for normalization
+            var allPatterns = await _db.AliasPatterns
+                .Include(p => p.Alias)
+                .ToListAsync();
+
+            var rawNames = incoming
+                .Select(t => MerchantNormalizationService.Normalize(t.Name))
+                .ToHashSet();
+
+            var rawByNormalized = await _db.RawBusinesses
+                .Where(b => rawNames.Contains(b.RawNameNormalized))
+                .ToDictionaryAsync(b => b.RawNameNormalized);
+
             foreach (var txn in incoming)
             {
-                // Business normalization
-                var rawBusinessId = await _normalization.GetOrCreateRawBusiness(
-                    txn.Name, txn.Category);
-                var aliasId = await _normalization.GetAliasId(rawBusinessId);
-
-                // Category priority: alias > raw business > plaid category
-                var effectiveCategory = txn.Category;
-                if (aliasId.HasValue)
-                {
-                    var alias = await _db.BusinessAliases.FindAsync(aliasId.Value);
-                    if (!string.IsNullOrEmpty(alias?.Category))
-                        effectiveCategory = alias.Category;
-                }
-                else
-                {
-                    var raw = await _db.RawBusinesses.FindAsync(rawBusinessId);
-                    if (!string.IsNullOrEmpty(raw?.Category))
-                        effectiveCategory = raw.Category;
-                }
+                var (aliasId, effectiveCategory) = await _normalization.ResolveBulk(
+                    txn.Name, txn.Category, allPatterns, rawByNormalized);
 
                 if (!existingEntities.TryGetValue(txn.TransactionId, out var existing))
                 {
-                    txn.RawBusinessId = rawBusinessId;
                     txn.AliasId = aliasId;
                     txn.Category = effectiveCategory;
                     txn.CreatedAt = DateTime.UtcNow;
@@ -163,8 +158,8 @@ public class TransactionService
                     existing.Amount = txn.Amount;
                     existing.Date = txn.Date;
                     existing.UpdatedAt = DateTime.UtcNow;
-                    existing.RawBusinessId = rawBusinessId;
                     existing.AliasId = aliasId;
+                    // Only update category if alias is set or existing has no category
                     if (aliasId.HasValue || string.IsNullOrEmpty(existing.Category))
                         existing.Category = effectiveCategory;
                     _db.Transactions.Update(existing);

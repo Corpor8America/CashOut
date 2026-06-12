@@ -67,14 +67,18 @@ else
         <tbody>
             @foreach (var t in _transactions)
             {
+                // Debit (outflow) = red positive. Credit (inflow) = green positive.
+                var isCredit = t.Credit.HasValue;
+                var displayAmount = isCredit ? t.Credit!.Value : (t.Debit ?? 0);
                 <tr>
                     <td>@t.Date.ToString("MMM d, yyyy")</td>
                     <td>@t.Name</td>
-                    <td class="text-muted">@(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)</td>
-                    <td class="text-right" style="color:@(t.Credit != null ? "black" : "red")">
-                        @((t.Credit ?? -t.Debit ?? 0).ToString("C"))
+                    <td class="text-muted">
+                        @(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)
                     </td>
-
+                    <td class="text-right" style="color:@(isCredit ? "#166534" : "#b91c1c")">
+                        @displayAmount.ToString("C")
+                    </td>
                 </tr>
             }
         </tbody>
@@ -101,14 +105,11 @@ else
         try
         {
             _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years") ?? new();
-
-            // Set filter year to the most recent year with data (first in descending list)
             if (_availableYears.Count > 0)
                 _filterYear = _availableYears[0];
         }
         catch
         {
-            // Fallback: just show current year if the endpoint fails
             _availableYears = Enumerable.Range(DateTime.Now.Year - 6, 7)
                 .OrderByDescending(y => y).ToList();
         }
@@ -117,6 +118,8 @@ else
     private async Task LoadTransactions()
     {
         _loading = true; _error = null;
+        // Reset category filter when the year changes to avoid empty results
+        _filterCategory = "";
         try
         {
             var url = $"api/transactions?year={_filterYear}";

@@ -1,18 +1,31 @@
 /// <summary>
-/// Stores the exact merchant name as it appears in CSV or Plaid data.
-/// Case-insensitive unique key is enforced at the DB level.
-/// category is initialized from the first transaction for this name
-/// and is never overwritten automatically — only by user action.
+/// Stores the first occurrence of an unmapped merchant name exactly as it appeared
+/// in Plaid or CSV data, alongside its normalized form used for pattern matching.
+/// Retained permanently for audit and retroactive fixing.
+/// CSV/Plaid categories are stored as CategoryRaw for reference only — never used for categorization.
 /// </summary>
 public class RawBusiness
 {
     public int Id { get; set; }
+
+    /// <summary>Original merchant string exactly as received from CSV/Plaid.</summary>
     public string RawName { get; set; } = "";
+
     /// <summary>
-    /// Category string from the first transaction seen for this merchant.
-    /// Empty string if no category was provided. Never auto-overwritten.
+    /// Normalized form: uppercase, punctuation removed, long numeric sequences stripped.
+    /// Used as the match target for AliasPatterns. Unique index.
     /// </summary>
-    public string Category { get; set; } = "";
+    public string RawNameNormalized { get; set; } = "";
+
+    /// <summary>
+    /// Category string from the CSV/Plaid source. Stored for reference only.
+    /// Never used for transaction categorization.
+    /// </summary>
+    public string CategoryRaw { get; set; } = "";
+
+    /// <summary>True once a user has mapped this business to an alias.</summary>
+    public bool IsMapped { get; set; } = false;
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

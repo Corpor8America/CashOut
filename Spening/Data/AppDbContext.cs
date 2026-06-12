@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<ManualAccount> ManualAccounts => Set<ManualAccount>();
     public DbSet<RawBusiness> RawBusinesses => Set<RawBusiness>();
     public DbSet<BusinessAlias> BusinessAliases => Set<BusinessAlias>();
+    public DbSet<AliasPattern> AliasPatterns => Set<AliasPattern>();
     public DbSet<RawBusinessAliasMap> RawBusinessAliasMaps => Set<RawBusinessAliasMap>();
     public DbSet<CsvMappingProfile> CsvMappingProfiles => Set<CsvMappingProfile>();
 
@@ -67,7 +68,10 @@ public class AppDbContext : DbContext
             e.ToTable("raw_businesses");
             e.HasKey(x => x.Id);
             e.Property(x => x.RawName).IsRequired();
-            e.HasIndex(x => x.RawName).IsUnique();
+            e.Property(x => x.RawNameNormalized).IsRequired().HasDefaultValue("");
+            e.HasIndex(x => x.RawNameNormalized).IsUnique();
+            e.Property(x => x.CategoryRaw).IsRequired().HasDefaultValue("");
+            e.Property(x => x.IsMapped).IsRequired().HasDefaultValue(false);
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
         });
@@ -80,6 +84,25 @@ public class AppDbContext : DbContext
             e.Property(x => x.AliasName).IsRequired();
             e.HasIndex(x => x.AliasName).IsUnique();
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.HasMany(x => x.Patterns)
+             .WithOne(x => x.Alias)
+             .HasForeignKey(x => x.AliasId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        // ── AliasPattern ──────────────────────────────────────────────────
+        modelBuilder.Entity<AliasPattern>(e =>
+        {
+            e.ToTable("alias_patterns");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Pattern).IsRequired();
+            e.Property(x => x.MatchType).HasConversion<string>().IsRequired();
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+            e.HasOne(x => x.Alias)
+             .WithMany(x => x.Patterns)
+             .HasForeignKey(x => x.AliasId)
+             .OnDelete(DeleteBehavior.Cascade);
         });
 
         // ── RawBusinessAliasMap ───────────────────────────────────────────
