@@ -78,10 +78,10 @@ public class MerchantNormalizationService
         var alias = await MatchAlias(normalized);
 
         if (alias != null)
-            return (alias.Id, null, normalized, EffectiveCategory(alias, null, categoryRaw));
+            return (alias.Id, null, normalized, EffectiveCategory(alias));
 
         var raw = await EnsureRawBusiness(rawName, normalized, categoryRaw);
-        return (null, raw.Id, normalized, EffectiveCategory(null, raw, categoryRaw));
+        return (null, raw.Id, normalized, EffectiveCategory(null));
     }
 
     public Task<(int? aliasId, int? rawBusinessId, string normalizedName, string effectiveCategory)> ResolveBulk(
@@ -94,7 +94,7 @@ public class MerchantNormalizationService
 
         if (alias != null)
             return Task.FromResult<(int?, int?, string, string)>(
-                (alias.Id, null, normalized, EffectiveCategory(alias, null, categoryRaw)));
+                (alias.Id, null, normalized, EffectiveCategory(alias)));
 
         if (!rawByNormalized.TryGetValue(normalized, out var raw))
         {
@@ -112,7 +112,7 @@ public class MerchantNormalizationService
         }
 
         return Task.FromResult<(int?, int?, string, string)>(
-            (null, raw.Id == 0 ? null : raw.Id, normalized, EffectiveCategory(null, raw, categoryRaw)));
+            (null, raw.Id == 0 ? null : raw.Id, normalized, EffectiveCategory(null)));
     }
 
     private async Task<RawBusiness> EnsureRawBusiness(
@@ -136,12 +136,13 @@ public class MerchantNormalizationService
         return raw;
     }
 
-    private static string EffectiveCategory(
-        BusinessAlias? alias, RawBusiness? rawBusiness, string sourceCategory)
+    /// <summary>
+    /// Category is determined solely by alias. If no alias (or alias has no category),
+    /// the transaction is always Unassigned — incoming CSV/Plaid categories are discarded.
+    /// </summary>
+    private static string EffectiveCategory(BusinessAlias? alias)
     {
         if (!string.IsNullOrWhiteSpace(alias?.Category)) return alias.Category;
-        if (!string.IsNullOrWhiteSpace(rawBusiness?.CategoryRaw)) return rawBusiness.CategoryRaw;
-        if (!string.IsNullOrWhiteSpace(sourceCategory)) return sourceCategory;
         return Unassigned;
     }
 
@@ -149,7 +150,7 @@ public class MerchantNormalizationService
     {
         var normalized = Normalize(rawInput);
         var alias = await MatchAlias(normalized);
-        var effectiveCategory = EffectiveCategory(alias, null, "");
+        var effectiveCategory = EffectiveCategory(alias);
 
         return new PatternTestResult(
             RawInput: rawInput,
@@ -176,7 +177,7 @@ public class MerchantNormalizationService
             .OrderBy(a => a.AliasName)
             .ToListAsync();
 
-    public async Task<BusinessAlias> CreateAlias(string aliasName, string category = "")
+    public async Task<(BusinessAlias alias, int matched)> CreateAlias(string aliasName, string category = "")
     {
         var alias = new BusinessAlias
         {
@@ -186,7 +187,12 @@ public class MerchantNormalizationService
         };
         _db.BusinessAliases.Add(alias);
         await _db.SaveChangesAsync();
-        return alias;
+
+        // A new alias has no patterns yet so RetroactivelyMap will match nothing,
+        // but we run it here so callers don't have to remember to do it. The real
+        // matching happens after the first AddPattern call.
+        var matched = await RetroactivelyMap();
+        return (alias, matched);
     }
 
     public async Task UpdateAliasName(int aliasId, string aliasName)
@@ -232,6 +238,8 @@ public class MerchantNormalizationService
         };
         _db.AliasPatterns.Add(ap);
         await _db.SaveChangesAsync();
+
+        await RetroactivelyMap();
         return ap;
     }
 
@@ -291,7 +299,8 @@ public class MerchantNormalizationService
         {
             txn.AliasId = aliasId;
             txn.RawBusinessId = null;
-            txn.Category = EffectiveCategory(alias, null, txn.Category);
+            txn.Name = alias.AliasName;
+            txn.Category = EffectiveCategory(alias);
             txn.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -367,7 +376,8 @@ public class MerchantNormalizationService
             {
                 txn.AliasId = alias.Id;
                 txn.RawBusinessId = null;
-                txn.Category = EffectiveCategory(alias, null, txn.Category);
+                txn.Name = alias.AliasName;
+                txn.Category = EffectiveCategory(alias);
                 txn.UpdatedAt = DateTime.UtcNow;
                 count++;
                 continue;
@@ -390,7 +400,7 @@ public class MerchantNormalizationService
             }
 
             txn.RawBusinessId = raw.Id == 0 ? null : raw.Id;
-            txn.Category = EffectiveCategory(null, raw, txn.Category);
+            txn.Category = Unassigned;
             txn.UpdatedAt = DateTime.UtcNow;
         }
 

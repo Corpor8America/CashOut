@@ -141,12 +141,19 @@ public class TransactionService
                 var (aliasId, rawBusinessId, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                     txn.Name, txn.Category, allPatterns, rawByNormalized);
 
+                // When an alias matched, display the canonical alias name.
+                // RawName always preserves the original string from Plaid.
+                var displayName = aliasId.HasValue
+                    ? allPatterns.First(p => p.AliasId == aliasId).Alias.AliasName
+                    : txn.Name;
+
                 if (!existingEntities.TryGetValue(txn.TransactionId, out var existing))
                 {
                     txn.AliasId = aliasId;
                     txn.RawBusinessId = rawBusinessId;
                     txn.RawName = txn.Name;
                     txn.NormalizedName = normalizedName;
+                    txn.Name = displayName;
                     txn.Category = effectiveCategory;
                     txn.CreatedAt = DateTime.UtcNow;
                     txn.UpdatedAt = DateTime.UtcNow;
@@ -155,7 +162,9 @@ public class TransactionService
                 }
                 else
                 {
-                    existing.Name = txn.Name;
+                    existing.RawName = txn.Name;
+                    existing.NormalizedName = normalizedName;
+                    existing.Name = displayName;
                     existing.Credit = txn.Credit;
                     existing.Debit = txn.Debit;
                     existing.Amount = txn.Amount;
@@ -163,8 +172,6 @@ public class TransactionService
                     existing.UpdatedAt = DateTime.UtcNow;
                     existing.AliasId = aliasId;
                     existing.RawBusinessId = rawBusinessId;
-                    existing.RawName = txn.Name;
-                    existing.NormalizedName = normalizedName;
                     // Only update category if alias is set or existing has no category
                     if (aliasId.HasValue || string.IsNullOrEmpty(existing.Category))
                         existing.Category = effectiveCategory;
@@ -198,6 +205,25 @@ public class TransactionService
             q = q.Where(t => t.Source == source.Value);
 
         return await q.OrderByDescending(t => t.Date).ToListAsync();
+    }
+
+    // ── Category Edit ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Persists a user-supplied category override on a single transaction.
+    /// This is the highest-priority category source and will not be overwritten
+    /// by future sync/fetch operations (MergePlaid only updates category when
+    /// an alias is set or the existing category is empty).
+    /// </summary>
+    public async Task<Transaction?> UpdateCategory(string transactionId, string category)
+    {
+        var txn = await _db.Transactions.FindAsync(transactionId);
+        if (txn == null) return null;
+
+        txn.Category = category.Trim();
+        txn.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return txn;
     }
 
     // ── CSV Export ────────────────────────────────────────────────────────

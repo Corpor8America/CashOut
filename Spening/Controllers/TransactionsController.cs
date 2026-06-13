@@ -33,7 +33,6 @@ public class TransactionsController : ControllerBase
     [HttpPost("fetch")]
     public async Task<IActionResult> Fetch()
     {
-        // Returns total transactions processed (inserted + updated), not just new rows
         var count = await _txns.FetchAll();
         return Ok(new { written = count });
     }
@@ -41,9 +40,19 @@ public class TransactionsController : ControllerBase
     [HttpGet("export")]
     public async Task<IActionResult> Export([FromQuery] int? year)
     {
-        // Always resolve a concrete year before passing to ExportCsv
         var resolvedYear = year ?? await _settings.GetOutputYear();
         var csv = await _txns.ExportCsv(resolvedYear);
         return File(csv, "text/csv", $"spening-{resolvedYear}.csv");
     }
+
+    [HttpPatch("{transactionId}/category")]
+    public async Task<IActionResult> UpdateCategory(
+        string transactionId, [FromBody] UpdateCategoryRequest req)
+    {
+        var updated = await _txns.UpdateCategory(transactionId, req.Category ?? "");
+        if (updated == null) return NotFound();
+        return Ok(new { updated.TransactionId, updated.Category });
+    }
+
+    public record UpdateCategoryRequest(string? Category);
 }

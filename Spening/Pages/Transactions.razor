@@ -22,7 +22,7 @@
     </button>
     <span style="margin-left:auto">
         <label>Year: </label>
-        <select @bind="_filterYear" @bind:after="ApplyFilter">
+        <select @bind="_filterYear" @bind:after="OnYearChanged">
             @foreach (var y in _availableYears)
             {
                 <option value="@y">@y</option>
@@ -67,14 +67,35 @@ else
         <tbody>
             @foreach (var t in _transactions)
             {
-                // Debit (outflow) = red positive. Credit (inflow) = green positive.
                 var isCredit = t.Credit.HasValue;
                 var displayAmount = isCredit ? t.Credit!.Value : (t.Debit ?? 0);
                 <tr>
                     <td>@t.Date.ToString("MMM d, yyyy")</td>
                     <td>@t.Name</td>
-                    <td class="text-muted">
-                        @(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)
+                    <td>
+                        @if (_editingId == t.TransactionId)
+                        {
+                            <div style="display:flex;gap:0.35rem;align-items:center">
+                                <input type="text"
+                                       value="@_editValue"
+                                       @oninput="e => _editValue = e.Value?.ToString() ?? string.Empty"
+                                       @onkeydown="e => OnEditKey(e, t.TransactionId)"
+                                       style="width:160px;padding:0.2rem 0.4rem;font-size:0.875rem"
+                                       @ref="_editInput" />
+                                <button class="btn-sm btn-primary"
+                                        @onclick="() => CommitEdit(t.TransactionId)">✓</button>
+                                <button class="btn-sm" @onclick="CancelEdit">✕</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <span @ondblclick="() => StartEdit(t.TransactionId, t.Category)"
+                                  title="Double-click to edit"
+                                  style="cursor:pointer;display:inline-block;min-width:60px;
+                                         border-bottom:1px dashed #ccc;padding-bottom:1px">
+                                @(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)
+                            </span>
+                        }
                     </td>
                     <td class="text-right" style="color:@(isCredit ? "#166534" : "#b91c1c")">
                         @displayAmount.ToString("C")
@@ -93,6 +114,11 @@ else
     private string _filterCategory = "";
     private bool _loading, _busy, _syncing, _fetching;
     private string? _error, _message;
+
+    // Inline category edit state
+    private string? _editingId;
+    private string _editValue = "";
+    private ElementReference _editInput;
 
     protected override async Task OnInitializedAsync()
     {
@@ -118,8 +144,6 @@ else
     private async Task LoadTransactions()
     {
         _loading = true; _error = null;
-        // Reset category filter when the year changes to avoid empty results
-        _filterCategory = "";
         try
         {
             var url = $"api/transactions?year={_filterYear}";
@@ -137,6 +161,62 @@ else
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
     }
+
+    // ── Inline category edit ──────────────────────────────────────────────
+
+    private void StartEdit(string transactionId, string currentCategory)
+    {
+        _editingId = transactionId;
+        _editValue = currentCategory;
+        _message = null;
+    }
+
+    private void CancelEdit()
+    {
+        _editingId = null;
+        _editValue = "";
+    }
+
+    private async Task CommitEdit(string transactionId)
+    {
+        if (_editingId != transactionId) return;
+
+        var newCategory = _editValue.Trim();
+        try
+        {
+            var resp = await Http.PatchAsJsonAsync(
+                $"api/transactions/{Uri.EscapeDataString(transactionId)}/category",
+                new { Category = newCategory });
+            resp.EnsureSuccessStatusCode();
+
+            // Update local state without a full reload
+            var txn = _transactions.FirstOrDefault(t => t.TransactionId == transactionId);
+            if (txn != null)
+            {
+                var idx = _transactions.IndexOf(txn);
+                _transactions[idx] = txn with { Category = newCategory };
+            }
+
+            // Refresh category filter list in case a new category was introduced
+            _categories = _transactions
+                .Select(t => t.Category)
+                .Where(c => !string.IsNullOrEmpty(c))
+                .Distinct()
+                .OrderBy(c => c)
+                .ToList();
+        }
+        catch (Exception ex) { _error = $"Failed to update category: {ex.Message}"; }
+        finally { CancelEdit(); }
+    }
+
+    private async Task OnEditKey(
+        Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, string transactionId)
+    {
+        if (e.Key == "Enter") await CommitEdit(transactionId);
+        else if (e.Key == "Escape") CancelEdit();
+    }
+
+    // ── Sync / Fetch ──────────────────────────────────────────────────────
 
     private async Task Sync()
     {
@@ -168,6 +248,12 @@ else
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = _fetching = false; }
+    }
+
+    private async Task OnYearChanged()
+    {
+        _filterCategory = "";
+        await LoadTransactions();
     }
 
     private async Task ApplyFilter() => await LoadTransactions();

@@ -339,22 +339,25 @@
     // ── Aliases ───────────────────────────────────────────────────────────
 
     private async Task AddAlias()
+{
+    if (string.IsNullOrWhiteSpace(_newAliasName)) return;
+    _saving = true; _message = null; _error = null;
+    try
     {
-        if (string.IsNullOrWhiteSpace(_newAliasName)) return;
-        _saving = true; _message = null; _error = null;
-        try
-        {
-            var resp = await Http.PostAsJsonAsync("api/normalization/aliases",
-                new { AliasName = _newAliasName, Category = _newAliasCategory });
-            resp.EnsureSuccessStatusCode();
-            _newAliasName = "";
-            _newAliasCategory = "";
-            _message = "Alias added.";
-            await LoadAll();
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _saving = false; }
+        var resp = await Http.PostAsJsonAsync("api/normalization/aliases",
+            new { AliasName = _newAliasName, Category = _newAliasCategory });
+        resp.EnsureSuccessStatusCode();
+        var result = await resp.Content.ReadFromJsonAsync<CreateAliasResult>();
+        _newAliasName = "";
+        _newAliasCategory = "";
+        _message = result?.Matched > 0
+            ? $"Alias added — {result.Matched} transaction(s) matched automatically."
+            : "Alias added.";
+        await LoadAll();
     }
+    catch (Exception ex) { _error = ex.Message; }
+    finally { _saving = false; }
+}
 
     private void StartAliasEdit(int id, string currentName, string currentCategory)
     {
@@ -437,7 +440,6 @@
                 _error = err?["error"] ?? "Failed to add pattern.";
                 return;
             }
-
             _message = "Pattern added.";
             CancelAddPattern();
             await LoadAll();
@@ -554,4 +556,5 @@
         string CategoryRaw, bool IsMapped);
     private record PatternTestResultDto(string RawInput, string Normalized,
         int? MatchedAliasId, string? MatchedAliasName, string EffectiveCategory);
+        private record CreateAliasResult(int Id, string AliasName, string Category, int Matched);
 }

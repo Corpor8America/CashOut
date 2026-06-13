@@ -209,12 +209,18 @@ public class CsvImportService
                 continue;
             }
 
-            // CSV/Plaid category stored as reference only — not used for categorization
+            // CSV/Plaid category stored on RawBusiness for reference only — not used for categorization
             var categoryRaw = GetField(row, categoryIdx);
 
-            // Merchant normalization — always uses "Unassigned" unless alias has category
+            // Resolve merchant — alias name becomes the display name when matched
             var (aliasId, rawBusinessId, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                 description, categoryRaw, allPatterns, rawByNormalized);
+
+            // When an alias matched, use the canonical alias name as the display name.
+            // description (raw) is preserved in RawName.
+            var displayName = aliasId.HasValue
+                ? allPatterns.First(p => p.AliasId == aliasId).Alias.AliasName
+                : description;
 
             var txn = new Transaction
             {
@@ -222,7 +228,7 @@ public class CsvImportService
                 AccountId = accountId,
                 Source = TransactionSource.CSV,
                 Date = date,
-                Name = description,
+                Name = displayName,
                 RawName = description,
                 NormalizedName = normalizedName,
                 Credit = credit,

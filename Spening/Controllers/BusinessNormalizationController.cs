@@ -35,8 +35,8 @@ public class BusinessNormalizationController : ControllerBase
     {
         if (string.IsNullOrWhiteSpace(req.AliasName))
             return BadRequest(new { error = "AliasName is required." });
-        var alias = await _svc.CreateAlias(req.AliasName, req.Category ?? "");
-        return Ok(alias);
+        var (alias, matched) = await _svc.CreateAlias(req.AliasName, req.Category ?? "");
+        return Ok(new { alias.Id, alias.AliasName, alias.Category, matched });
     }
 
     [HttpPatch("aliases/{id:int}/category")]
@@ -137,7 +137,7 @@ public class BusinessNormalizationController : ControllerBase
     [HttpGet("mappings")]
     public async Task<IActionResult> ListMappings()
     {
-        var maps = await _svc.GetAllAliases(); // alias with mapped raw businesses
+        var maps = await _svc.GetAllAliases();
         var rawMaps = _db.RawBusinessAliasMaps
             .Join(_db.RawBusinesses, m => m.RawBusinessId, b => b.Id,
                 (m, b) => new { m.Id, m.RawBusinessId, b.RawName, b.RawNameNormalized, m.AliasId })
@@ -172,10 +172,6 @@ public class BusinessNormalizationController : ControllerBase
         return NoContent();
     }
 
-    /// <summary>
-    /// Re-runs pattern matching against all unmapped raw businesses.
-    /// Returns the number of newly mapped entries.
-    /// </summary>
     [HttpPost("retroactive-map")]
     public async Task<IActionResult> RetroactiveMap()
     {
