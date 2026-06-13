@@ -1,4 +1,5 @@
 @page "/transactions"
+@using System.Globalization
 @inject HttpClient Http
 @inject NavigationManager Nav
 
@@ -50,17 +51,26 @@
     </MudStack>
 </MudPaper>
 
+<MudTabs Elevation="1" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeMonthTabIndex">
+    @for (int m = 1; m <= 12; m++)
+    {
+        var monthIndex = m;
+        <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)" 
+                      OnClick="() => OnMonthChanged(monthIndex)" />
+    }
+</MudTabs>
+
 @if (_loading)
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
 }
 else if (_transactions.Count == 0)
 {
-    <MudText Color="Color.Secondary">No transactions found. Try syncing or adjusting your filters.</MudText>
+    <MudText Color="Color.Secondary" Class="mt-4">No transactions found for this month/filter.</MudText>
 }
 else
 {
-    <MudTable Items="@_transactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true">
+    <MudTable Items="@_transactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mt-2">
         <HeaderContent>
             <MudTh>Date</MudTh>
             <MudTh>Merchant</MudTh>
@@ -104,9 +114,6 @@ else
                 </MudText>
             </MudTd>
         </RowTemplate>
-        <PagerContent>
-            <MudTablePager />
-        </PagerContent>
     </MudTable>
 }
 
@@ -115,6 +122,8 @@ else
     private List<string> _categories = new();
     private List<int> _availableYears = new();
     private int _filterYear = DateTime.Now.Year;
+    private int _filterMonth = DateTime.Now.Month;
+    private int _activeMonthTabIndex;
     private string _filterCategory = "";
     private bool _loading, _busy, _syncing, _fetching;
     private string? _error, _message;
@@ -125,6 +134,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        _activeMonthTabIndex = _filterMonth - 1;
         await LoadYears();
         await LoadTransactions();
     }
@@ -149,20 +159,34 @@ else
         _loading = true; _error = null;
         try
         {
-            var url = $"api/transactions?year={_filterYear}";
+            var url = $"api/transactions?year={_filterYear}&month={_filterMonth}";
             if (!string.IsNullOrEmpty(_filterCategory))
                 url += $"&category={Uri.EscapeDataString(_filterCategory)}";
 
             _transactions = await Http.GetFromJsonAsync<List<TransactionDto>>(url) ?? new();
-            _categories = _transactions
+            
+            if (_categories.Count == 0)
+            {
+                await LoadAllCategories();
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadAllCategories()
+    {
+        try
+        {
+            var all = await Http.GetFromJsonAsync<List<TransactionDto>>($"api/transactions?year={_filterYear}") ?? new();
+            _categories = all
                 .Select(t => t.Category)
                 .Where(c => !string.IsNullOrEmpty(c))
                 .Distinct()
                 .OrderBy(c => c)
                 .ToList();
         }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _loading = false; }
+        catch { /* ignored */ }
     }
 
     // ── Inline category edit ──────────────────────────────────────────────
@@ -192,7 +216,6 @@ else
                 new { Category = newCategory });
             resp.EnsureSuccessStatusCode();
 
-            // Update local state without a full reload
             var txn = _transactions.FirstOrDefault(t => t.TransactionId == transactionId);
             if (txn != null)
             {
@@ -200,13 +223,11 @@ else
                 _transactions[idx] = txn with { Category = newCategory };
             }
 
-            // Refresh category filter list in case a new category was introduced
-            _categories = _transactions
-                .Select(t => t.Category)
-                .Where(c => !string.IsNullOrEmpty(c))
-                .Distinct()
-                .OrderBy(c => c)
-                .ToList();
+            if (!_categories.Contains(newCategory) && !string.IsNullOrEmpty(newCategory))
+            {
+                _categories.Add(newCategory);
+                _categories = _categories.OrderBy(c => c).ToList();
+            }
         }
         catch (Exception ex) { _error = $"Failed to update category: {ex.Message}"; }
         finally { CancelEdit(); }
@@ -256,6 +277,15 @@ else
     {
         _filterYear = year;
         _filterCategory = "";
+        await LoadAllCategories();
+        await LoadTransactions();
+    }
+
+    private async Task OnMonthChanged(int month)
+    {
+        if (_filterMonth == month) return;
+        _filterMonth = month;
+        _activeMonthTabIndex = month - 1;
         await LoadTransactions();
     }
 

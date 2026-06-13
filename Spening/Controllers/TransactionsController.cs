@@ -16,10 +16,11 @@ public class TransactionsController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> List(
         [FromQuery] int? year,
+        [FromQuery] int? month,
         [FromQuery] string? accountId,
         [FromQuery] string? category)
     {
-        var results = await _txns.Query(year, accountId, category);
+        var results = await _txns.Query(year, month, accountId, category);
         return Ok(results);
     }
 

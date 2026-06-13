@@ -187,13 +187,16 @@ public class TransactionService
     // ── Query ─────────────────────────────────────────────────────────────
 
     public async Task<List<Transaction>> Query(
-        int? year = null, string? accountId = null, string? category = null,
+        int? year = null, int? month = null, string? accountId = null, string? category = null,
         TransactionSource? source = null)
     {
         var q = _db.Transactions.AsQueryable();
 
         if (year.HasValue)
             q = q.Where(t => t.Date.Year == year.Value);
+
+        if (month.HasValue)
+            q = q.Where(t => t.Date.Month == month.Value);
 
         if (!string.IsNullOrEmpty(accountId))
             q = q.Where(t => t.AccountId == accountId);
