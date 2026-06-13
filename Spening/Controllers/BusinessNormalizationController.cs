@@ -51,6 +51,30 @@ public class BusinessNormalizationController : ControllerBase
         catch (KeyNotFoundException) { return NotFound(); }
     }
 
+    [HttpPatch("aliases/{id:int}/name")]
+    public async Task<IActionResult> UpdateAliasName(
+        int id, [FromBody] UpdateAliasNameRequest req)
+    {
+        try
+        {
+            await _svc.UpdateAliasName(id, req.AliasName ?? "");
+            return Ok();
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+    }
+
+    [HttpDelete("aliases/{id:int}")]
+    public async Task<IActionResult> DeleteAlias(int id)
+    {
+        try
+        {
+            var reprocessed = await _svc.DeleteAlias(id);
+            return Ok(new { reprocessed });
+        }
+        catch (KeyNotFoundException) { return NotFound(); }
+    }
+
     // ── Patterns ──────────────────────────────────────────────────────────
 
     [HttpPost("aliases/{aliasId:int}/patterns")]
@@ -156,12 +180,13 @@ public class BusinessNormalizationController : ControllerBase
     public async Task<IActionResult> RetroactiveMap()
     {
         var count = await _svc.RetroactivelyMap();
-        return Ok(new { mapped = count });
+        return Ok(new { matched = count, mapped = count });
     }
 
     // ── Request types ─────────────────────────────────────────────────────
 
     public record CreateAliasRequest(string AliasName, string? Category);
+    public record UpdateAliasNameRequest(string? AliasName);
     public record UpdateCategoryRequest(string? Category);
     public record AddPatternRequest(string Pattern, string MatchType);
     public record CreateMappingRequest(int RawBusinessId, int AliasId);

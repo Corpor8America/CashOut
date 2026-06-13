@@ -138,12 +138,15 @@ public class TransactionService
 
             foreach (var txn in incoming)
             {
-                var (aliasId, effectiveCategory) = await _normalization.ResolveBulk(
+                var (aliasId, rawBusinessId, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                     txn.Name, txn.Category, allPatterns, rawByNormalized);
 
                 if (!existingEntities.TryGetValue(txn.TransactionId, out var existing))
                 {
                     txn.AliasId = aliasId;
+                    txn.RawBusinessId = rawBusinessId;
+                    txn.RawName = txn.Name;
+                    txn.NormalizedName = normalizedName;
                     txn.Category = effectiveCategory;
                     txn.CreatedAt = DateTime.UtcNow;
                     txn.UpdatedAt = DateTime.UtcNow;
@@ -159,6 +162,9 @@ public class TransactionService
                     existing.Date = txn.Date;
                     existing.UpdatedAt = DateTime.UtcNow;
                     existing.AliasId = aliasId;
+                    existing.RawBusinessId = rawBusinessId;
+                    existing.RawName = txn.Name;
+                    existing.NormalizedName = normalizedName;
                     // Only update category if alias is set or existing has no category
                     if (aliasId.HasValue || string.IsNullOrEmpty(existing.Category))
                         existing.Category = effectiveCategory;

@@ -2,15 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 
 /// <summary>
-/// Implements the merchant normalization and alias pattern matching pipeline.
-///
-/// Import pipeline:
-/// 1. Normalize the raw merchant string.
-/// 2. Try to match against AliasPatterns (contains / starts_with / regex).
-/// 3. If matched → return alias ID + alias category (or "Unassigned" if alias has no category).
-/// 4. If no match  → create/reuse a RawBusiness, return null alias, "Unassigned" category.
-///
-/// CSV/Plaid categories are NEVER used for categorization — stored only as CategoryRaw on RawBusiness.
+/// Implements merchant normalization, alias matching, raw-business reconstruction,
+/// and retroactive transaction matching.
 /// </summary>
 public class MerchantNormalizationService
 {
@@ -20,57 +13,22 @@ public class MerchantNormalizationService
 
     public MerchantNormalizationService(AppDbContext db) => _db = db;
 
-    // ── Normalization ─────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Normalizes a raw merchant string into a stable, comparable form:
-    /// 1. Trim whitespace
-    /// 2. Collapse multiple spaces
-    /// 3. Convert to uppercase
-    /// 4. Remove punctuation: - * . / :
-    /// 5. Collapse spaces again
-    /// 6. Remove long numeric sequences (>6 digits)
-    /// 7. Remove parenthetical duplicates e.g. "(Wells Fargo Card Ccpymt)"
-    /// 8. Final trim and space collapse
-    /// </summary>
     public static string Normalize(string raw)
     {
         if (string.IsNullOrWhiteSpace(raw)) return "";
 
         var s = raw.Trim();
-
-        // Remove parenthetical suffixes that repeat the merchant name
         s = Regex.Replace(s, @"\s*\([^)]*\)\s*$", " ");
-
-        // Collapse whitespace
         s = Regex.Replace(s, @"\s+", " ").Trim();
-
-        // Uppercase
         s = s.ToUpperInvariant();
-
-        // Remove punctuation
-        s = Regex.Replace(s, @"[-*./:,]", " ");
-
-        // Collapse whitespace again
+        s = Regex.Replace(s, @"[-*./:,#]", " ");
         s = Regex.Replace(s, @"\s+", " ").Trim();
-
-        // Remove numeric sequences longer than 6 digits
         s = Regex.Replace(s, @"\b\d{7,}\b", " ");
-
-        // Final cleanup
         s = Regex.Replace(s, @"\s+", " ").Trim();
 
         return s;
     }
 
-    // ── Pattern matching ──────────────────────────────────────────────────
-
-    /// <summary>
-    /// Tries to match a normalized merchant string against all AliasPatterns.
-    /// Returns the alias with the lowest ID among all matches (deterministic).
-    /// Returns null if no pattern matches.
-    /// Patterns are loaded from DB each call; call once per transaction batch if performance matters.
-    /// </summary>
     public async Task<BusinessAlias?> MatchAlias(string normalizedMerchant)
     {
         if (string.IsNullOrEmpty(normalizedMerchant)) return null;
@@ -78,48 +36,24 @@ public class MerchantNormalizationService
         var patterns = await _db.AliasPatterns
             .Include(p => p.Alias)
             .OrderBy(p => p.AliasId)
+            .ThenBy(p => p.Id)
             .ToListAsync();
 
-        int? bestAliasId = null;
-        BusinessAlias? bestAlias = null;
-
-        foreach (var pattern in patterns)
-        {
-            if (PatternMatches(pattern, normalizedMerchant))
-            {
-                if (bestAliasId == null || pattern.AliasId < bestAliasId)
-                {
-                    bestAliasId = pattern.AliasId;
-                    bestAlias = pattern.Alias;
-                }
-            }
-        }
-
-        return bestAlias;
+        return MatchAliasFromPatterns(normalizedMerchant, patterns);
     }
 
-    /// <summary>
-    /// In-memory version for bulk operations — accepts pre-loaded patterns.
-    /// </summary>
     public static BusinessAlias? MatchAliasFromPatterns(
         string normalizedMerchant, IEnumerable<AliasPattern> patterns)
     {
         if (string.IsNullOrEmpty(normalizedMerchant)) return null;
 
-        BusinessAlias? best = null;
-        int? bestId = null;
-
-        foreach (var p in patterns.OrderBy(p => p.AliasId))
+        foreach (var pattern in patterns.OrderBy(p => p.AliasId).ThenBy(p => p.Id))
         {
-            if (PatternMatches(p, normalizedMerchant) &&
-                (bestId == null || p.AliasId < bestId))
-            {
-                bestId = p.AliasId;
-                best = p.Alias;
-            }
+            if (PatternMatches(pattern, normalizedMerchant))
+                return pattern.Alias;
         }
 
-        return best;
+        return null;
     }
 
     private static bool PatternMatches(AliasPattern pattern, string normalized)
@@ -137,41 +71,20 @@ public class MerchantNormalizationService
         };
     }
 
-    // ── Import pipeline ───────────────────────────────────────────────────
-
-    /// <summary>
-    /// Resolves a raw merchant name to an (aliasId?, effectiveCategory) pair.
-    /// - Normalizes the raw name.
-    /// - Tries to match an alias via patterns.
-    /// - If matched: returns alias ID and its category (or "Unassigned" if category is empty).
-    /// - If not matched: creates/reuses a RawBusiness and returns (null, "Unassigned").
-    /// categoryRaw is stored on RawBusiness for reference only — never used for categorization.
-    /// Does NOT call SaveChanges — caller is responsible.
-    /// </summary>
-    public async Task<(int? aliasId, string effectiveCategory)> Resolve(
+    public async Task<(int? aliasId, int? rawBusinessId, string normalizedName, string effectiveCategory)> Resolve(
         string rawName, string categoryRaw = "")
     {
         var normalized = Normalize(rawName);
-
         var alias = await MatchAlias(normalized);
 
         if (alias != null)
-        {
-            var category = string.IsNullOrEmpty(alias.Category) ? Unassigned : alias.Category;
-            return (alias.Id, category);
-        }
+            return (alias.Id, null, normalized, EffectiveCategory(alias, null, categoryRaw));
 
-        // No match — create or reuse RawBusiness
-        await EnsureRawBusiness(rawName, normalized, categoryRaw);
-        return (null, Unassigned);
+        var raw = await EnsureRawBusiness(rawName, normalized, categoryRaw);
+        return (null, raw.Id, normalized, EffectiveCategory(null, raw, categoryRaw));
     }
 
-    /// <summary>
-    /// Bulk version of Resolve — pre-loads patterns and raw businesses for efficiency.
-    /// Call for batch imports instead of calling Resolve per transaction.
-    /// Does NOT call SaveChanges.
-    /// </summary>
-    public async Task<(int? aliasId, string effectiveCategory)> ResolveBulk(
+    public Task<(int? aliasId, int? rawBusinessId, string normalizedName, string effectiveCategory)> ResolveBulk(
         string rawName, string categoryRaw,
         IList<AliasPattern> allPatterns,
         Dictionary<string, RawBusiness> rawByNormalized)
@@ -180,15 +93,12 @@ public class MerchantNormalizationService
         var alias = MatchAliasFromPatterns(normalized, allPatterns);
 
         if (alias != null)
-        {
-            var category = string.IsNullOrEmpty(alias.Category) ? Unassigned : alias.Category;
-            return (alias.Id, category);
-        }
+            return Task.FromResult<(int?, int?, string, string)>(
+                (alias.Id, null, normalized, EffectiveCategory(alias, null, categoryRaw)));
 
-        // No match — ensure RawBusiness exists (in-memory upsert)
-        if (!rawByNormalized.TryGetValue(normalized, out _))
+        if (!rawByNormalized.TryGetValue(normalized, out var raw))
         {
-            var rb = new RawBusiness
+            raw = new RawBusiness
             {
                 RawName = rawName,
                 RawNameNormalized = normalized,
@@ -197,21 +107,23 @@ public class MerchantNormalizationService
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
-            _db.RawBusinesses.Add(rb);
-            rawByNormalized[normalized] = rb;
+            _db.RawBusinesses.Add(raw);
+            rawByNormalized[normalized] = raw;
         }
 
-        return (null, Unassigned);
+        return Task.FromResult<(int?, int?, string, string)>(
+            (null, raw.Id == 0 ? null : raw.Id, normalized, EffectiveCategory(null, raw, categoryRaw)));
     }
 
-    private async Task EnsureRawBusiness(string rawName, string normalized, string categoryRaw)
+    private async Task<RawBusiness> EnsureRawBusiness(
+        string rawName, string normalized, string categoryRaw)
     {
         var existing = await _db.RawBusinesses
             .FirstOrDefaultAsync(b => b.RawNameNormalized == normalized);
 
-        if (existing != null) return;
+        if (existing != null) return existing;
 
-        _db.RawBusinesses.Add(new RawBusiness
+        var raw = new RawBusiness
         {
             RawName = rawName,
             RawNameNormalized = normalized,
@@ -219,22 +131,25 @@ public class MerchantNormalizationService
             IsMapped = false,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
-        });
+        };
+        _db.RawBusinesses.Add(raw);
+        return raw;
     }
 
-    // ── Pattern test tool ─────────────────────────────────────────────────
+    private static string EffectiveCategory(
+        BusinessAlias? alias, RawBusiness? rawBusiness, string sourceCategory)
+    {
+        if (!string.IsNullOrWhiteSpace(alias?.Category)) return alias.Category;
+        if (!string.IsNullOrWhiteSpace(rawBusiness?.CategoryRaw)) return rawBusiness.CategoryRaw;
+        if (!string.IsNullOrWhiteSpace(sourceCategory)) return sourceCategory;
+        return Unassigned;
+    }
 
-    /// <summary>
-    /// Tests a raw merchant string against all patterns and returns the full result.
-    /// Used by the UI pattern testing tool.
-    /// </summary>
     public async Task<PatternTestResult> TestPattern(string rawInput)
     {
         var normalized = Normalize(rawInput);
         var alias = await MatchAlias(normalized);
-        var effectiveCategory = alias == null
-            ? Unassigned
-            : (string.IsNullOrEmpty(alias.Category) ? Unassigned : alias.Category);
+        var effectiveCategory = EffectiveCategory(alias, null, "");
 
         return new PatternTestResult(
             RawInput: rawInput,
@@ -243,8 +158,6 @@ public class MerchantNormalizationService
             MatchedAliasName: alias?.AliasName,
             EffectiveCategory: effectiveCategory);
     }
-
-    // ── Admin ops ─────────────────────────────────────────────────────────
 
     public async Task<List<RawBusiness>> GetUnmappedBusinesses() =>
         await _db.RawBusinesses
@@ -276,6 +189,18 @@ public class MerchantNormalizationService
         return alias;
     }
 
+    public async Task UpdateAliasName(int aliasId, string aliasName)
+    {
+        var trimmed = aliasName.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+            throw new ArgumentException("AliasName is required.");
+
+        var alias = await _db.BusinessAliases.FindAsync(aliasId)
+            ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
+        alias.AliasName = trimmed;
+        await _db.SaveChangesAsync();
+    }
+
     public async Task UpdateAliasCategory(int aliasId, string category)
     {
         var alias = await _db.BusinessAliases.FindAsync(aliasId)
@@ -287,10 +212,9 @@ public class MerchantNormalizationService
     public async Task<AliasPattern> AddPattern(
         int aliasId, string pattern, AliasPatternMatchType matchType)
     {
-        var alias = await _db.BusinessAliases.FindAsync(aliasId)
+        _ = await _db.BusinessAliases.FindAsync(aliasId)
             ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
 
-        // Normalize the pattern string for contains/starts_with to ensure consistent matching
         var storedPattern = matchType == AliasPatternMatchType.Regex
             ? pattern.Trim()
             : Normalize(pattern);
@@ -313,40 +237,81 @@ public class MerchantNormalizationService
 
     public async Task RemovePattern(int patternId)
     {
-        var p = await _db.AliasPatterns.FindAsync(patternId);
-        if (p != null)
-        {
-            _db.AliasPatterns.Remove(p);
-            await _db.SaveChangesAsync();
-        }
+        var pattern = await _db.AliasPatterns.FindAsync(patternId);
+        if (pattern == null) return;
+
+        _db.AliasPatterns.Remove(pattern);
+        await _db.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Maps a raw business to an alias and marks it as mapped.
-    /// Also updates RawBusinessAliasMap for backward compatibility.
-    /// </summary>
+    public async Task<int> DeleteAlias(int aliasId)
+    {
+        var alias = await _db.BusinessAliases
+            .Include(a => a.Patterns)
+            .FirstOrDefaultAsync(a => a.Id == aliasId)
+            ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
+
+        var affected = await _db.Transactions
+            .Where(t => t.AliasId == aliasId)
+            .OrderBy(t => t.Date)
+            .ThenBy(t => t.TransactionId)
+            .ToListAsync();
+
+        _db.BusinessAliases.Remove(alias);
+        await _db.SaveChangesAsync();
+
+        foreach (var txn in affected)
+        {
+            txn.AliasId = null;
+            txn.RawBusinessId = null;
+        }
+
+        await ReprocessUnaliasedTransactions(affected);
+        await _db.SaveChangesAsync();
+        await CleanupRawBusinesses();
+        await _db.SaveChangesAsync();
+        return affected.Count;
+    }
+
     public async Task MapRawToAlias(int rawBusinessId, int aliasId)
     {
         var raw = await _db.RawBusinesses.FindAsync(rawBusinessId)
             ?? throw new KeyNotFoundException($"RawBusiness {rawBusinessId} not found.");
-        _ = await _db.BusinessAliases.FindAsync(aliasId)
+        var alias = await _db.BusinessAliases.FindAsync(aliasId)
             ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
 
         raw.IsMapped = true;
         raw.UpdatedAt = DateTime.UtcNow;
 
-        // Upsert RawBusinessAliasMap
+        var transactions = await _db.Transactions
+            .Where(t => t.RawBusinessId == rawBusinessId && t.AliasId == null)
+            .ToListAsync();
+
+        foreach (var txn in transactions)
+        {
+            txn.AliasId = aliasId;
+            txn.RawBusinessId = null;
+            txn.Category = EffectiveCategory(alias, null, txn.Category);
+            txn.UpdatedAt = DateTime.UtcNow;
+        }
+
         var existing = await _db.RawBusinessAliasMaps
             .FirstOrDefaultAsync(m => m.RawBusinessId == rawBusinessId);
         if (existing == null)
+        {
             _db.RawBusinessAliasMaps.Add(new RawBusinessAliasMap
             {
                 RawBusinessId = rawBusinessId,
                 AliasId = aliasId
             });
+        }
         else
+        {
             existing.AliasId = aliasId;
+        }
 
+        await _db.SaveChangesAsync();
+        await CleanupRawBusinesses();
         await _db.SaveChangesAsync();
     }
 
@@ -366,42 +331,92 @@ public class MerchantNormalizationService
         await _db.SaveChangesAsync();
     }
 
-    /// <summary>
-    /// Retroactively re-runs pattern matching against all unmapped raw businesses.
-    /// Any that now match an alias are marked as mapped.
-    /// Returns the count of newly mapped businesses.
-    /// </summary>
     public async Task<int> RetroactivelyMap()
     {
-        var unmapped = await _db.RawBusinesses.Where(b => !b.IsMapped).ToListAsync();
-        var patterns = await _db.AliasPatterns.Include(p => p.Alias).ToListAsync();
-        int count = 0;
+        var candidates = await _db.Transactions
+            .Where(t => t.AliasId == null)
+            .OrderBy(t => t.Date)
+            .ThenBy(t => t.TransactionId)
+            .ToListAsync();
 
-        foreach (var raw in unmapped)
+        var count = await ReprocessUnaliasedTransactions(candidates);
+        await _db.SaveChangesAsync();
+        await CleanupRawBusinesses();
+        await _db.SaveChangesAsync();
+        return count;
+    }
+
+    private async Task<int> ReprocessUnaliasedTransactions(IList<Transaction> candidates)
+    {
+        var patterns = await _db.AliasPatterns
+            .Include(p => p.Alias)
+            .ToListAsync();
+        var rawByNormalized = await _db.RawBusinesses
+            .ToDictionaryAsync(b => b.RawNameNormalized);
+
+        var count = 0;
+        foreach (var txn in candidates)
         {
-            var alias = MatchAliasFromPatterns(raw.RawNameNormalized, patterns);
+            var rawName = string.IsNullOrWhiteSpace(txn.RawName) ? txn.Name : txn.RawName;
+            var normalized = Normalize(rawName);
+            txn.RawName = rawName;
+            txn.NormalizedName = normalized;
+
+            var alias = MatchAliasFromPatterns(normalized, patterns);
             if (alias != null)
             {
-                raw.IsMapped = true;
-                raw.UpdatedAt = DateTime.UtcNow;
-
-                var existing = await _db.RawBusinessAliasMaps
-                    .FirstOrDefaultAsync(m => m.RawBusinessId == raw.Id);
-                if (existing == null)
-                    _db.RawBusinessAliasMaps.Add(new RawBusinessAliasMap
-                    {
-                        RawBusinessId = raw.Id,
-                        AliasId = alias.Id
-                    });
-                else
-                    existing.AliasId = alias.Id;
-
+                txn.AliasId = alias.Id;
+                txn.RawBusinessId = null;
+                txn.Category = EffectiveCategory(alias, null, txn.Category);
+                txn.UpdatedAt = DateTime.UtcNow;
                 count++;
+                continue;
             }
+
+            if (!rawByNormalized.TryGetValue(normalized, out var raw))
+            {
+                raw = new RawBusiness
+                {
+                    RawName = rawName,
+                    RawNameNormalized = normalized,
+                    CategoryRaw = string.IsNullOrWhiteSpace(txn.Category) ||
+                        txn.Category == Unassigned ? "" : txn.Category,
+                    IsMapped = false,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _db.RawBusinesses.Add(raw);
+                rawByNormalized[normalized] = raw;
+            }
+
+            txn.RawBusinessId = raw.Id == 0 ? null : raw.Id;
+            txn.Category = EffectiveCategory(null, raw, txn.Category);
+            txn.UpdatedAt = DateTime.UtcNow;
         }
 
-        if (count > 0) await _db.SaveChangesAsync();
         return count;
+    }
+
+    private async Task CleanupRawBusinesses()
+    {
+        var referencedRawIds = await _db.Transactions
+            .Where(t => t.RawBusinessId != null)
+            .Select(t => t.RawBusinessId!.Value)
+            .Distinct()
+            .ToListAsync();
+
+        var emptyRawBusinesses = await _db.RawBusinesses
+            .Where(b => !referencedRawIds.Contains(b.Id))
+            .ToListAsync();
+
+        if (emptyRawBusinesses.Count == 0) return;
+
+        var emptyIds = emptyRawBusinesses.Select(b => b.Id).ToList();
+        var maps = await _db.RawBusinessAliasMaps
+            .Where(m => emptyIds.Contains(m.RawBusinessId))
+            .ToListAsync();
+        _db.RawBusinessAliasMaps.RemoveRange(maps);
+        _db.RawBusinesses.RemoveRange(emptyRawBusinesses);
     }
 }
 

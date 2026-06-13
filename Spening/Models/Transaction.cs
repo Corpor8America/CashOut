@@ -10,6 +10,8 @@ public class Transaction
 
     public DateOnly Date { get; set; }
     public string Name { get; set; } = "";
+    public string RawName { get; set; } = "";
+    public string NormalizedName { get; set; } = "";
 
     /// <summary>
     /// Money entering the account (e.g. payroll, refund, credit card payment received).

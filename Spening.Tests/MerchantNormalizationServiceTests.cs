@@ -190,7 +190,7 @@ public class MerchantNormalizationServiceTests
         {
             Id = 1,
             AliasId = 1,
-            Pattern = "AMAZON",
+            Pattern = "AMZN",
             MatchType = AliasPatternMatchType.Contains,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
@@ -199,18 +199,21 @@ public class MerchantNormalizationServiceTests
         await db.SaveChangesAsync();
 
         var svc = BuildSvc(db);
-        var (aliasId, category) = await svc.Resolve("AMZN AMAZON MKTP US", "SOME_PLAID_CATEGORY");
+        var (aliasId, rawBusinessId, normalizedName, category) =
+            await svc.Resolve("AMZN AMAZON MKTP US", "SOME_PLAID_CATEGORY");
 
         Assert.AreEqual(1, aliasId);
+        Assert.IsNull(rawBusinessId);
+        Assert.AreEqual("AMZN AMAZON MKTP US", normalizedName);
         Assert.AreEqual("SHOPPING", category);
         // Verify CSV/Plaid category was ignored
         Assert.AreNotEqual("SOME_PLAID_CATEGORY", category);
     }
 
     [TestMethod]
-    public async Task Resolve_MatchedAlias_NoCategory_ReturnsUnassigned()
+    public async Task Resolve_MatchedAlias_NoCategory_ReturnsSourceCategory()
     {
-        var db = BuildDb(nameof(Resolve_MatchedAlias_NoCategory_ReturnsUnassigned));
+        var db = BuildDb(nameof(Resolve_MatchedAlias_NoCategory_ReturnsSourceCategory));
         var alias = new BusinessAlias { Id = 1, AliasName = "Venmo", Category = "", CreatedAt = DateTime.UtcNow };
         db.BusinessAliases.Add(alias);
         db.AliasPatterns.Add(new AliasPattern
@@ -226,28 +229,32 @@ public class MerchantNormalizationServiceTests
         await db.SaveChangesAsync();
 
         var svc = BuildSvc(db);
-        var (aliasId, category) = await svc.Resolve("VENMO PAYMENT 12345678", "TRANSFER");
+        var (aliasId, rawBusinessId, _, category) =
+            await svc.Resolve("VENMO PAYMENT 12345678", "TRANSFER");
 
         Assert.AreEqual(1, aliasId);
-        Assert.AreEqual(MerchantNormalizationService.Unassigned, category);
+        Assert.IsNull(rawBusinessId);
+        Assert.AreEqual("TRANSFER", category);
     }
 
     [TestMethod]
-    public async Task Resolve_NoMatch_ReturnsUnassigned_AndCreatesRawBusiness()
+    public async Task Resolve_NoMatch_ReturnsRawCategory_AndCreatesRawBusiness()
     {
-        var db = BuildDb(nameof(Resolve_NoMatch_ReturnsUnassigned_AndCreatesRawBusiness));
+        var db = BuildDb(nameof(Resolve_NoMatch_ReturnsRawCategory_AndCreatesRawBusiness));
         var svc = BuildSvc(db);
 
-        var (aliasId, category) = await svc.Resolve("SQ *JOES COFFEE 9876543", "FOOD_AND_DRINK");
+        var (aliasId, rawBusinessId, normalizedName, category) =
+            await svc.Resolve("SQ *JOES COFFEE 9876543", "FOOD_AND_DRINK");
         await db.SaveChangesAsync();
 
         Assert.IsNull(aliasId);
-        Assert.AreEqual(MerchantNormalizationService.Unassigned, category);
+        Assert.IsNotNull(rawBusinessId);
+        Assert.AreEqual("SQ JOES COFFEE", normalizedName);
+        Assert.AreEqual("FOOD_AND_DRINK", category);
 
         var rawBiz = db.RawBusinesses.SingleOrDefault();
         Assert.IsNotNull(rawBiz);
         Assert.IsFalse(rawBiz.IsMapped);
-        // CategoryRaw stores original for reference, never used for categorization
         Assert.AreEqual("FOOD_AND_DRINK", rawBiz.CategoryRaw);
     }
 
@@ -278,9 +285,9 @@ public class MerchantNormalizationServiceTests
     // ── RetroactivelyMap ──────────────────────────────────────────────────
 
     [TestMethod]
-    public async Task RetroactivelyMap_MapsMatchingBusinesses()
+    public async Task RetroactivelyMap_MapsMatchingTransactionsAndCleansRawBusiness()
     {
-        var db = BuildDb(nameof(RetroactivelyMap_MapsMatchingBusinesses));
+        var db = BuildDb(nameof(RetroactivelyMap_MapsMatchingTransactionsAndCleansRawBusiness));
 
         var alias = new BusinessAlias { Id = 1, AliasName = "Amazon", Category = "SHOPPING", CreatedAt = DateTime.UtcNow };
         db.BusinessAliases.Add(alias);
@@ -288,20 +295,35 @@ public class MerchantNormalizationServiceTests
         {
             Id = 1,
             AliasId = 1,
-            Pattern = "AMAZON",
+            Pattern = "AMZN",
             MatchType = AliasPatternMatchType.Contains,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow,
             Alias = alias
         });
 
-        // Unmapped raw business whose normalized name contains AMAZON
-        db.RawBusinesses.Add(new RawBusiness
+        var raw = new RawBusiness
         {
             RawName = "AMZN MKTP US 123456789",
             RawNameNormalized = MerchantNormalizationService.Normalize("AMZN MKTP US 123456789"),
-            CategoryRaw = "",
+            CategoryRaw = "SHOPPING_SOURCE",
             IsMapped = false,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        db.RawBusinesses.Add(raw);
+        db.Transactions.Add(new Transaction
+        {
+            TransactionId = "txn-1",
+            AccountId = "acct",
+            Date = new DateOnly(2026, 1, 1),
+            Name = "AMZN MKTP US 123456789",
+            RawName = "AMZN MKTP US 123456789",
+            NormalizedName = raw.RawNameNormalized,
+            Amount = 10,
+            Debit = 10,
+            Category = "SHOPPING_SOURCE",
+            RawBusinessId = raw.Id,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });
@@ -312,14 +334,17 @@ public class MerchantNormalizationServiceTests
         var count = await svc.RetroactivelyMap();
 
         Assert.AreEqual(1, count);
-        Assert.IsTrue(db.RawBusinesses.Single().IsMapped);
-        Assert.AreEqual(1, db.RawBusinessAliasMaps.Count());
+        var txn = db.Transactions.Single();
+        Assert.AreEqual(1, txn.AliasId);
+        Assert.IsNull(txn.RawBusinessId);
+        Assert.AreEqual("SHOPPING", txn.Category);
+        Assert.AreEqual(0, db.RawBusinesses.Count());
     }
 
     [TestMethod]
-    public async Task RetroactivelyMap_IgnoresAlreadyMapped()
+    public async Task RetroactivelyMap_IgnoresAlreadyAliasedTransactions()
     {
-        var db = BuildDb(nameof(RetroactivelyMap_IgnoresAlreadyMapped));
+        var db = BuildDb(nameof(RetroactivelyMap_IgnoresAlreadyAliasedTransactions));
 
         var alias = new BusinessAlias { Id = 1, AliasName = "Amazon", Category = "SHOPPING", CreatedAt = DateTime.UtcNow };
         db.BusinessAliases.Add(alias);
@@ -334,12 +359,18 @@ public class MerchantNormalizationServiceTests
             Alias = alias
         });
 
-        db.RawBusinesses.Add(new RawBusiness
+        db.Transactions.Add(new Transaction
         {
+            TransactionId = "txn-1",
+            AccountId = "acct",
+            Date = new DateOnly(2026, 1, 1),
+            Name = "AMAZON.COM",
             RawName = "AMAZON.COM",
-            RawNameNormalized = "AMAZON COM",
-            CategoryRaw = "",
-            IsMapped = true, // already mapped
+            NormalizedName = "AMAZON COM",
+            Amount = 10,
+            Debit = 10,
+            Category = "SHOPPING",
+            AliasId = 1,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
         });

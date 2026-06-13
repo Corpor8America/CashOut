@@ -213,7 +213,7 @@ public class CsvImportService
             var categoryRaw = GetField(row, categoryIdx);
 
             // Merchant normalization — always uses "Unassigned" unless alias has category
-            var (aliasId, effectiveCategory) = await _normalization.ResolveBulk(
+            var (aliasId, rawBusinessId, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                 description, categoryRaw, allPatterns, rawByNormalized);
 
             var txn = new Transaction
@@ -223,11 +223,14 @@ public class CsvImportService
                 Source = TransactionSource.CSV,
                 Date = date,
                 Name = description,
+                RawName = description,
+                NormalizedName = normalizedName,
                 Credit = credit,
                 Debit = debit,
                 Amount = amount,
                 Category = effectiveCategory,
                 AliasId = aliasId,
+                RawBusinessId = rawBusinessId,
                 DedupKey = dedupKey,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow

@@ -59,9 +59,11 @@
                         <span class="text-muted" style="font-size:0.82em">→</span>
                         @if (_editingAlias == alias.Id)
                         {
+                            <input type="text" @bind="_editAliasName" style="width:180px" placeholder="Alias name"
+                                   @onkeydown="e => OnAliasKey(e, alias.Id)" />
                             <input type="text" @bind="_editAliasCategory" style="width:220px" placeholder="Category (empty = Unassigned)"
-                                   @onkeydown="e => OnAliasCategoryKey(e, alias.Id)" />
-                            <button class="btn-sm btn-primary" @onclick="() => SaveAliasCategory(alias.Id)">Save</button>
+                                   @onkeydown="e => OnAliasKey(e, alias.Id)" />
+                            <button class="btn-sm btn-primary" @onclick="() => SaveAlias(alias.Id)">Save</button>
                             <button class="btn-sm" @onclick="CancelAliasEdit">Cancel</button>
                         }
                         else
@@ -69,7 +71,8 @@
                             <span style="color:@(string.IsNullOrEmpty(alias.Category) ? "#888" : "#1a1a1a")">
                                 @(string.IsNullOrEmpty(alias.Category) ? "Unassigned" : alias.Category)
                             </span>
-                            <button class="btn-sm" @onclick="() => StartAliasEdit(alias.Id, alias.Category)">Edit</button>
+                            <button class="btn-sm" @onclick="() => StartAliasEdit(alias.Id, alias.AliasName, alias.Category)">Edit</button>
+                            <button class="btn-sm" @onclick="() => DeleteAlias(alias.Id)">Delete</button>
                         }
                     </div>
 
@@ -292,6 +295,7 @@
 
     // Alias category edit
     private int _editingAlias;
+    private string _editAliasName = "";
     private string _editAliasCategory = "";
 
     // Pattern form
@@ -352,37 +356,58 @@
         finally { _saving = false; }
     }
 
-    private void StartAliasEdit(int id, string current)
+    private void StartAliasEdit(int id, string currentName, string currentCategory)
     {
         _editingAlias = id;
-        _editAliasCategory = current;
+        _editAliasName = currentName;
+        _editAliasCategory = currentCategory;
         _addingPatternForAlias = 0;
     }
 
-    private async Task SaveAliasCategory(int id)
+    private async Task SaveAlias(int id)
     {
         _error = null;
         try
         {
-            var resp = await Http.PatchAsJsonAsync(
+            var nameResp = await Http.PatchAsJsonAsync(
+                $"api/normalization/aliases/{id}/name",
+                new { AliasName = _editAliasName });
+            nameResp.EnsureSuccessStatusCode();
+
+            var categoryResp = await Http.PatchAsJsonAsync(
                 $"api/normalization/aliases/{id}/category",
                 new { Category = _editAliasCategory });
-            resp.EnsureSuccessStatusCode();
-            _message = "Category updated.";
+            categoryResp.EnsureSuccessStatusCode();
+            _message = "Alias updated.";
             await LoadAll();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { CancelAliasEdit(); }
     }
 
-    private async Task OnAliasCategoryKey(
+    private async Task OnAliasKey(
         Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, int id)
     {
-        if (e.Key == "Enter") await SaveAliasCategory(id);
+        if (e.Key == "Enter") await SaveAlias(id);
         else if (e.Key == "Escape") CancelAliasEdit();
     }
 
-    private void CancelAliasEdit() { _editingAlias = 0; _editAliasCategory = ""; }
+    private void CancelAliasEdit() { _editingAlias = 0; _editAliasName = ""; _editAliasCategory = ""; }
+
+    private async Task DeleteAlias(int id)
+    {
+        _error = null;
+        try
+        {
+            var resp = await Http.DeleteAsync($"api/normalization/aliases/{id}");
+            resp.EnsureSuccessStatusCode();
+            var result = await resp.Content.ReadFromJsonAsync<Dictionary<string, int>>();
+            var reprocessed = result?["reprocessed"] ?? 0;
+            _message = $"Alias deleted. Reprocessed {reprocessed} transaction(s).";
+            await LoadAll();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
 
     // ── Patterns ──────────────────────────────────────────────────────────
 
@@ -465,9 +490,9 @@
             var resp = await Http.PostAsync("api/normalization/retroactive-map", null);
             resp.EnsureSuccessStatusCode();
             var result = await resp.Content.ReadFromJsonAsync<Dictionary<string, int>>();
-            var count = result?["mapped"] ?? 0;
+            var count = result?["matched"] ?? result?["mapped"] ?? 0;
             _message = count > 0
-                ? $"{count} merchant(s) newly matched and mapped."
+                ? $"{count} transaction(s) newly matched."
                 : "No new matches found.";
             await LoadAll();
         }
