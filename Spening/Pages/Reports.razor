@@ -1,221 +1,196 @@
 @page "/reports"
 @inject HttpClient Http
 
-<h2>Reports</h2>
+<MudText Typo="Typo.h4" GutterBottom="true">Reports</MudText>
 
 @if (_error != null)
 {
-    <div class="alert-error">@_error</div>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
 }
 
-<div class="toolbar">
-    <label>Year: </label>
-    <select @bind="_year" @bind:after="Refresh">
-        @foreach (var y in _availableYears)
-        {
-            <option value="@y">@y</option>
-        }
-    </select>
-    <button @onclick="Refresh" disabled="@_loading">Refresh</button>
-</div>
+<MudPaper Class="pa-4 mb-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+        <MudSelect T="int" Label="Year" Value="_year" ValueChanged="OnYearChanged" Dense="true" Margin="Margin.Dense" Style="width:100px">
+            @foreach (var y in _availableYears)
+            {
+                <MudSelectItem Value="@y">@y</MudSelectItem>
+            }
+        </MudSelect>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Refresh" Disabled="@_loading">Refresh</MudButton>
+    </MudStack>
+</MudPaper>
 
-<div class="tabs">
-    @foreach (var tab in _tabs)
-    {
-        <button class="tab @(tab == _activeTab ? "active" : "")" @onclick="() => SetTab(tab)">@tab</button>
-    }
-</div>
+<MudTabs Elevation="1" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTabIndex">
+    <MudTabPanel Text="Monthly" OnClick="() => SetTab(0)">
+        <MudStack Spacing="4">
+            <MudStack Row="true" Justify="Justify.FlexEnd">
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
+                           Href="@($"api/reports/monthly?year={_year}&format=csv")" Target="_blank">
+                    Export CSV
+                </MudButton>
+            </MudStack>
+            <MudTable Items="@_monthly" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Month</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh Style="text-align:right">Transactions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Month">@context.Label</MudTd>
+                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
+                    <MudTd DataLabel="Transactions" Style="text-align:right">@context.Count</MudTd>
+                </RowTemplate>
+                <FooterContent>
+                    <MudTFootRow Class="bold-footer">
+                        <MudTd>Total</MudTd>
+                        <MudTd Style="text-align:right">@_monthly.Sum(r => r.Total).ToString("C")</MudTd>
+                        <MudTd Style="text-align:right">@_monthly.Sum(r => r.Count)</MudTd>
+                    </MudTFootRow>
+                </FooterContent>
+            </MudTable>
+        </MudStack>
+    </MudTabPanel>
 
-@if (_loading)
-{
-    <p class="text-muted">Loading...</p>
-}
-else
-{
-    @if (_activeTab == "Monthly")
-    {
-        <div class="toolbar">
-            <a href="api/reports/monthly?year=@_year&format=csv" target="_blank">
-                <button type="button" class="btn-sm">Export CSV</button>
-            </a>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Month</th>
-                    <th class="text-right">Total</th>
-                    <th class="text-right">Transactions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _monthly)
-                {
-                    <tr>
-                        <td>@r.Label</td>
-                        <td class="text-right">@r.Total.ToString("C")</td>
-                        <td class="text-right">@r.Count</td>
-                    </tr>
-                }
-                <tr class="total-row">
-                    <td>Total</td>
-                    <td class="text-right">@_monthly.Sum(r => r.Total).ToString("C")</td>
-                    <td class="text-right">@_monthly.Sum(r => r.Count)</td>
-                </tr>
-            </tbody>
-        </table>
-    }
+    <MudTabPanel Text="By Category" OnClick="() => SetTab(1)">
+        <MudStack Spacing="4">
+            <MudStack Row="true" Justify="Justify.FlexEnd">
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
+                           Href="@($"api/reports/category?year={_year}&format=csv")" Target="_blank">
+                    Export CSV
+                </MudButton>
+            </MudStack>
+            <MudTable Items="@_categories" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Category</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh Style="text-align:right">% of Spend</MudTh>
+                    <MudTh Style="text-align:right">Transactions</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Category">@context.Category</MudTd>
+                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
+                    <MudTd DataLabel="% of Spend" Style="text-align:right">@context.PctOfSpend%</MudTd>
+                    <MudTd DataLabel="Transactions" Style="text-align:right">@context.Count</MudTd>
+                </RowTemplate>
+                <FooterContent>
+                    <MudTFootRow Class="bold-footer">
+                        <MudTd>Total</MudTd>
+                        <MudTd Style="text-align:right">@_categories.Sum(r => r.Total).ToString("C")</MudTd>
+                        <MudTd Style="text-align:right">100%</MudTd>
+                        <MudTd Style="text-align:right">@_categories.Sum(r => r.Count)</MudTd>
+                    </MudTFootRow>
+                </FooterContent>
+            </MudTable>
+        </MudStack>
+    </MudTabPanel>
 
-    @if (_activeTab == "By Category")
-    {
-        <div class="toolbar">
-            <a href="api/reports/category?year=@_year&format=csv" target="_blank">
-                <button type="button" class="btn-sm">Export CSV</button>
-            </a>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Category</th>
-                    <th class="text-right">Total</th>
-                    <th class="text-right">% of Spend</th>
-                    <th class="text-right">Transactions</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _categories)
-                {
-                    <tr>
-                        <td>@r.Category</td>
-                        <td class="text-right">@r.Total.ToString("C")</td>
-                        <td class="text-right">@r.PctOfSpend%</td>
-                        <td class="text-right">@r.Count</td>
-                    </tr>
-                }
-                <tr class="total-row">
-                    <td>Total</td>
-                    <td class="text-right">@_categories.Sum(r => r.Total).ToString("C")</td>
-                    <td class="text-right">100%</td>
-                    <td class="text-right">@_categories.Sum(r => r.Count)</td>
-                </tr>
-            </tbody>
-        </table>
-    }
-
-    @if (_activeTab == "Pivot")
-    {
+    <MudTabPanel Text="Pivot" OnClick="() => SetTab(2)">
         @if (_pivot != null)
         {
-            <table>
-                <thead>
-                    <tr>
-                        <th>Month</th>
-                        @foreach (var cat in _pivot.Categories)
-                        {
-                            <th class="text-right" title="@cat">
-                                @(cat.Length > 12 ? cat[..11] + "…" : cat)
-                            </th>
-                        }
-                        <th class="text-right">Total</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in _pivot.Rows)
+            <MudTable Items="@_pivot.Rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Month</MudTh>
+                    @foreach (var cat in _pivot.Categories)
                     {
-                        <tr>
-                            <td>@row.Label</td>
-                            @for (int i = 0; i < row.Values.Count; i++)
-                            {
-                                <td class="text-right">
-                                    @(row.Values[i] == 0 ? "—" : row.Values[i].ToString("C"))
-                                </td>
-                            }
-                            <td class="text-right">@row.RowTotal.ToString("C")</td>
-                        </tr>
+                        <MudTh Style="text-align:right" title="@cat">
+                            @(cat.Length > 12 ? cat[..11] + "…" : cat)
+                        </MudTh>
                     }
-                    <tr class="total-row">
-                        <td>Total</td>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Month">@context.Label</MudTd>
+                    @for (int i = 0; i < context.Values.Count; i++)
+                    {
+                        var val = context.Values[i];
+                        <MudTd DataLabel="@_pivot.Categories[i]" Style="text-align:right">
+                            @(val == 0 ? "—" : val.ToString("C"))
+                        </MudTd>
+                    }
+                    <MudTd DataLabel="Total" Style="text-align:right; font-weight:bold">@context.RowTotal.ToString("C")</MudTd>
+                </RowTemplate>
+                <FooterContent>
+                    <MudTFootRow Class="bold-footer">
+                        <MudTd>Total</MudTd>
                         @foreach (var ct in _pivot.ColumnTotals)
                         {
-                            <td class="text-right">@ct.ToString("C")</td>
+                            <MudTd Style="text-align:right">@ct.ToString("C")</MudTd>
                         }
-                        <td class="text-right">@_pivot.GrandTotal.ToString("C")</td>
-                    </tr>
-                </tbody>
-            </table>
-            <p class="text-muted" style="margin-top:0.5rem">Showing top 8 categories by spend.</p>
+                        <MudTd Style="text-align:right">@_pivot.GrandTotal.ToString("C")</MudTd>
+                    </MudTFootRow>
+                </FooterContent>
+            </MudTable>
+            <MudText Typo="Typo.caption" Class="mt-2">Showing top 8 categories by spend.</MudText>
         }
-    }
+    </MudTabPanel>
 
-    @if (_activeTab == "Top Merchants")
-    {
-        <div class="toolbar">
-            <label>Top: </label>
-            <input type="number" @bind="_topN" style="width:60px" min="1" max="100" />
-            <button @onclick="Refresh" class="btn-sm">Apply</button>
-            <a href="api/reports/merchants?year=@_year&topN=@_topN&format=csv" target="_blank">
-                <button type="button" class="btn-sm">Export CSV</button>
-            </a>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Merchant</th>
-                    <th class="text-right">Total</th>
-                    <th class="text-right">Visits</th>
-                    <th class="text-right">Avg/Visit</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var r in _merchants)
-                {
-                    <tr>
-                        <td>@r.Name</td>
-                        <td class="text-right">@r.Total.ToString("C")</td>
-                        <td class="text-right">@r.Count</td>
-                        <td class="text-right">@r.AvgPerVisit.ToString("C")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
+    <MudTabPanel Text="Top Merchants" OnClick="() => SetTab(3)">
+        <MudStack Spacing="4">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                <MudNumericField @bind-Value="_topN" Label="Top N" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="100" Style="width:80px" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Refresh">Apply</MudButton>
+                <MudSpacer />
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
+                           Href="@($"api/reports/merchants?year={_year}&topN={_topN}&format=csv")" Target="_blank">
+                    Export CSV
+                </MudButton>
+            </MudStack>
+            <MudTable Items="@_merchants" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Merchant</MudTh>
+                    <MudTh Style="text-align:right">Total</MudTh>
+                    <MudTh Style="text-align:right">Visits</MudTh>
+                    <MudTh Style="text-align:right">Avg/Visit</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Merchant">@context.Name</MudTd>
+                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
+                    <MudTd DataLabel="Visits" Style="text-align:right">@context.Count</MudTd>
+                    <MudTd DataLabel="Avg/Visit" Style="text-align:right">@context.AvgPerVisit.ToString("C")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudStack>
+    </MudTabPanel>
 
-    @if (_activeTab == "Largest")
-    {
-        <div class="toolbar">
-            <label>Top: </label>
-            <input type="number" @bind="_topN" style="width:60px" min="1" max="100" />
-            <button @onclick="Refresh" class="btn-sm">Apply</button>
-            <a href="api/reports/largest?year=@_year&topN=@_topN&format=csv" target="_blank">
-                <button type="button" class="btn-sm">Export CSV</button>
-            </a>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Merchant</th>
-                    <th>Category</th>
-                    <th class="text-right">Amount</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var t in _largest)
-                {
-                    <tr>
-                        <td>@t.Date.ToString("MMM d, yyyy")</td>
-                        <td>@t.Name</td>
-                        <td class="text-muted">@(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)</td>
-                        <td class="text-right">@t.Amount.ToString("C")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+    <MudTabPanel Text="Largest" OnClick="() => SetTab(4)">
+        <MudStack Spacing="4">
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+                <MudNumericField @bind-Value="_topN" Label="Top N" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="100" Style="width:80px" />
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Refresh">Apply</MudButton>
+                <MudSpacer />
+                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
+                           Href="@($"api/reports/largest?year={_year}&topN={_topN}&format=csv")" Target="_blank">
+                    Export CSV
+                </MudButton>
+            </MudStack>
+            <MudTable Items="@_largest" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Date</MudTh>
+                    <MudTh>Merchant</MudTh>
+                    <MudTh>Category</MudTh>
+                    <MudTh Style="text-align:right">Amount</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
+                    <MudTd DataLabel="Merchant">@context.Name</MudTd>
+                    <MudTd DataLabel="Category" Class="text-muted">@(string.IsNullOrEmpty(context.Category) ? "—" : context.Category)</MudTd>
+                    <MudTd DataLabel="Amount" Style="text-align:right">@context.Amount.ToString("C")</MudTd>
+                </RowTemplate>
+            </MudTable>
+        </MudStack>
+    </MudTabPanel>
+</MudTabs>
+
+<style>
+    .bold-footer td {
+        font-weight: bold;
+        background-color: var(--mud-palette-background-grey);
     }
-}
+</style>
 
 @code {
-    private readonly string[] _tabs = { "Monthly", "By Category", "Pivot", "Top Merchants", "Largest" };
-    private string _activeTab = "Monthly";
+    private readonly string[] _tabNames = { "Monthly", "By Category", "Pivot", "Top Merchants", "Largest" };
+    private int _activeTabIndex = 0;
     private int _year = DateTime.Now.Year;
     private int _topN = 10;
     private bool _loading;
@@ -249,9 +224,15 @@ else
         }
     }
 
-    private async Task SetTab(string tab)
+    private async Task SetTab(int index)
     {
-        _activeTab = tab;
+        _activeTabIndex = index;
+        await Refresh();
+    }
+
+    private async Task OnYearChanged(int year)
+    {
+        _year = year;
         await Refresh();
     }
 
@@ -260,23 +241,24 @@ else
         _loading = true; _error = null;
         try
         {
-            if (_activeTab == "Monthly")
+            var tabName = _tabNames[_activeTabIndex];
+            if (tabName == "Monthly")
                 _monthly = await Http.GetFromJsonAsync<List<MonthlyRow>>(
                     $"api/reports/monthly?year={_year}") ?? new();
 
-            else if (_activeTab == "By Category")
+            else if (tabName == "By Category")
                 _categories = await Http.GetFromJsonAsync<List<CategoryRow>>(
                     $"api/reports/category?year={_year}") ?? new();
 
-            else if (_activeTab == "Pivot")
+            else if (tabName == "Pivot")
                 _pivot = await Http.GetFromJsonAsync<PivotResult>(
                     $"api/reports/pivot?year={_year}");
 
-            else if (_activeTab == "Top Merchants")
+            else if (tabName == "Top Merchants")
                 _merchants = await Http.GetFromJsonAsync<List<MerchantRow>>(
                     $"api/reports/merchants?year={_year}&topN={_topN}") ?? new();
 
-            else if (_activeTab == "Largest")
+            else if (tabName == "Largest")
                 _largest = await Http.GetFromJsonAsync<List<TransactionDto>>(
                     $"api/reports/largest?year={_year}&topN={_topN}") ?? new();
         }

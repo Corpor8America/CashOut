@@ -5,62 +5,56 @@
 @inject ILogger<Accounts> Logger
 @implements IDisposable
 
-<h2>Linked Accounts</h2>
+<MudText Typo="Typo.h4" GutterBottom="true">Linked Accounts</MudText>
 
 @if (_error != null)
 {
-    <div class="alert-error">@_error</div>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
 }
 
 @if (_loading)
 {
-    <p class="text-muted">Loading...</p>
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
 }
 else if (_accounts.Count == 0)
 {
-    <p class="text-muted">No accounts linked yet.</p>
+    <MudText Color="Color.Secondary" Class="mb-4">No accounts linked yet.</MudText>
 }
 else
 {
-    <table>
-        <thead>
-            <tr>
-                <th>Institution</th>
-                <th>Name</th>
-                <th>Account #</th>
-                <th>Type</th>
-                <th></th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var acct in _accounts)
-            {
-                <tr>
-                    <td>@acct.Institution</td>
-                    <td>@acct.Name</td>
-                    <td>••••@acct.Mask</td>
-                    <td>@acct.Subtype</td>
-                    <td>
-                        @if (_confirmRemoveId == acct.Id)
-                        {
-                            <span>Sure? </span>
-                            <button @onclick="() => ConfirmRemove(acct.Id)">Yes, remove</button>
-                            <button @onclick="CancelRemove">Cancel</button>
-                        }
-                        else
-                        {
-                            <button class="btn-danger btn-sm" @onclick="() => RequestRemove(acct.Id)">Remove</button>
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <MudTable Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mb-4">
+        <HeaderContent>
+            <MudTh>Institution</MudTh>
+            <MudTh>Name</MudTh>
+            <MudTh>Account #</MudTh>
+            <MudTh>Type</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Institution">@context.Institution</MudTd>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Account #">••••@context.Mask</MudTd>
+            <MudTd DataLabel="Type">@context.Subtype</MudTd>
+            <MudTd>
+                @if (_confirmRemoveId == context.Id)
+                {
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudText Typo="Typo.body2">Sure?</MudText>
+                        <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small" OnClick="() => ConfirmRemove(context.Id)">Yes, remove</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelRemove">Cancel</MudButton>
+                    </MudStack>
+                }
+                else
+                {
+                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" OnClick="() => RequestRemove(context.Id)">Remove</MudButton>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
 }
 
-<br />
-@* Disabled until first real browser render — JS interop is not available during pre-render *@
-<button class="btn-primary" @onclick="StartLinkFlow" disabled="@(!_isRendered || _linking)">
+<MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartLinkFlow" 
+           Disabled="@(!_isRendered || _linking)" StartIcon="@(_linking ? null : Icons.Material.Filled.Add)">
     @if (!_isRendered)
     {
         <span>Loading…</span>
@@ -73,11 +67,11 @@ else
     {
         <span>Add Account</span>
     }
-</button>
+</MudButton>
 
 @if (_newAccounts.Count > 0)
 {
-    <div class="alert-success" style="margin-top:1rem">Added @_newAccounts.Count account(s) successfully.</div>
+    <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="mt-4">Added @_newAccounts.Count account(s) successfully.</MudAlert>
 }
 
 @code {

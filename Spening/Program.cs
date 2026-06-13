@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Components;
 using System.Globalization;
+using MudBlazor;
+using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,6 +46,7 @@ builder.Services.AddScoped<MerchantNormalizationService>();
 builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddMudServices();
 
 // ── HttpClient for Blazor pages calling local API endpoints ───────────────
 builder.Services.AddScoped<HttpClient>(sp =>

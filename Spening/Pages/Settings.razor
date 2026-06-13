@@ -1,59 +1,67 @@
 @page "/settings"
 @inject HttpClient Http
 
-<h2>Settings</h2>
+<MudText Typo="Typo.h4" GutterBottom="true">Settings</MudText>
 
 @if (_error != null)
 {
-    <div class="alert-error">@_error</div>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
 }
 
 @if (_loading)
 {
-    <p class="text-muted">Loading...</p>
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
 }
 else
 {
-    <table style="max-width:520px">
-        <tbody>
-            <tr>
-                <td><strong>Plaid Environment</strong></td>
-                <td>
-                    <code>@_plaidEnvironment</code>
-                    <span class="text-muted" style="margin-left:0.5rem">
-                        (set via <code>PLAID_ENV</code> env var)
-                    </span>
-                </td>
-            </tr>
-            <tr>
-                <td><strong>Active Year</strong></td>
-                <td>
-                    <span>@_outputYear</span>
-                    <span class="text-muted" style="margin-left:0.5rem">
-                        (from most recent transaction)
-                    </span>
-                </td>
-            </tr>
-            <tr>
-                <td><strong>Version</strong></td>
-                <td><code>@_version</code></td>
-            </tr>
-        </tbody>
-    </table>
+    <MudPaper Elevation="1" Class="pa-6" MaxWidth="600px">
+        <MudSimpleTable Elevation="0">
+            <tbody>
+                <tr>
+                    <td><strong>Plaid Environment</strong></td>
+                    <td>
+                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                            <MudChip T="string" Color="@(_plaidEnvironment == "production" ? Color.Error : Color.Info)" Size="Size.Small" Variant="Variant.Filled">
+                                @_plaidEnvironment.ToUpper()
+                            </MudChip>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                (set via <code>PLAID_ENV</code> env var)
+                            </MudText>
+                        </MudStack>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Active Year</strong></td>
+                    <td>
+                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                            <MudText>@_outputYear</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                (from most recent transaction)
+                            </MudText>
+                        </MudStack>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Version</strong></td>
+                    <td><MudText Typo="Typo.body2" Style="font-family:monospace">@_version</MudText></td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
 
-    @if (_plaidEnvironment == "production")
-    {
-        <div class="alert-error" style="margin-top:1rem">
-            ⚠ Production mode — using real financial data.
-        </div>
-    }
+        @if (_plaidEnvironment == "production")
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-6" Icon="@Icons.Material.Filled.Warning">
+                Production mode — using real financial data.
+            </MudAlert>
+        }
 
-    @if (_plaidEnvironment == "sandbox")
-    {
-        <div class="alert-success" style="margin-top:1rem">
-            Sandbox mode — safe for testing with Plaid test credentials.
-        </div>
-    }
+        @if (_plaidEnvironment == "sandbox")
+        {
+            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-6" Icon="@Icons.Material.Filled.Info">
+                Sandbox mode — safe for testing with Plaid test credentials.
+            </MudAlert>
+        }
+    </MudPaper>
 }
 
 @code {

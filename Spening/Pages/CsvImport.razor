@@ -2,206 +2,215 @@
 @inject HttpClient Http
 @inject NavigationManager Nav
 
-<h2>CSV Import</h2>
+<MudText Typo="Typo.h4" GutterBottom="true">CSV Import</MudText>
 
 @if (!string.IsNullOrEmpty(AccountId))
 {
-    <p class="text-muted" style="margin-bottom:1.25rem">
+    <MudText Typo="Typo.subtitle1" Class="text-muted mb-4">
         Account: <strong>@AccountId</strong>
-    </p>
+    </MudText>
 }
 
 @if (_error != null)
 {
-    <div class="alert-error">@_error</div>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
 }
 @if (_message != null)
 {
-    <div class="alert-success">@_message</div>
+    <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="my-4">@_message</MudAlert>
 }
 
 @if (_step == Step.Upload)
 {
-    <h3>Step 1: Upload CSV</h3>
-    <p class="text-muted" style="margin-bottom:0.75rem">
-        Upload a CSV file from your bank. You'll map the columns next.
-    </p>
-    <InputFile OnChange="OnFileSelected" accept=".csv" style="margin-bottom:1rem" />
-    @if (_uploading)
-    {
-        <p class="text-muted">Parsing...</p>
-    }
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudText Typo="Typo.h6" GutterBottom="true">Step 1: Upload CSV</MudText>
+        <MudText Typo="Typo.body2" Class="mb-4">
+            Upload a CSV file from your bank. You'll map the columns next.
+        </MudText>
+        
+        <MudStack Spacing="2">
+            <InputFile id="fileInput" OnChange="OnFileSelected" accept=".csv" hidden />
+            <MudButton HtmlTag="label" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload" for="fileInput">
+                Select CSV File
+            </MudButton>
+            
+            @if (_uploading)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-2" />
+                <MudText Typo="Typo.caption">Parsing file...</MudText>
+            }
+        </MudStack>
+    </MudPaper>
 }
 
 @if (_step == Step.Map && _preview != null)
 {
-    <h3>Step 2: Map Columns</h3>
+    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Step 2: Map Columns</MudText>
 
     @if (_missingColumns.Count > 0)
     {
-        <div class="alert-error">
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4">
             The saved mapping is missing columns: <strong>@string.Join(", ", _missingColumns)</strong>.
             Please update the mapping below.
-        </div>
+        </MudAlert>
     }
 
-    <p class="text-muted" style="margin-bottom:0.75rem">
+    <MudText Typo="Typo.body2" Class="mb-4">
         Match your CSV columns to Spening fields. Required: Date, Description, and at least one amount column.
-    </p>
+    </MudText>
 
-    <!-- Preview table -->
-    <div style="overflow-x:auto;margin-bottom:1.25rem">
-        <table style="font-size:0.8rem">
-            <thead>
-                <tr>@foreach (var h in _preview.Headers) {
-                    <th>@h</th>
+    <MudPaper Elevation="1" Class="mb-6">
+        <MudTable Items="@_preview.Rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Height="200px" FixedHeader="true">
+            <HeaderContent>
+                @foreach (var h in _preview.Headers)
+                {
+                    <MudTh>@h</MudTh>
                 }
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var row in _preview.Rows)
-            {
-                <tr>@foreach (var cell in row) {
-                    <td>@cell</td>
+            </HeaderContent>
+            <RowTemplate>
+                @foreach (var cell in context)
+                {
+                    <MudTd>@cell</MudTd>
                 }
-            </tr>
-        }
-    </tbody>
-</table>
-</div>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
 
-<div class="mapping-grid">
-    <label>Date column *</label>
-    <select @bind="_mapping.DateColumn">
-        <option value="">— select —</option>
-        @foreach (var h in _preview.Headers)
-        {
-            <option value="@h">@h</option>
-        }
-    </select>
-
-    <label>Description column *</label>
-    <select @bind="_mapping.DescriptionColumn">
-        <option value="">— select —</option>
-        @foreach (var h in _preview.Headers)
-        {
-            <option value="@h">@h</option>
-        }
-    </select>
-
-    <label>Amount type *</label>
-    <select @bind="_amountType">
-        <option value="split">Separate Credit + Debit columns</option>
-        <option value="single">Single signed amount column</option>
-    </select>
-
-    @if (_amountType == "split")
-    {
-        <label>Credit column</label>
-        <select @bind="_mapping.CreditColumn">
-            <option value="">— none —</option>
-            @foreach (var h in _preview.Headers)
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudGrid Spacing="3">
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="_mapping.DateColumn" Label="Date column *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("")">— select —</MudSelectItem>
+                    @foreach (var h in _preview.Headers)
+                    {
+                        <MudSelectItem Value="@h">@h</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="_mapping.DescriptionColumn" Label="Description column *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("")">— select —</MudSelectItem>
+                    @foreach (var h in _preview.Headers)
+                    {
+                        <MudSelectItem Value="@h">@h</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="_amountType" Label="Amount type *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("split")">Separate Credit + Debit columns</MudSelectItem>
+                    <MudSelectItem Value="@("single")">Single signed amount column</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            
+            @if (_amountType == "split")
             {
-                <option value="@h">@h</option>
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" @bind-Value="_mapping.CreditColumn" Label="Credit column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem Value="@((string?)null)">— none —</MudSelectItem>
+                        @foreach (var h in _preview.Headers)
+                        {
+                            <MudSelectItem Value="@h">@h</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="3">
+                    <MudSelect T="string" @bind-Value="_mapping.DebitColumn" Label="Debit column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem Value="@((string?)null)">— none —</MudSelectItem>
+                        @foreach (var h in _preview.Headers)
+                        {
+                            <MudSelectItem Value="@h">@h</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
             }
-        </select>
-
-        <label>Debit column</label>
-        <select @bind="_mapping.DebitColumn">
-            <option value="">— none —</option>
-            @foreach (var h in _preview.Headers)
+            else
             {
-                <option value="@h">@h</option>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="string" @bind-Value="_mapping.AmountColumn" Label="Amount column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem Value="@((string?)null)">— select —</MudSelectItem>
+                        @foreach (var h in _preview.Headers)
+                        {
+                            <MudSelectItem Value="@h">@h</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
             }
-        </select>
-    }
-    else
-    {
-        <label>Amount column</label>
-        <select @bind="_mapping.AmountColumn">
-            <option value="">— select —</option>
-            @foreach (var h in _preview.Headers)
-            {
-                <option value="@h">@h</option>
-            }
-        </select>
-    }
 
-    <label>Category column</label>
-    <select @bind="_mapping.CategoryColumn">
-        <option value="">— none —</option>
-        @foreach (var h in _preview.Headers)
-        {
-            <option value="@h">@h</option>
-        }
-    </select>
-</div>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="_mapping.CategoryColumn" Label="Category column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@((string?)null)">— none —</MudSelectItem>
+                    @foreach (var h in _preview.Headers)
+                    {
+                        <MudSelectItem Value="@h">@h</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
 
-<div class="toolbar">
-    <button class="btn-primary" @onclick="RunImport" disabled="@_importing">
-        @(_importing ? "Importing..." : "Import CSV")
-    </button>
-    <button @onclick="() => _step = Step.Upload">← Back</button>
-</div>
+        <MudStack Row="true" Class="mt-6" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunImport" Disabled="@_importing" StartIcon="@Icons.Material.Filled.Check">
+                @(_importing ? "Importing..." : "Import CSV")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="() => _step = Step.Upload" StartIcon="@Icons.Material.Filled.ArrowBack">Back</MudButton>
+        </MudStack>
+    </MudPaper>
 }
 
 @if (_step == Step.Result && _result != null)
 {
-    <h3>Import Complete</h3>
-    <table style="max-width:360px;margin-bottom:1.25rem">
-        <tbody>
-            <tr>
-                <td>Rows imported</td>
-                <td class="text-right"><strong>@_result.Imported</strong></td>
-            </tr>
-            <tr>
-                <td>Duplicates skipped</td>
-                <td class="text-right">@_result.SkippedDuplicates</td>
-            </tr>
-            <tr>
-                <td>Other skipped</td>
-                <td class="text-right">@_result.SkippedRows.Count</td>
-            </tr>
-        </tbody>
-    </table>
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudText Typo="Typo.h6" GutterBottom="true">Import Complete</MudText>
+        
+        <MudSimpleTable Class="mb-6" Style="max-width:400px">
+            <tbody>
+                <tr>
+                    <td>Rows imported</td>
+                    <td style="text-align:right"><strong>@_result.Imported</strong></td>
+                </tr>
+                <tr>
+                    <td>Duplicates skipped</td>
+                    <td style="text-align:right">@_result.SkippedDuplicates</td>
+                </tr>
+                <tr>
+                    <td>Other skipped</td>
+                    <td style="text-align:right">@_result.SkippedRows.Count</td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
 
-    @if (_result.SkippedRows.Count > 0)
-    {
-        <details class="skipped-rows">
-            <summary>@_result.SkippedRows.Count row(s) skipped — click to review</summary>
-            <table style="margin:0;border-radius:0">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Data</th>
-                        <th>Reason</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var row in _result.SkippedRows)
-                    {
-                        <tr>
-                            <td>@row.RowNumber</td>
-                            <td class="text-muted" style="font-size:0.8em">@row.RawData</td>
-                            <td>@row.Reason</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
-        </details>
-        <div style="margin-top:0.75rem">
-            <a href="api/csv-import/@AccountId/skipped-export" target="_blank">
-                <button type="button" class="btn-sm">Download Skipped Rows CSV</button>
-            </a>
-        </div>
-    }
+        @if (_result.SkippedRows.Count > 0)
+        {
+            <MudExpansionPanels Class="mb-4">
+                <MudExpansionPanel Text="@($"{_result.SkippedRows.Count} row(s) skipped — click to review")">
+                    <MudTable Items="@_result.SkippedRows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                        <HeaderContent>
+                            <MudTh>#</MudTh>
+                            <MudTh>Data</MudTh>
+                            <MudTh>Reason</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd DataLabel="#">@context.RowNumber</MudTd>
+                            <MudTd DataLabel="Data" Class="text-muted" Style="font-size:0.8em">@context.RawData</MudTd>
+                            <MudTd DataLabel="Reason">@context.Reason</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="mt-2" 
+                               StartIcon="@Icons.Material.Filled.Download"
+                               Href="@($"api/csv-import/{AccountId}/skipped-export")" Target="_blank">
+                        Download Skipped Rows CSV
+                    </MudButton>
+                </MudExpansionPanel>
+            </MudExpansionPanels>
+        }
 
-    <div class="toolbar" style="margin-top:1.25rem">
-        <button class="btn-primary" @onclick="GoToTransactions">
-            View Transactions
-        </button>
-        <button @onclick="Reset">Import Another File</button>
-    </div>
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GoToTransactions" StartIcon="@Icons.Material.Filled.List">
+                View Transactions
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="Reset" StartIcon="@Icons.Material.Filled.Refresh">Import Another File</MudButton>
+        </MudStack>
+    </MudPaper>
 }
 
 @code {

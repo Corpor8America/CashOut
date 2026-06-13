@@ -2,108 +2,112 @@
 @inject HttpClient Http
 @inject NavigationManager Nav
 
-<h2>Transactions</h2>
+<MudText Typo="Typo.h4" GutterBottom="true">Transactions</MudText>
 
 @if (_error != null)
 {
-    <div class="alert-error">@_error</div>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
 }
 @if (_message != null)
 {
-    <div class="alert-success">@_message</div>
+    <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="my-4">@_message</MudAlert>
 }
 
-<div class="toolbar">
-    <button class="btn-primary" @onclick="Sync" disabled="@_busy">
-        @(_syncing ? "Syncing..." : "Sync")
-    </button>
-    <button @onclick="Fetch" disabled="@_busy">
-        @(_fetching ? "Fetching..." : "Fetch Full Year")
-    </button>
-    <span style="margin-left:auto">
-        <label>Year: </label>
-        <select @bind="_filterYear" @bind:after="OnYearChanged">
+<MudPaper Class="pa-4 mb-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4" Wrap="Wrap.Wrap">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Sync" Disabled="@_busy"
+                   StartIcon="@(_syncing ? null : Icons.Material.Filled.Sync)">
+            @(_syncing ? "Syncing..." : "Sync")
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="Fetch" Disabled="@_busy"
+                   StartIcon="@(_fetching ? null : Icons.Material.Filled.CloudDownload)">
+            @(_fetching ? "Fetching..." : "Fetch Full Year")
+        </MudButton>
+        
+        <MudSpacer />
+        
+        <MudSelect T="int" Label="Year" Value="_filterYear" ValueChanged="OnYearChangedInternal" Dense="true" Margin="Margin.Dense" Style="width:100px">
             @foreach (var y in _availableYears)
             {
-                <option value="@y">@y</option>
+                <MudSelectItem Value="@y">@y</MudSelectItem>
             }
-        </select>
-    </span>
-    <select @bind="_filterCategory">
-        <option value="">All categories</option>
-        @foreach (var cat in _categories)
-        {
-            <option value="@cat">@cat</option>
-        }
-    </select>
-    <button @onclick="ApplyFilter" disabled="@_loading">Filter</button>
-    <a href="api/transactions/export?year=@_filterYear" target="_blank">
-        <button type="button">Export CSV</button>
-    </a>
-</div>
+        </MudSelect>
+        
+        <MudSelect T="string" Label="Category" @bind-Value="_filterCategory" Dense="true" Margin="Margin.Dense" Style="width:200px">
+            <MudSelectItem Value="@("")">All categories</MudSelectItem>
+            @foreach (var cat in _categories)
+            {
+                <MudSelectItem Value="@cat">@cat</MudSelectItem>
+            }
+        </MudSelect>
+        
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="ApplyFilter" Disabled="@_loading">Filter</MudButton>
+        
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
+                   Href="@($"api/transactions/export?year={_filterYear}")" Target="_blank">
+            Export CSV
+        </MudButton>
+    </MudStack>
+</MudPaper>
 
 @if (_loading)
 {
-    <p class="text-muted">Loading...</p>
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
 }
 else if (_transactions.Count == 0)
 {
-    <p class="text-muted">No transactions found. Try syncing or adjusting your filters.</p>
+    <MudText Color="Color.Secondary">No transactions found. Try syncing or adjusting your filters.</MudText>
 }
 else
 {
-    <p class="text-muted" style="margin-bottom:0.75rem">
-        Showing @_transactions.Count transaction(s)
-    </p>
-    <table>
-        <thead>
-            <tr>
-                <th>Date</th>
-                <th>Merchant</th>
-                <th>Category</th>
-                <th class="text-right">Amount</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var t in _transactions)
-            {
-                var isCredit = t.Credit.HasValue;
-                var displayAmount = isCredit ? t.Credit!.Value : (t.Debit ?? 0);
-                <tr>
-                    <td>@t.Date.ToString("MMM d, yyyy")</td>
-                    <td>@t.Name</td>
-                    <td>
-                        @if (_editingId == t.TransactionId)
-                        {
-                            <div style="display:flex;gap:0.35rem;align-items:center">
-                                <input type="text"
-                                       value="@_editValue"
-                                       @oninput="e => _editValue = e.Value?.ToString() ?? string.Empty"
-                                       @onkeydown="e => OnEditKey(e, t.TransactionId)"
-                                       style="width:160px;padding:0.2rem 0.4rem;font-size:0.875rem"
-                                       @ref="_editInput" />
-                                <button class="btn-sm btn-primary"
-                                        @onclick="() => CommitEdit(t.TransactionId)">✓</button>
-                                <button class="btn-sm" @onclick="CancelEdit">✕</button>
-                            </div>
-                        }
-                        else
-                        {
-                            <span @ondblclick="() => StartEdit(t.TransactionId, t.Category)"
-                                  title="Double-click to edit"
-                                  style="cursor:pointer;display:inline-block;min-width:60px;
-                                         border-bottom:1px dashed #ccc;padding-bottom:1px">
-                                @(string.IsNullOrEmpty(t.Category) ? "—" : t.Category)
-                            </span>
-                        }
-                    </td>
-                    <td class="text-right" style="color:@(isCredit ? "#166534" : "#b91c1c")">
-                        @displayAmount.ToString("C")
-                    </td>
-                </tr>
+    <MudTable Items="@_transactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true">
+        <HeaderContent>
+            <MudTh>Date</MudTh>
+            <MudTh>Merchant</MudTh>
+            <MudTh>Category</MudTh>
+            <MudTh Style="text-align:right">Amount</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            @{
+                var isCredit = context.Credit.HasValue;
+                var displayAmount = isCredit ? context.Credit!.Value : (context.Debit ?? 0);
             }
-        </tbody>
-    </table>
+            <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
+            <MudTd DataLabel="Merchant">@context.Name</MudTd>
+            <MudTd DataLabel="Category">
+                @if (_editingId == context.TransactionId)
+                {
+                    <div style="display:flex;gap:0.35rem;align-items:center">
+                        <MudTextField T="string" Value="@_editValue" 
+                                      ValueChanged="@(v => _editValue = v)"
+                                      OnKeyDown="@(e => OnEditKey(e, context.TransactionId))"
+                                      Margin="Margin.Dense" Variant="Variant.Outlined" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small"
+                                        OnClick="() => CommitEdit(context.TransactionId)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error" Size="Size.Small"
+                                        OnClick="CancelEdit" />
+                    </div>
+                }
+                else
+                {
+                    <span @ondblclick="() => StartEdit(context.TransactionId, context.Category)"
+                          title="Double-click to edit"
+                          style="cursor:pointer;display:inline-block;min-width:60px;
+                                 border-bottom:1px dashed #ccc;padding-bottom:1px">
+                        @(string.IsNullOrEmpty(context.Category) ? "—" : context.Category)
+                    </span>
+                }
+            </MudTd>
+            <MudTd DataLabel="Amount" Style="text-align:right">
+                <MudText Color="@(isCredit ? Color.Success : Color.Error)" Style="font-weight:bold">
+                    @displayAmount.ToString("C")
+                </MudText>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
 }
 
 @code {
@@ -118,7 +122,6 @@ else
     // Inline category edit state
     private string? _editingId;
     private string _editValue = "";
-    private ElementReference _editInput;
 
     protected override async Task OnInitializedAsync()
     {
@@ -209,8 +212,7 @@ else
         finally { CancelEdit(); }
     }
 
-    private async Task OnEditKey(
-        Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e, string transactionId)
+    private async Task OnEditKey(KeyboardEventArgs e, string transactionId)
     {
         if (e.Key == "Enter") await CommitEdit(transactionId);
         else if (e.Key == "Escape") CancelEdit();
@@ -250,8 +252,9 @@ else
         finally { _busy = _fetching = false; }
     }
 
-    private async Task OnYearChanged()
+    private async Task OnYearChangedInternal(int year)
     {
+        _filterYear = year;
         _filterCategory = "";
         await LoadTransactions();
     }

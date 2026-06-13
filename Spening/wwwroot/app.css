@@ -7,273 +7,33 @@
 }
 
 body {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'Roboto', sans-serif;
     font-size: 14px;
-    background: #f9f9f9;
+    background: #f5f5f5;
     color: #1a1a1a;
 }
 
-/* Layout */
-.layout {
-    display: flex;
-    min-height: 100vh;
-}
-
-.sidebar {
-    width: 190px;
-    background: #1e1e2e;
-    color: #cdd6f4;
-    padding: 1.5rem 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    flex-shrink: 0;
-}
-
-.app-title {
-    font-size: 1.1rem;
-    font-weight: 700;
-    color: #cba6f7;
-    margin-bottom: 1rem;
-}
-
-.nav-section-label {
-    font-size: 0.7rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #585b70;
-    margin-top: 0.75rem;
-    margin-bottom: 0.1rem;
-    padding: 0 0.6rem;
-}
-
-.sidebar a {
-    color: #cdd6f4;
-    text-decoration: none;
-    padding: 0.4rem 0.6rem;
-    border-radius: 4px;
-    display: block;
-}
-
-.sidebar a:hover,
-.sidebar a.active {
-    background: #313244;
-    color: #cba6f7;
-}
-
-.content {
-    flex: 1;
-    padding: 2rem;
-}
-
-/* Typography */
-h2 {
-    font-size: 1.4rem;
-    margin-bottom: 1.25rem;
-}
-
-h3 {
-    font-size: 1.1rem;
-    margin-bottom: 0.75rem;
-}
-
-/* Tables */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: white;
-    border-radius: 6px;
-    overflow: hidden;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-th,
-td {
-    padding: 0.6rem 0.9rem;
-    text-align: left;
-    border-bottom: 1px solid #eee;
-}
-
-th {
-    background: #f3f4f6;
-    font-weight: 600;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-}
-
-tr:last-child td {
-    border-bottom: none;
-}
-
-tr:hover td {
-    background: #fafafa;
-}
-
-.text-right {
-    text-align: right;
-}
+/* Custom styles for specific elements not covered by MudBlazor or needing tweaks */
 
 .text-muted {
     color: #888;
     font-size: 0.85em;
 }
 
-.total-row td {
-    font-weight: 700;
-    background: #f3f4f6;
+/* CSV preview table tweaks */
+.mud-table-container {
+    overflow-x: auto;
 }
 
-/* Buttons */
-button,
-.btn {
-    padding: 0.4rem 0.9rem;
-    border: 1px solid #d1d5db;
+code {
+    background-color: #f1f1f1;
+    padding: 0.1rem 0.3rem;
     border-radius: 4px;
-    background: white;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: background 0.15s;
+    font-family: 'Roboto Mono', monospace;
+    font-size: 0.9em;
 }
 
-button:hover {
-    background: #f3f4f6;
-}
-
-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.btn-primary {
-    background: #6c63ff;
-    color: white;
-    border-color: #6c63ff;
-}
-
-.btn-primary:hover {
-    background: #5a52d5;
-}
-
-.btn-danger {
-    background: #ef4444;
-    color: white;
-    border-color: #ef4444;
-}
-
-.btn-danger:hover {
-    background: #dc2626;
-}
-
-.btn-sm {
-    padding: 0.25rem 0.6rem;
-    font-size: 0.8rem;
-}
-
-/* Forms */
-select,
-input[type="number"],
-input[type="text"] {
-    padding: 0.35rem 0.6rem;
-    border: 1px solid #d1d5db;
-    border-radius: 4px;
-    font-size: 0.875rem;
-}
-
-/* Tabs */
-.tabs {
-    display: flex;
-    gap: 0;
-    margin-bottom: 1.25rem;
-    border-bottom: 2px solid #e5e7eb;
-}
-
-.tab {
-    padding: 0.5rem 1.1rem;
-    cursor: pointer;
-    border: none;
-    background: none;
-    font-size: 0.875rem;
-    color: #666;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-}
-
-.tab.active {
-    color: #6c63ff;
-    border-bottom-color: #6c63ff;
-    font-weight: 600;
-}
-
-/* Status */
-.alert-error {
-    color: #b91c1c;
-    background: #fee2e2;
-    padding: 0.6rem 1rem;
-    border-radius: 4px;
+/* Ensure alerts have some margin */
+.mud-alert {
     margin-bottom: 1rem;
-}
-
-.alert-success {
-    color: #166534;
-    background: #dcfce7;
-    padding: 0.6rem 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-}
-
-/* Toolbar */
-.toolbar {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-    margin-bottom: 1.25rem;
-    flex-wrap: wrap;
-}
-
-/* CSV import */
-.file-drop {
-    border: 2px dashed #d1d5db;
-    border-radius: 6px;
-    padding: 2rem;
-    text-align: center;
-    color: #888;
-    cursor: pointer;
-    transition: border-color 0.15s, background 0.15s;
-    margin-bottom: 1.25rem;
-}
-
-.file-drop:hover,
-.file-drop.drag-over {
-    border-color: #6c63ff;
-    background: #f5f3ff;
-    color: #6c63ff;
-}
-
-.mapping-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem 1.5rem;
-    max-width: 600px;
-    margin-bottom: 1.25rem;
-}
-
-.mapping-grid label {
-    font-weight: 600;
-    font-size: 0.85rem;
-    align-self: center;
-}
-
-.skipped-rows {
-    margin-top: 1rem;
-    border: 1px solid #fca5a5;
-    border-radius: 6px;
-    overflow: hidden;
-}
-
-.skipped-rows summary {
-    padding: 0.6rem 1rem;
-    background: #fee2e2;
-    color: #b91c1c;
-    cursor: pointer;
-    font-weight: 600;
 }
