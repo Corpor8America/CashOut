@@ -18,7 +18,7 @@ public class TransactionsController : ControllerBase
         [FromQuery] int? year,
         [FromQuery] int? month,
         [FromQuery] string? accountId,
-        [FromQuery] string? category)
+        [FromQuery] List<string>? category)   // ← now accepts multiple values
     {
         var results = await _txns.Query(year, month, accountId, category);
         return Ok(results);

@@ -83,7 +83,7 @@
                                 {
                                     <MudChip T="string" Color="Color.Tertiary" Variant="Variant.Filled" OnClose="() => DeletePattern(p.Id)" Size="Size.Small">
                                         <MudText Typo="Typo.caption" Class="mr-1" Style="opacity:0.7">@p.MatchType</MudText>
-                                        <code>@p.Pattern</code>
+                                        <code style="background-color: transparent !important; padding: 0 !important; color: inherit !important; font-size: inherit !important; border-radius: 0 !important;">@p.Pattern</code>
                                     </MudChip>
                                 }
                             </MudStack>
@@ -212,7 +212,7 @@
                         </tr>
                         <tr>
                             <td><strong>Normalized</strong></td>
-                            <td><code style="color: var(--mud-palette-tertiary)">@_testResult.Normalized</code></td>
+                            <td><code>@_testResult.Normalized</code></td>
                         </tr>
                         <tr>
                             <td><strong>Matched Alias</strong></td>

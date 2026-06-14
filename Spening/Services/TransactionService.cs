@@ -187,8 +187,9 @@ public class TransactionService
     // ── Query ─────────────────────────────────────────────────────────────
 
     public async Task<List<Transaction>> Query(
-        int? year = null, int? month = null, string? accountId = null, string? category = null,
-        TransactionSource? source = null)
+    int? year = null, int? month = null, string? accountId = null,
+    List<string>? categories = null,
+    TransactionSource? source = null)
     {
         var q = _db.Transactions.AsQueryable();
 
@@ -201,8 +202,9 @@ public class TransactionService
         if (!string.IsNullOrEmpty(accountId))
             q = q.Where(t => t.AccountId == accountId);
 
-        if (!string.IsNullOrEmpty(category))
-            q = q.Where(t => t.Category == category);
+        // Multi-category filter: only apply when at least one category is selected
+        if (categories is { Count: > 0 })
+            q = q.Where(t => categories.Contains(t.Category));
 
         if (source.HasValue)
             q = q.Where(t => t.Source == source.Value);

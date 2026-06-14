@@ -14,243 +14,271 @@
     <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="my-4">@_message</MudAlert>
 }
 
-<MudPaper Class="pa-4 mb-4">
-    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4" Wrap="Wrap.Wrap">
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Sync" Disabled="@_busy"
-                   StartIcon="@(_syncing ? null : Icons.Material.Filled.Sync)">
-            @(_syncing ? "Syncing..." : "Sync")
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="Fetch" Disabled="@_busy"
-                   StartIcon="@(_fetching ? null : Icons.Material.Filled.CloudDownload)">
-            @(_fetching ? "Fetching..." : "Fetch Full Year")
-        </MudButton>
-
-        <MudSpacer />
-
+@* ── Year + Month tabs row ── *@
+<MudPaper Elevation="1" Class="mb-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="px-4 pt-3 pb-0">
         <MudSelect T="int" Label="Year" Value="_filterYear" ValueChanged="OnYearChangedInternal" Dense="true"
-                   Margin="Margin.Dense" Style="width:100px">
+                   Margin="Margin.Dense" Style="width:90px; flex-shrink:0" Variant="Variant.Outlined">
             @foreach (var y in _availableYears)
             {
                 <MudSelectItem Value="@y">@y</MudSelectItem>
             }
         </MudSelect>
 
-        <MudSelect T="string" Label="Category" @bind-Value="_filterCategory" Dense="true" Margin="Margin.Dense"
-                   Style="width:200px">
-            <MudSelectItem Value="@("")">All categories</MudSelectItem>
-            @foreach (var cat in _categories)
+        <MudTabs Elevation="0" Rounded="false" Color="Color.Primary" @bind-ActivePanelIndex="_activeMonthTabIndex"
+                 Class="flex-grow-1" Style="min-width:0">
+            @for (int m = 1; m <= 12; m++)
             {
-                <MudSelectItem Value="@cat">@cat</MudSelectItem>
+                var monthIndex = m;
+                <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)"
+                             OnClick="() => OnMonthChanged(monthIndex)" />
             }
-        </MudSelect>
+        </MudTabs>
 
-        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="ApplyFilter" Disabled="@_loading">Filter
-        </MudButton>
+        @* Category filter icon *@
+        <div style="position: relative;">
+            <MudTooltip Text="Filter by category">
+                <MudBadge Content="@(_selectedCategories.Count > 0 ? _selectedCategories.Count.ToString() : null)"
+                          Color="Color.Primary" Overlap="true" Visible="@(_selectedCategories.Count > 0)">
+                    <MudIconButton Icon="@Icons.Material.Filled.FilterList"
+                                   Color="@(_selectedCategories.Count > 0 ? Color.Primary : Color.Default)"
+                                   OnClick="ToggleCategoryFilter" id="cat-filter-btn" />
+                </MudBadge>
+            </MudTooltip>
 
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
-                   Href="@($"api/transactions/export?year={_filterYear}")" Target="_blank">
-            Export CSV
-        </MudButton>
+            @* ── Category filter popover ── *@
+            <MudPopover Open="_categoryPopoverOpen" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                <MudPaper Elevation="4" Style="width:260px; padding:12px">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Filter by Category</MudText>
+
+                    @if (_categories.Count == 0)
+                    {
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">No categories available.</MudText>
+                    }
+                    else
+                    {
+                        <div style="max-height:260px; overflow-y:auto; margin-bottom:8px">
+                            @foreach (var cat in _categories)
+                            {
+                                var isCat = cat; @* capture for lambda *@
+                                <MudCheckBox T="bool" Value="@_pendingCategories.Contains(isCat)"
+                                             ValueChanged="@(v => ToggleCategorySelection(isCat, v))" Label="@isCat" Dense="true"
+                                             Color="Color.Primary" />
+                            }
+                        </div>
+                    }
+
+                    <MudStack Row="true" Spacing="2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" OnClick="ApplyCategoryFilter">
+                            Apply</MudButton>
+                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="ClearCategoryFilter">Clear</MudButton>
+                    </MudStack>
+                </MudPaper>
+            </MudPopover>
+        </div>
     </MudStack>
 </MudPaper>
 
-<MudTabs Elevation="1" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeMonthTabIndex">
-    @for (int m = 1; m <= 12; m++)
+    @* ── Month summary ── *@
+    @if (_summaryLoading)
     {
-        var monthIndex = m;
-        <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)"
-                     OnClick="() => OnMonthChanged(monthIndex)" />
+        <MudProgressLinear Color="Color.Secondary" Indeterminate="true" Class="mt-2" />
     }
-</MudTabs>
+    else if (_categorySummary.Count > 0)
+    {
+        <MudExpansionPanels Elevation="1" Class="mb-6">
+            <MudExpansionPanel Text="Month Summary" IsInitiallyExpanded="true">
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="width:100%">
+                    <thead>
+                        <tr>
+                            <th style="width:40%">Category</th>
+                            <th style="width:20%; text-align:right">Month Total (Net)</th>
+                            <th style="width:20%; text-align:right">12 Mo Avg (Net)</th>
+                            <th style="width:20%; text-align:right">Diff</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var context in _categorySummary.OrderBy(s => s.Category))
+                        {
+                            if (context.MonthNet == 0 && context.MonthCredit == 0 && context.MonthDebit == 0)
+                                continue;
 
-@if (_summaryLoading)
-{
-    <MudProgressLinear Color="Color.Secondary" Indeterminate="true" Class="mt-4" />
-}
-else if (_categorySummary.Count > 0)
-{
-    <MudPaper Elevation="1" Class="mt-4 mb-6 pa-4">
-        <MudText Typo="Typo.h6" GutterBottom="true">Month Summary</MudText>
-        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="width:100%">
-            <thead>
-                <tr>
-                    <th style="width: 40%">Category</th>
-                    <th style="width: 20%; text-align:right">Month Total (Net)</th>
-                    <th style="width: 20%; text-align:right">12 Month Avg (Net)</th>
-                    <th style="width: 20%; text-align:right">Diff</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var context in _categorySummary)
-                {
-                    var monthNet = context.MonthCredit - context.MonthDebit;
-                    var avgNet = context.AvgCredit - context.AvgDebit;
-                    var diff = monthNet - avgNet;
-                    <tr>
-                        <td>@context.Category</td>
-                        <td style="text-align:right">
-                            <span style="color: @(monthNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)")">
-                                @(monthNet < 0 ? "-" : "")@Math.Abs(monthNet).ToString("C")
-                            </span>
-                        </td>
-                        <td style="text-align:right">
-                            <span style="color: @(avgNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)")">
-                                @(avgNet < 0 ? "-" : "")@Math.Abs(avgNet).ToString("C")
-                            </span>
-                        </td>
-                        <td style="text-align:right">
-                            <span
-                                style="color: @(diff >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
-                                @(diff < 0 ? "-" : "")@Math.Abs(diff).ToString("C")
-                            </span>
-                        </td>
-                    </tr>
-                }
-
-                @{
-                    var mDebit = _categorySummary.Sum(s => s.MonthDebit);
-                    var mCredit = _categorySummary.Sum(s => s.MonthCredit);
-                    var mNet = mCredit - mDebit;
-
-                    var aDebit = _categorySummary.Sum(s => s.AvgDebit);
-                    var aCredit = _categorySummary.Sum(s => s.AvgCredit);
-                    var aNet = aCredit - aDebit;
-                }
-
-                <tr class="footer-row-secondary">
-                    <td class="mud-table-cell">Debit Total</td>
-                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-error)">
-                        -@mDebit.ToString("C")
-                    </td>
-                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-error)">
-                        -@aDebit.ToString("C")
-                    </td>
-                    <td class="mud-table-cell" style="text-align:right"></td>
-                </tr>
-                <tr class="footer-row-secondary">
-                    <td class="mud-table-cell">Credit Total</td>
-                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-success)">
-                        @mCredit.ToString("C")
-                    </td>
-                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-success)">
-                        @aCredit.ToString("C")
-                    </td>
-                    <td class="mud-table-cell" style="text-align:right"></td>
-                </tr>
-                <tr class="footer-row-main">
-                    <td class="mud-table-cell">Net Total</td>
-                    <td class="mud-table-cell" style="text-align:right">
-                        <span
-                            style="color: @(mNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
-                            @(mNet < 0 ? "-" : "")@Math.Abs(mNet).ToString("C")
-                        </span>
-                    </td>
-                    <td class="mud-table-cell" style="text-align:right">
-                        <span
-                            style="color: @(aNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
-                            @(aNet < 0 ? "-" : "")@Math.Abs(aNet).ToString("C")
-                        </span>
-                    </td>
-                    <td class="mud-table-cell" style="text-align:right">
-                        @{
-                            var netDiff = mNet - aNet;
+                            var diff = context.MonthNet - context.AvgNet;
+                            <tr>
+                                <td>@context.Category</td>
+                                <td style="text-align:right">
+                                    <span style="color:@(context.MonthNet < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)")">
+                                        @FormatCurrency(context.MonthNet)
+                                    </span>
+                                </td>
+                                <td style="text-align:right">
+                                    <span style="color:@(context.AvgNet < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)")">
+                                        @FormatCurrency(context.AvgNet)
+                                    </span>
+                                </td>
+                                <td style="text-align:right">
+                                    <span
+                                        style="color:@(diff < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)"); font-weight:bold">
+                                        @FormatCurrency(diff)
+                                    </span>
+                                </td>
+                            </tr>
                         }
-                        <span
-                            style="color: @(netDiff >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
-                            @(netDiff < 0 ? "-" : "")@Math.Abs(netDiff).ToString("C")
+
+                        @{
+                            var mDebit = _categorySummary.Sum(s => s.MonthDebit);
+                            var mCredit = _categorySummary.Sum(s => s.MonthCredit);
+                            var mNet = mCredit - mDebit;
+                            var aDebit = _categorySummary.Sum(s => s.AvgDebit);
+                            var aCredit = _categorySummary.Sum(s => s.AvgCredit);
+                            var aNet = aCredit - aDebit;
+                            var creditDiff = mCredit - aCredit;
+                            var debitDiff = mDebit - aDebit;
+                        }
+                        <tr class="footer-row-secondary">
+                            <td class="mud-table-cell">Credit Total</td>
+                            <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-success)">@mCredit.ToString("C")</td>
+                            <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-success)">@aCredit.ToString("C")</td>
+                            <td class="mud-table-cell" style="text-align:right">
+                                <span style="color:@(creditDiff < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)"); font-weight:bold">
+                                    @FormatCurrency(creditDiff)
+                                </span>
+                            </td>
+                        </tr>
+                        <tr class="footer-row-secondary">
+                            <td class="mud-table-cell">Debit Total</td>
+                            <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-error)">-@mDebit.ToString("C")</td>
+                            <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-error)">-@aDebit.ToString("C")</td>
+                            <td class="mud-table-cell" style="text-align:right">
+                                @{
+                                    @* More debit spending = negative diff, less = positive *@
+                                    var debitDiffDisplay = -debitDiff;
+                                }
+                                <span style="color:@(debitDiffDisplay < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)"); font-weight:bold">
+                                    @FormatCurrency(debitDiffDisplay)
+                                </span>
+                            </td>
+                        </tr>
+                        <tr class="footer-row-main">
+                            <td class="mud-table-cell">Net Total</td>
+                            <td class="mud-table-cell" style="text-align:right">
+                                <span style="color:@(mNet < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)")">
+                                    @FormatCurrency(mNet)
+                                </span>
+                            </td>
+                            <td class="mud-table-cell" style="text-align:right">
+                                <span style="color:@(aNet < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)")">
+                                    @FormatCurrency(aNet)
+                                </span>
+                            </td>
+                            <td class="mud-table-cell" style="text-align:right">
+                                @{
+                                    var netDiff = mNet - aNet;
+                                }
+                                <span
+                                    style="color:@(netDiff < 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)"); font-weight:bold">
+                                    @FormatCurrency(netDiff)
+                                </span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudExpansionPanel>
+        </MudExpansionPanels>
+    }
+
+    <style>
+        .footer-row-secondary .mud-table-cell {
+            font-size: 0.875rem;
+            font-weight: 500;
+            background-color: var(--mud-palette-background-grey);
+            color: var(--mud-palette-text-secondary);
+            border: none !important;
+        }
+
+        .footer-row-main .mud-table-cell {
+            font-size: 1rem;
+            font-weight: 700;
+            background-color: var(--mud-palette-background-grey);
+            border-top: 2px solid var(--mud-palette-divider) !important;
+        }
+    </style>
+
+    @* ── Transaction list ── *@
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
+    }
+    else if (_transactions.Count == 0)
+    {
+        <MudText Color="Color.Secondary" Class="mt-4">No transactions found for this month/filter.</MudText>
+    }
+    else
+    {
+        <MudTable Items="@_transactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mt-2">
+            <HeaderContent>
+                <MudTh>Date</MudTh>
+                <MudTh>Merchant</MudTh>
+                <MudTh>Category</MudTh>
+                <MudTh Style="text-align:right">Amount</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                @{
+                    var isCredit = context.Credit.HasValue;
+                    var displayAmount = isCredit ? context.Credit!.Value : (context.Debit ?? 0);
+                }
+                <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
+                <MudTd DataLabel="Merchant">@context.Name</MudTd>
+                <MudTd DataLabel="Category">
+                    @if (_editingId == context.TransactionId)
+                    {
+                        <div style="display:flex;gap:0.35rem;align-items:center">
+                            <MudTextField T="string" Value="@_editValue" ValueChanged="@(v => _editValue = v)"
+                                          OnKeyDown="@(e => OnEditKey(e, context.TransactionId))" Margin="Margin.Dense"
+                                          Variant="Variant.Outlined" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small"
+                                           OnClick="() => CommitEdit(context.TransactionId)" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error" Size="Size.Small"
+                                           OnClick="CancelEdit" />
+                        </div>
+                    }
+                    else
+                    {
+                        <span @ondblclick="() => StartEdit(context.TransactionId, context.Category)" title="Double-click to edit"
+                              style="cursor:pointer;display:inline-block;min-width:60px;
+                            border-bottom:1px dashed #ccc;padding-bottom:1px">
+                            @(string.IsNullOrEmpty(context.Category) ? "—" : context.Category)
                         </span>
-                    </td>
-                </tr>
-            </tbody>
-        </MudSimpleTable>
-    </MudPaper>
-}
-
-<style>
-    .footer-row-secondary .mud-table-cell {
-        font-size: 0.875rem;
-        font-weight: 500;
-        background-color: var(--mud-palette-background-grey);
-        color: var(--mud-palette-text-secondary);
-        border: none !important;
+                    }
+                </MudTd>
+                <MudTd DataLabel="Amount" Style="text-align:right">
+                    <MudText Color="@(isCredit ? Color.Success : Color.Error)" Style="font-weight:bold">
+                        @displayAmount.ToString("C")
+                    </MudText>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
     }
-
-    .footer-row-main .mud-table-cell {
-        font-size: 1rem;
-        font-weight: 700;
-        background-color: var(--mud-palette-background-grey);
-        border-top: 2px solid var(--mud-palette-divider) !important;
-    }
-</style>
-
-@if (_loading)
-{
-    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
-}
-else if (_transactions.Count == 0)
-{
-    <MudText Color="Color.Secondary" Class="mt-4">No transactions found for this month/filter.</MudText>
-}
-else
-{
-    <MudTable Items="@_transactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mt-2">
-        <HeaderContent>
-            <MudTh>Date</MudTh>
-            <MudTh>Merchant</MudTh>
-            <MudTh>Category</MudTh>
-            <MudTh Style="text-align:right">Amount</MudTh>
-        </HeaderContent>
-        <RowTemplate>
-            @{
-                var isCredit = context.Credit.HasValue;
-                var displayAmount = isCredit ? context.Credit!.Value : (context.Debit ?? 0);
-            }
-            <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
-            <MudTd DataLabel="Merchant">@context.Name</MudTd>
-            <MudTd DataLabel="Category">
-                @if (_editingId == context.TransactionId)
-                {
-                    <div style="display:flex;gap:0.35rem;align-items:center">
-                        <MudTextField T="string" Value="@_editValue" ValueChanged="@(v => _editValue = v)"
-                                      OnKeyDown="@(e => OnEditKey(e, context.TransactionId))" Margin="Margin.Dense"
-                                      Variant="Variant.Outlined" />
-                        <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small"
-                                       OnClick="() => CommitEdit(context.TransactionId)" />
-                        <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error" Size="Size.Small"
-                                       OnClick="CancelEdit" />
-                    </div>
-                }
-                else
-                {
-                    <span @ondblclick="() => StartEdit(context.TransactionId, context.Category)" title="Double-click to edit"
-                          style="cursor:pointer;display:inline-block;min-width:60px;
-                        border-bottom:1px dashed #ccc;padding-bottom:1px">
-                        @(string.IsNullOrEmpty(context.Category) ? "—" : context.Category)
-                    </span>
-                }
-            </MudTd>
-            <MudTd DataLabel="Amount" Style="text-align:right">
-                <MudText Color="@(isCredit ? Color.Success : Color.Error)" Style="font-weight:bold">
-                    @displayAmount.ToString("C")
-                </MudText>
-            </MudTd>
-        </RowTemplate>
-    </MudTable>
-}
 
 @code {
     private List<TransactionDto> _transactions = new();
     private List<string> _categories = new();
     private List<int> _availableYears = new();
     private List<CategorySummaryDto> _categorySummary = new();
+
     private int _filterYear = DateTime.Now.Year;
     private int _filterMonth = DateTime.Now.Month;
     private int _activeMonthTabIndex;
-    private string _filterCategory = "";
-    private bool _loading, _busy, _syncing, _fetching, _summaryLoading;
+
+    // Multi-select category filter state
+    private HashSet<string> _selectedCategories = new();
+    private HashSet<string> _pendingCategories = new(); // tracks in-popover selection before Apply
+    private bool _categoryPopoverOpen;
+
+    private bool _loading, _summaryLoading;
     private string? _error, _message;
 
-    // Inline category edit state
+    // Inline category edit
     private string? _editingId;
     private string _editValue = "";
 
@@ -261,6 +289,8 @@ else
         await LoadTransactions();
         await LoadSummary();
     }
+
+    // ── Year / Month ──────────────────────────────────────────────────────
 
     private async Task LoadYears()
     {
@@ -277,21 +307,74 @@ else
         }
     }
 
+    private async Task OnYearChangedInternal(int year)
+    {
+        _filterYear = year;
+        _selectedCategories.Clear();
+        _pendingCategories.Clear();
+        await LoadAllCategories();
+        await LoadTransactions();
+        await LoadSummary();
+    }
+
+    private async Task OnMonthChanged(int month)
+    {
+        if (_filterMonth == month) return;
+        _filterMonth = month;
+        _activeMonthTabIndex = month - 1;
+        await LoadTransactions();
+        await LoadSummary();
+    }
+
+    // ── Category filter popover ───────────────────────────────────────────
+
+    private void ToggleCategoryFilter()
+    {
+        if (!_categoryPopoverOpen)
+            // seed pending with current selection when opening
+            _pendingCategories = new HashSet<string>(_selectedCategories);
+        _categoryPopoverOpen = !_categoryPopoverOpen;
+    }
+
+    private void ToggleCategorySelection(string category, bool selected)
+    {
+        if (selected) _pendingCategories.Add(category);
+        else _pendingCategories.Remove(category);
+    }
+
+    private async Task ApplyCategoryFilter()
+    {
+        _selectedCategories = new HashSet<string>(_pendingCategories);
+        _categoryPopoverOpen = false;
+        await LoadTransactions();
+    }
+
+    private async Task ClearCategoryFilter()
+    {
+        _pendingCategories.Clear();
+        _selectedCategories.Clear();
+        _categoryPopoverOpen = false;
+        await LoadTransactions();
+    }
+
+    // ── Data loading ──────────────────────────────────────────────────────
+
     private async Task LoadTransactions()
     {
         _loading = true; _error = null;
         try
         {
             var url = $"api/transactions?year={_filterYear}&month={_filterMonth}";
-            if (!string.IsNullOrEmpty(_filterCategory))
-                url += $"&category={Uri.EscapeDataString(_filterCategory)}";
+
+            // Pass each selected category as a repeated query param;
+            // if none selected, no category filter is applied
+            foreach (var cat in _selectedCategories)
+                url += $"&category={Uri.EscapeDataString(cat)}";
 
             _transactions = await Http.GetFromJsonAsync<List<TransactionDto>>(url) ?? new();
 
             if (_categories.Count == 0)
-            {
                 await LoadAllCategories();
-            }
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
@@ -313,7 +396,8 @@ else
     {
         try
         {
-            var all = await Http.GetFromJsonAsync<List<TransactionDto>>($"api/transactions?year={_filterYear}") ?? new();
+            var all = await Http.GetFromJsonAsync<List<TransactionDto>>(
+                $"api/transactions?year={_filterYear}") ?? new();
             _categories = all
                 .Select(t => t.Category)
                 .Where(c => !string.IsNullOrEmpty(c))
@@ -364,7 +448,6 @@ else
                 _categories = _categories.OrderBy(c => c).ToList();
             }
 
-            // Refresh summary since categories changed
             await LoadSummary();
         }
         catch (Exception ex) { _error = $"Failed to update category: {ex.Message}"; }
@@ -377,61 +460,7 @@ else
         else if (e.Key == "Escape") CancelEdit();
     }
 
-    // ── Sync / Fetch ──────────────────────────────────────────────────────
-
-    private async Task Sync()
-    {
-        _busy = _syncing = true; _message = null; _error = null;
-        try
-        {
-            var resp = await Http.PostAsync("api/transactions/sync", null);
-            resp.EnsureSuccessStatusCode();
-            var result = await resp.Content.ReadFromJsonAsync<SyncResult>();
-            _message = $"Sync complete — {result!.Added} added, {result.Removed} removed.";
-            await LoadYears();
-            await LoadTransactions();
-            await LoadSummary();
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = _syncing = false; }
-    }
-
-    private async Task Fetch()
-    {
-        _busy = _fetching = true; _message = null; _error = null;
-        try
-        {
-            var resp = await Http.PostAsync("api/transactions/fetch", null);
-            resp.EnsureSuccessStatusCode();
-            var result = await resp.Content.ReadFromJsonAsync<FetchResult>();
-            _message = $"Fetch complete — {result!.Written} transactions written.";
-            await LoadYears();
-            await LoadTransactions();
-            await LoadSummary();
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _busy = _fetching = false; }
-    }
-
-    private async Task OnYearChangedInternal(int year)
-    {
-        _filterYear = year;
-        _filterCategory = "";
-        await LoadAllCategories();
-        await LoadTransactions();
-        await LoadSummary();
-    }
-
-    private async Task OnMonthChanged(int month)
-    {
-        if (_filterMonth == month) return;
-        _filterMonth = month;
-        _activeMonthTabIndex = month - 1;
-        await LoadTransactions();
-        await LoadSummary();
-    }
-
-    private async Task ApplyFilter() => await LoadTransactions();
+    // ── DTOs ──────────────────────────────────────────────────────────────
 
     private record TransactionDto(
         string TransactionId,
@@ -452,6 +481,12 @@ else
         decimal AvgNet,
         decimal AvgDebit,
         decimal AvgCredit);
-    private record SyncResult(int Added, int Removed);
-    private record FetchResult(int Written);
+
+    /// <summary>Formats a currency value with a leading minus sign for negatives, no '+' sign for positives.</summary>
+    private string FormatCurrency(decimal value)
+    {
+        if (value < 0)
+            return $"-{Math.Abs(value).ToString("C")}";
+        return value.ToString("C");
+    }
 }

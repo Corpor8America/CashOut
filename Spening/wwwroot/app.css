@@ -27,10 +27,29 @@ body {
 
 code {
     background-color: #f1f1f1;
+    color: #1a1a1a;
     padding: 0.1rem 0.3rem;
     border-radius: 4px;
     font-family: 'Roboto Mono', monospace;
     font-size: 0.9em;
+}
+
+.mud-chip code {
+    background-color: transparent !important;
+    padding: 0 !important;
+    color: inherit !important;
+    font-size: inherit !important;
+    border-radius: 0 !important;
+}
+
+.mud-chip.mud-chip-color-tertiary {
+    background-color: #e6f7f4 !important;
+    color: #0f5142 !important;
+    border: 1px solid #b2e7dd !important;
+}
+
+.mud-chip.mud-chip-color-tertiary .mud-chip-close-button {
+    color: #0f5142 !important;
 }
 
 /* Ensure alerts have some margin */

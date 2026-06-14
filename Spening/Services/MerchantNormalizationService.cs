@@ -204,6 +204,17 @@ public class MerchantNormalizationService
         var alias = await _db.BusinessAliases.FindAsync(aliasId)
             ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
         alias.AliasName = trimmed;
+
+        // Propagate new name to all matched transactions
+        var transactions = await _db.Transactions
+            .Where(t => t.AliasId == aliasId)
+            .ToListAsync();
+        foreach (var txn in transactions)
+        {
+            txn.Name = trimmed;
+            txn.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
     }
 
@@ -212,6 +223,18 @@ public class MerchantNormalizationService
         var alias = await _db.BusinessAliases.FindAsync(aliasId)
             ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
         alias.Category = category;
+
+        // Propagate new effective category to all matched transactions
+        var effectiveCategory = EffectiveCategory(alias);
+        var transactions = await _db.Transactions
+            .Where(t => t.AliasId == aliasId)
+            .ToListAsync();
+        foreach (var txn in transactions)
+        {
+            txn.Category = effectiveCategory;
+            txn.UpdatedAt = DateTime.UtcNow;
+        }
+
         await _db.SaveChangesAsync();
     }
 
