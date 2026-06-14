@@ -24,28 +24,50 @@
 {
     <MudPaper Class="pa-6" Elevation="1">
         <MudText Typo="Typo.h6" GutterBottom="true">Step 1: Upload CSV</MudText>
-        <MudText Typo="Typo.body2" Class="mb-4">
+        <MudText Typo="Typo.body2" Class="mb-6">
             Upload a CSV file from your bank. You'll map the columns next.
         </MudText>
-        
-        <MudStack Spacing="2">
-            <InputFile id="fileInput" OnChange="OnFileSelected" accept=".csv" hidden />
-            <MudButton HtmlTag="label" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload" for="fileInput">
-                Select CSV File
+
+        @* ── Drop zone ── *@
+        <div class="csv-drop-zone @(_isDragOver ? "csv-drop-zone--active" : "")" @ondragover="OnDragOver"
+             @ondragover:preventDefault="true" @ondragleave="OnDragLeave" @ondrop="OnDrop" @ondrop:preventDefault="true">
+
+            <MudIcon Icon="@Icons.Material.Filled.CloudUpload"
+                     Style="font-size:3rem; color: var(--mud-palette-primary); opacity:0.7; margin-bottom:8px" />
+
+            <MudText Typo="Typo.h6" Style="margin-bottom:4px">
+                @(_isDragOver ? "Drop to upload" : "Drag & drop your CSV here")
+            </MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Style="margin-bottom:16px">
+                or click to browse
+            </MudText>
+
+            <InputFile id="csvFileInput" OnChange="OnFileSelected" accept=".csv" hidden />
+            <MudButton HtmlTag="label" Variant="Variant.Outlined" Color="Color.Primary" for="csvFileInput"
+                       StartIcon="@Icons.Material.Filled.FolderOpen">
+                Browse file
             </MudButton>
-            
-            @if (_uploading)
+
+            @if (_selectedFileName != null)
             {
-                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-2" />
-                <MudText Typo="Typo.caption">Parsing file...</MudText>
+                <MudText Typo="Typo.caption" Class="mt-3" Color="Color.Primary">
+                    <MudIcon Icon="@Icons.Material.Filled.AttachFile" Size="Size.Small" Style="vertical-align:middle" />
+                    @_selectedFileName
+                </MudText>
             }
-        </MudStack>
+        </div>
+
+        @if (_uploading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+            <MudText Typo="Typo.caption" Class="mt-1">Parsing file…</MudText>
+        }
     </MudPaper>
 }
 
 @if (_step == Step.Map && _preview != null)
 {
-    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Step 2: Map Columns</MudText>
+    <MudText Typo="Typo.h6" Class="mt-4 mb-2">Step 2: Configure & Map Columns</MudText>
 
     @if (_missingColumns.Count > 0)
     {
@@ -56,30 +78,71 @@
     }
 
     <MudText Typo="Typo.body2" Class="mb-4">
-        Match your CSV columns to CashOut fields. Required: Date, Description, and at least one amount column.
+        Configure row trimming first, then match your CSV columns to CashOut fields.
+        Required: Date, Description, and at least one amount column.
     </MudText>
 
-    <MudPaper Elevation="1" Class="mb-6">
-        <MudTable Items="@_preview.Rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Height="200px" FixedHeader="true">
-            <HeaderContent>
-                @foreach (var h in _preview.Headers)
-                {
-                    <MudTh>@h</MudTh>
-                }
-            </HeaderContent>
-            <RowTemplate>
-                @foreach (var cell in context)
-                {
-                    <MudTd>@cell</MudTd>
-                }
-            </RowTemplate>
-        </MudTable>
-    </MudPaper>
+    @* ── Row trimming controls ── *@
+    <MudPaper Elevation="1" Class="pa-6 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-1" Style="font-weight:600">Row Trimming</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Some banks include account info or totals outside the actual data rows.
+            Adjust these to set where your data starts and ends.
+        </MudText>
 
-    <MudPaper Class="pa-6" Elevation="1">
         <MudGrid Spacing="3">
             <MudItem xs="12" sm="6">
-                <MudSelect T="string" @bind-Value="_mapping.DateColumn" Label="Date column *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudNumericField T="int" @bind-Value="_mapping.SkipRowsFromTop" @bind-Value:after="OnSkipChanged"
+                                 Label="Skip rows from top" HelperText="Rows before the header row (account name, report title, etc.)"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="50" Immediate="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudNumericField T="int" @bind-Value="_mapping.SkipRowsFromBottom" @bind-Value:after="OnSkipChanged"
+                                 Label="Trim rows from bottom" HelperText="Rows after the last data row (totals, footers, etc.)"
+                                 Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="50" Immediate="true" />
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* ── Preview table ── *@
+    <MudPaper Elevation="1" Class="mb-4">
+        @if (_previewLoading)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+        }
+        else if (_preview.Headers.Length == 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="ma-4">
+                No data visible with these settings — try reducing the skip values.
+            </MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_preview.Rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Height="200px"
+                      FixedHeader="true">
+                <HeaderContent>
+                    @foreach (var h in _preview.Headers)
+                    {
+                        <MudTh>@h</MudTh>
+                    }
+                </HeaderContent>
+                <RowTemplate>
+                    @foreach (var cell in context)
+                    {
+                        <MudTd>@cell</MudTd>
+                    }
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+
+    @* ── Column mapping ── *@
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudText Typo="Typo.subtitle1" Class="mb-4" Style="font-weight:600">Column Mapping</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="_mapping.DateColumn" Label="Date column *" Variant="Variant.Outlined"
+                           Margin="Margin.Dense" Disabled="@(_preview.Headers.Length == 0)">
                     <MudSelectItem Value="@("")">— select —</MudSelectItem>
                     @foreach (var h in _preview.Headers)
                     {
@@ -88,7 +151,8 @@
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" sm="6">
-                <MudSelect T="string" @bind-Value="_mapping.DescriptionColumn" Label="Description column *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelect T="string" @bind-Value="_mapping.DescriptionColumn" Label="Description column *"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_preview.Headers.Length == 0)">
                     <MudSelectItem Value="@("")">— select —</MudSelectItem>
                     @foreach (var h in _preview.Headers)
                     {
@@ -97,16 +161,18 @@
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" sm="6">
-                <MudSelect T="string" @bind-Value="_amountType" Label="Amount type *" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelect T="string" @bind-Value="_amountType" Label="Amount type *" Variant="Variant.Outlined"
+                           Margin="Margin.Dense" Disabled="@(_preview.Headers.Length == 0)">
                     <MudSelectItem Value="@("split")">Separate Credit + Debit columns</MudSelectItem>
                     <MudSelectItem Value="@("single")">Single signed amount column</MudSelectItem>
                 </MudSelect>
             </MudItem>
-            
+
             @if (_amountType == "split")
             {
                 <MudItem xs="12" sm="3">
-                    <MudSelect T="string" @bind-Value="_mapping.CreditColumn" Label="Credit column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelect T="string" @bind-Value="_mapping.CreditColumn" Label="Credit column" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Disabled="@(_preview.Headers.Length == 0)">
                         <MudSelectItem Value="@((string?)null)">— none —</MudSelectItem>
                         @foreach (var h in _preview.Headers)
                         {
@@ -115,7 +181,8 @@
                     </MudSelect>
                 </MudItem>
                 <MudItem xs="12" sm="3">
-                    <MudSelect T="string" @bind-Value="_mapping.DebitColumn" Label="Debit column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelect T="string" @bind-Value="_mapping.DebitColumn" Label="Debit column" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Disabled="@(_preview.Headers.Length == 0)">
                         <MudSelectItem Value="@((string?)null)">— none —</MudSelectItem>
                         @foreach (var h in _preview.Headers)
                         {
@@ -127,7 +194,8 @@
             else
             {
                 <MudItem xs="12" sm="6">
-                    <MudSelect T="string" @bind-Value="_mapping.AmountColumn" Label="Amount column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelect T="string" @bind-Value="_mapping.AmountColumn" Label="Amount column" Variant="Variant.Outlined"
+                               Margin="Margin.Dense" Disabled="@(_preview.Headers.Length == 0)">
                         <MudSelectItem Value="@((string?)null)">— select —</MudSelectItem>
                         @foreach (var h in _preview.Headers)
                         {
@@ -138,7 +206,8 @@
             }
 
             <MudItem xs="12" sm="6">
-                <MudSelect T="string" @bind-Value="_mapping.CategoryColumn" Label="Category column" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelect T="string" @bind-Value="_mapping.CategoryColumn" Label="Category column"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" Disabled="@(_preview.Headers.Length == 0)">
                     <MudSelectItem Value="@((string?)null)">— none —</MudSelectItem>
                     @foreach (var h in _preview.Headers)
                     {
@@ -149,10 +218,12 @@
         </MudGrid>
 
         <MudStack Row="true" Class="mt-6" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunImport" Disabled="@_importing" StartIcon="@Icons.Material.Filled.Check">
-                @(_importing ? "Importing..." : "Import CSV")
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunImport"
+                       Disabled="@(_importing || _preview.Headers.Length == 0)" StartIcon="@Icons.Material.Filled.Check">
+                @(_importing ? "Importing…" : "Import CSV")
             </MudButton>
-            <MudButton Variant="Variant.Outlined" OnClick="() => _step = Step.Upload" StartIcon="@Icons.Material.Filled.ArrowBack">Back</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="() => _step = Step.Upload"
+                       StartIcon="@Icons.Material.Filled.ArrowBack">Back</MudButton>
         </MudStack>
     </MudPaper>
 }
@@ -161,7 +232,7 @@
 {
     <MudPaper Class="pa-6" Elevation="1">
         <MudText Typo="Typo.h6" GutterBottom="true">Import Complete</MudText>
-        
+
         <MudSimpleTable Class="mb-6" Style="max-width:400px">
             <tbody>
                 <tr>
@@ -195,9 +266,9 @@
                             <MudTd DataLabel="Reason">@context.Reason</MudTd>
                         </RowTemplate>
                     </MudTable>
-                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="mt-2" 
-                               StartIcon="@Icons.Material.Filled.Download"
-                               Href="@($"api/csv-import/{AccountId}/skipped-export")" Target="_blank">
+                    <MudButton Variant="Variant.Outlined" Size="Size.Small" Class="mt-2"
+                               StartIcon="@Icons.Material.Filled.Download" Href="@($"api/csv-import/{AccountId}/skipped-export")"
+                               Target="_blank">
                         Download Skipped Rows CSV
                     </MudButton>
                 </MudExpansionPanel>
@@ -205,13 +276,40 @@
         }
 
         <MudStack Row="true" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GoToTransactions" StartIcon="@Icons.Material.Filled.List">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="GoToTransactions"
+                       StartIcon="@Icons.Material.Filled.List">
                 View Transactions
             </MudButton>
-            <MudButton Variant="Variant.Outlined" OnClick="Reset" StartIcon="@Icons.Material.Filled.Refresh">Import Another File</MudButton>
-        </MudStack>
-    </MudPaper>
-}
+            <MudButton Variant="Variant.Outlined" OnClick="Reset" StartIcon="@Icons.Material.Filled.Refresh">Import Another
+                File</MudButton>
+            </MudStack>
+        </MudPaper>
+    }
+
+    <style>
+        .csv-drop-zone {
+            border: 2px dashed var(--mud-palette-primary);
+            border-radius: 12px;
+            padding: 48px 32px;
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
+            background-color: var(--mud-palette-background);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .csv-drop-zone:hover {
+            background-color: var(--mud-palette-action-default-hover);
+        }
+
+        .csv-drop-zone--active {
+            background-color: rgba(var(--mud-palette-primary-rgb), 0.08);
+            border-color: var(--mud-palette-primary-darken);
+            border-style: solid;
+        }
+    </style>
 
 @code {
     [Parameter] public string AccountId { get; set; } = "";
@@ -225,13 +323,17 @@
     private ImportResult? _result;
     private List<string> _missingColumns = new();
 
-    private bool _uploading, _importing;
+    private bool _uploading, _importing, _previewLoading;
+    private bool _isDragOver;
     private string? _csvContent;
+    private string? _selectedFileName;
     private string? _error, _message;
+
+    // Debounce for skip-row live refresh
+    private CancellationTokenSource? _skipDebounce;
 
     protected override async Task OnInitializedAsync()
     {
-        // Try to load existing mapping profile
         try
         {
             var profile = await Http.GetFromJsonAsync<CsvMappingProfile>(
@@ -241,46 +343,104 @@
         catch { /* No profile yet — fine */ }
     }
 
+    // ── File selection ────────────────────────────────────────────────────
+
     private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file == null) return;
+        _selectedFileName = file.Name;
+        await ProcessFile(file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024), file.Name);
+    }
+
+    // ── Drag and drop ─────────────────────────────────────────────────────
+
+    private void OnDragOver() => _isDragOver = true;
+    private void OnDragLeave() => _isDragOver = false;
+
+    private async Task OnDrop(DragEventArgs e)
+    {
+        _isDragOver = false;
+        // Drag-and-drop file access requires JS interop; Blazor Server's DragEventArgs
+        // does not expose DataTransfer files directly. We guide the user to use the
+        // file picker instead, while still providing the visual drop zone UX.
+        // For full native drop support a JS helper would be required.
+        _error = "File detected! Please use the 'Browse file' button to select it — " +
+                 "Blazor Server requires the file picker for reading dropped files.";
+        StateHasChanged();
+    }
+
+    private async Task ProcessFile(Stream stream, string fileName)
     {
         _uploading = true; _error = null;
         try
         {
-            var file = e.File;
-            if (file == null) return;
-
-            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10 MB
             using var reader = new System.IO.StreamReader(stream);
             _csvContent = await reader.ReadToEndAsync();
 
-            // Preview
-            using var form = new MultipartFormDataContent();
-            using var content = new StringContent(_csvContent);
-            form.Add(new StreamContent(new System.IO.MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(_csvContent))), "file", file.Name);
-
-            var resp = await Http.PostAsync($"api/csv-import/{AccountId}/preview", form);
-            resp.EnsureSuccessStatusCode();
-            _preview = await resp.Content.ReadFromJsonAsync<CsvPreview>();
-
-            // Check if saved mapping is still valid
-            if (_mapping.DateColumn != "")
-            {
-                var headers = _preview?.Headers ?? Array.Empty<string>();
-                _missingColumns = _mapping.MappedColumns()
-                    .Where(col => !headers.Select(h => h.ToLowerInvariant()).Contains(col))
-                    .ToList();
-            }
-
-            // Detect amount type from saved mapping
-            if (!string.IsNullOrEmpty(_mapping.AmountColumn))
-                _amountType = "single";
-
+            await RefreshPreview();
             _step = Step.Map;
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _uploading = false; }
     }
+
+    // ── Skip row live update ──────────────────────────────────────────────
+
+    private async Task OnSkipChanged()
+    {
+        // Debounce: wait 400ms after the user stops changing the value
+        _skipDebounce?.Cancel();
+        _skipDebounce = new CancellationTokenSource();
+        var token = _skipDebounce.Token;
+
+        try
+        {
+            await Task.Delay(400, token);
+            if (!token.IsCancellationRequested)
+                await RefreshPreview();
+        }
+        catch (TaskCanceledException) { /* debounced — ignore */ }
+    }
+
+    private async Task RefreshPreview()
+    {
+        if (_csvContent == null) return;
+        _previewLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            using var form = new MultipartFormDataContent();
+            form.Add(
+                new StreamContent(new System.IO.MemoryStream(
+                    System.Text.Encoding.UTF8.GetBytes(_csvContent))),
+                "file", _selectedFileName ?? "import.csv");
+
+            var url = $"api/csv-import/{AccountId}/preview" +
+                      $"?skipTop={_mapping.SkipRowsFromTop}&skipBottom={_mapping.SkipRowsFromBottom}";
+
+            var resp = await Http.PostAsync(url, form);
+            resp.EnsureSuccessStatusCode();
+            _preview = await resp.Content.ReadFromJsonAsync<CsvPreview>();
+
+            // Check if saved column mapping is still valid against the new headers
+            if (_mapping.DateColumn != "" && _preview != null)
+            {
+                _missingColumns = _mapping.MappedColumns()
+                    .Where(col => !(_preview.Headers.Select(h => h.ToLowerInvariant()).Contains(col)))
+                    .ToList();
+            }
+
+            // Restore amount type from saved mapping
+            if (!string.IsNullOrEmpty(_mapping.AmountColumn))
+                _amountType = "single";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _previewLoading = false; StateHasChanged(); }
+    }
+
+    // ── Import ────────────────────────────────────────────────────────────
 
     private async Task RunImport()
     {
@@ -300,7 +460,7 @@
 
         try
         {
-            // Save mapping profile
+            // Save mapping profile (includes SkipRowsFromTop / SkipRowsFromBottom)
             await Http.PostAsJsonAsync($"api/csv-import/{AccountId}/profile", _mapping);
 
             // Run import
@@ -323,11 +483,7 @@
         finally { _importing = false; }
     }
 
-    private void GoToTransactions()
-    {
-        Nav.NavigateTo("/transactions");
-    }
-
+    private void GoToTransactions() => Nav.NavigateTo("/transactions");
 
     private void Reset()
     {
@@ -335,9 +491,11 @@
         _preview = null;
         _result = null;
         _csvContent = null;
+        _selectedFileName = null;
         _error = null;
         _message = null;
         _missingColumns.Clear();
+        _isDragOver = false;
     }
 
     // Local mirror of server types for JSON deserialization

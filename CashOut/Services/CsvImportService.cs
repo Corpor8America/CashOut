@@ -40,9 +40,16 @@ public class CsvImportService
 
     // ── CSV Preview ───────────────────────────────────────────────────────
 
-    public CsvPreview Preview(string csvContent)
+    /// <summary>
+    /// Parses the raw CSV and returns headers + up to 5 data rows.
+    /// When skipTop > 0, that many rows are discarded before the header row.
+    /// When skipBottom > 0, that many rows are trimmed from the end of data rows.
+    /// </summary>
+    public CsvPreview Preview(string csvContent, int skipTop = 0, int skipBottom = 0)
     {
         var rows = ParseCsv(csvContent);
+        rows = ApplyRowTrimming(rows, skipTop, skipBottom);
+
         if (rows.Count == 0) return new CsvPreview(Array.Empty<string>(), Array.Empty<string[]>());
 
         var headers = rows[0];
@@ -67,6 +74,8 @@ public class CsvImportService
         string accountId, string csvContent, CsvMappingProfile profile)
     {
         var rows = ParseCsv(csvContent);
+        rows = ApplyRowTrimming(rows, profile.SkipRowsFromTop, profile.SkipRowsFromBottom);
+
         if (rows.Count <= 1)
             return new ImportResult(0, 0, new List<SkippedRow>());
 
@@ -249,6 +258,32 @@ public class CsvImportService
 
         await _db.SaveChangesAsync();
         return new ImportResult(imported, skippedDup, skippedRows);
+    }
+
+    // ── Row Trimming ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Applies top/bottom row skipping to a parsed row list.
+    /// skipTop removes rows before the header (the header is the first row
+    /// after skipping). skipBottom removes rows from the tail of data rows.
+    /// </summary>
+    private static List<string[]> ApplyRowTrimming(
+        List<string[]> rows, int skipTop, int skipBottom)
+    {
+        if (skipTop > 0)
+            rows = rows.Skip(skipTop).ToList();
+
+        if (skipBottom > 0 && rows.Count > 1)
+        {
+            // Keep header (index 0) + data rows minus the bottom trim
+            var header = rows[0];
+            var dataRows = rows.Skip(1).ToList();
+            var trimmedData = dataRows.Take(Math.Max(0, dataRows.Count - skipBottom)).ToList();
+            rows = new List<string[]> { header };
+            rows.AddRange(trimmedData);
+        }
+
+        return rows;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────

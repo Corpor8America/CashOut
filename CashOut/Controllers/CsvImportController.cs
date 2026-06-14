@@ -26,22 +26,29 @@ public class CsvImportController : ControllerBase
         return Ok(saved);
     }
 
-    /// <summary>Parses a CSV file upload and returns headers + 5-row preview.</summary>
+    /// <summary>
+    /// Parses a CSV file upload and returns headers + 5-row preview.
+    /// skipTop and skipBottom are applied before selecting the header row.
+    /// </summary>
     [HttpPost("{accountId}/preview")]
-    public async Task<IActionResult> Preview(string accountId, IFormFile file)
+    public async Task<IActionResult> Preview(
+        string accountId,
+        [FromForm] IFormFile file,
+        [FromQuery] int skipTop = 0,
+        [FromQuery] int skipBottom = 0)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { error = "No file uploaded." });
 
         using var reader = new System.IO.StreamReader(file.OpenReadStream());
         var content = await reader.ReadToEndAsync();
-        var preview = _csv.Preview(content);
+        var preview = _csv.Preview(content, skipTop, skipBottom);
         return Ok(preview);
     }
 
     /// <summary>Imports a CSV file using the account's current mapping profile.</summary>
     [HttpPost("{accountId}/import")]
-    public async Task<IActionResult> Import(string accountId, IFormFile file)
+    public async Task<IActionResult> Import(string accountId, [FromForm] IFormFile file)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { error = "No file uploaded." });

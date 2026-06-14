@@ -14,6 +14,21 @@ public class CsvMappingProfile
     /// <summary>Profile version — increments on each remap.</summary>
     public int Version { get; set; } = 1;
 
+    // ── Row trimming ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Number of rows to skip from the top of the file before the header row.
+    /// Default 0 = first row is the header. Use when the bank prepends account
+    /// info, report titles, or blank rows above the actual CSV data.
+    /// </summary>
+    public int SkipRowsFromTop { get; set; } = 0;
+
+    /// <summary>
+    /// Number of rows to trim from the bottom of the file after data rows.
+    /// Use when the bank appends totals, footers, or summary rows.
+    /// </summary>
+    public int SkipRowsFromBottom { get; set; } = 0;
+
     // ── Column name mappings (case-insensitive header values) ─────────────
     public string DateColumn { get; set; } = "";
     public string DescriptionColumn { get; set; } = "";
@@ -38,8 +53,8 @@ public class CsvMappingProfile
     /// </summary>
     public IEnumerable<string> MappedColumns()
     {
-        yield return DateColumn.ToLowerInvariant();
-        yield return DescriptionColumn.ToLowerInvariant();
+        if (!string.IsNullOrEmpty(DateColumn)) yield return DateColumn.ToLowerInvariant();
+        if (!string.IsNullOrEmpty(DescriptionColumn)) yield return DescriptionColumn.ToLowerInvariant();
         if (!string.IsNullOrEmpty(CreditColumn)) yield return CreditColumn.ToLowerInvariant();
         if (!string.IsNullOrEmpty(DebitColumn)) yield return DebitColumn.ToLowerInvariant();
         if (!string.IsNullOrEmpty(AmountColumn)) yield return AmountColumn.ToLowerInvariant();
