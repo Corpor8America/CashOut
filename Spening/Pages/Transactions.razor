@@ -24,27 +24,30 @@
                    StartIcon="@(_fetching ? null : Icons.Material.Filled.CloudDownload)">
             @(_fetching ? "Fetching..." : "Fetch Full Year")
         </MudButton>
-        
+
         <MudSpacer />
-        
-        <MudSelect T="int" Label="Year" Value="_filterYear" ValueChanged="OnYearChangedInternal" Dense="true" Margin="Margin.Dense" Style="width:100px">
+
+        <MudSelect T="int" Label="Year" Value="_filterYear" ValueChanged="OnYearChangedInternal" Dense="true"
+                   Margin="Margin.Dense" Style="width:100px">
             @foreach (var y in _availableYears)
             {
                 <MudSelectItem Value="@y">@y</MudSelectItem>
             }
         </MudSelect>
-        
-        <MudSelect T="string" Label="Category" @bind-Value="_filterCategory" Dense="true" Margin="Margin.Dense" Style="width:200px">
+
+        <MudSelect T="string" Label="Category" @bind-Value="_filterCategory" Dense="true" Margin="Margin.Dense"
+                   Style="width:200px">
             <MudSelectItem Value="@("")">All categories</MudSelectItem>
             @foreach (var cat in _categories)
             {
                 <MudSelectItem Value="@cat">@cat</MudSelectItem>
             }
         </MudSelect>
-        
-        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="ApplyFilter" Disabled="@_loading">Filter</MudButton>
-        
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
+
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="ApplyFilter" Disabled="@_loading">Filter
+        </MudButton>
+
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
                    Href="@($"api/transactions/export?year={_filterYear}")" Target="_blank">
             Export CSV
         </MudButton>
@@ -55,8 +58,8 @@
     @for (int m = 1; m <= 12; m++)
     {
         var monthIndex = m;
-        <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)" 
-                      OnClick="() => OnMonthChanged(monthIndex)" />
+        <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)"
+                     OnClick="() => OnMonthChanged(monthIndex)" />
     }
 </MudTabs>
 
@@ -80,22 +83,25 @@ else if (_categorySummary.Count > 0)
             <tbody>
                 @foreach (var context in _categorySummary)
                 {
-                    var diff = context.MonthNet - context.AvgNet;
-                    var isIncome = context.Category.Contains("Income", StringComparison.OrdinalIgnoreCase);
+                    var monthNet = context.MonthCredit - context.MonthDebit;
+                    var avgNet = context.AvgCredit - context.AvgDebit;
+                    var diff = monthNet - avgNet;
                     <tr>
                         <td>@context.Category</td>
                         <td style="text-align:right">
-                            <span style="color: @(context.MonthNet < 0 ? "var(--mud-palette-success)" : "inherit")">
-                                @context.MonthNet.ToString("C")
+                            <span style="color: @(monthNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)")">
+                                @(monthNet < 0 ? "-" : "")@Math.Abs(monthNet).ToString("C")
                             </span>
                         </td>
-                        <td style="text-align:right">@context.AvgNet.ToString("C")</td>
                         <td style="text-align:right">
-                            @{
-                                bool isBad = isIncome ? diff < 0 : diff > 0;
-                            }
-                            <span style="color: @(isBad ? "var(--mud-palette-error)" : "var(--mud-palette-success)"); font-weight:bold">
-                                @((diff > 0 ? "+" : "") + diff.ToString("C"))
+                            <span style="color: @(avgNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)")">
+                                @(avgNet < 0 ? "-" : "")@Math.Abs(avgNet).ToString("C")
+                            </span>
+                        </td>
+                        <td style="text-align:right">
+                            <span
+                                style="color: @(diff >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
+                                @(diff < 0 ? "-" : "")@Math.Abs(diff).ToString("C")
                             </span>
                         </td>
                     </tr>
@@ -104,40 +110,54 @@ else if (_categorySummary.Count > 0)
                 @{
                     var mDebit = _categorySummary.Sum(s => s.MonthDebit);
                     var mCredit = _categorySummary.Sum(s => s.MonthCredit);
-                    var mNet = mDebit - mCredit;
-                    
+                    var mNet = mCredit - mDebit;
+
                     var aDebit = _categorySummary.Sum(s => s.AvgDebit);
                     var aCredit = _categorySummary.Sum(s => s.AvgCredit);
-                    var aNet = aDebit - aCredit;
+                    var aNet = aCredit - aDebit;
                 }
-                
+
                 <tr class="footer-row-secondary">
                     <td class="mud-table-cell">Debit Total</td>
-                    <td class="mud-table-cell" style="text-align:right">@mDebit.ToString("C")</td>
-                    <td class="mud-table-cell" style="text-align:right">@aDebit.ToString("C")</td>
+                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-error)">
+                        -@mDebit.ToString("C")
+                    </td>
+                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-error)">
+                        -@aDebit.ToString("C")
+                    </td>
                     <td class="mud-table-cell" style="text-align:right"></td>
                 </tr>
                 <tr class="footer-row-secondary">
                     <td class="mud-table-cell">Credit Total</td>
-                    <td class="mud-table-cell" style="text-align:right">@mCredit.ToString("C")</td>
-                    <td class="mud-table-cell" style="text-align:right">@aCredit.ToString("C")</td>
+                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-success)">
+                        @mCredit.ToString("C")
+                    </td>
+                    <td class="mud-table-cell" style="text-align:right; color:var(--mud-palette-success)">
+                        @aCredit.ToString("C")
+                    </td>
                     <td class="mud-table-cell" style="text-align:right"></td>
                 </tr>
                 <tr class="footer-row-main">
                     <td class="mud-table-cell">Net Total</td>
                     <td class="mud-table-cell" style="text-align:right">
-                        <span style="color: @(mNet < 0 ? "var(--mud-palette-success)" : "inherit")">
-                            @mNet.ToString("C")
+                        <span
+                            style="color: @(mNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
+                            @(mNet < 0 ? "-" : "")@Math.Abs(mNet).ToString("C")
                         </span>
                     </td>
-                    <td class="mud-table-cell" style="text-align:right">@aNet.ToString("C")</td>
                     <td class="mud-table-cell" style="text-align:right">
-                        @{ 
-                            var netDiff = mNet - aNet; 
-                            var netDiffColor = netDiff > 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)";
+                        <span
+                            style="color: @(aNet >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
+                            @(aNet < 0 ? "-" : "")@Math.Abs(aNet).ToString("C")
+                        </span>
+                    </td>
+                    <td class="mud-table-cell" style="text-align:right">
+                        @{
+                            var netDiff = mNet - aNet;
                         }
-                        <span style="color: @netDiffColor; font-weight:bold">
-                            @((netDiff > 0 ? "+" : "") + netDiff.ToString("C"))
+                        <span
+                            style="color: @(netDiff >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)"); font-weight:bold">
+                            @(netDiff < 0 ? "-" : "")@Math.Abs(netDiff).ToString("C")
                         </span>
                     </td>
                 </tr>
@@ -154,6 +174,7 @@ else if (_categorySummary.Count > 0)
         color: var(--mud-palette-text-secondary);
         border: none !important;
     }
+
     .footer-row-main .mud-table-cell {
         font-size: 1rem;
         font-weight: 700;
@@ -190,22 +211,20 @@ else
                 @if (_editingId == context.TransactionId)
                 {
                     <div style="display:flex;gap:0.35rem;align-items:center">
-                        <MudTextField T="string" Value="@_editValue" 
-                                      ValueChanged="@(v => _editValue = v)"
-                                      OnKeyDown="@(e => OnEditKey(e, context.TransactionId))"
-                                      Margin="Margin.Dense" Variant="Variant.Outlined" />
+                        <MudTextField T="string" Value="@_editValue" ValueChanged="@(v => _editValue = v)"
+                                      OnKeyDown="@(e => OnEditKey(e, context.TransactionId))" Margin="Margin.Dense"
+                                      Variant="Variant.Outlined" />
                         <MudIconButton Icon="@Icons.Material.Filled.Check" Color="Color.Success" Size="Size.Small"
-                                        OnClick="() => CommitEdit(context.TransactionId)" />
+                                       OnClick="() => CommitEdit(context.TransactionId)" />
                         <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Error" Size="Size.Small"
-                                        OnClick="CancelEdit" />
+                                       OnClick="CancelEdit" />
                     </div>
                 }
                 else
                 {
-                    <span @ondblclick="() => StartEdit(context.TransactionId, context.Category)"
-                          title="Double-click to edit"
+                    <span @ondblclick="() => StartEdit(context.TransactionId, context.Category)" title="Double-click to edit"
                           style="cursor:pointer;display:inline-block;min-width:60px;
-                                 border-bottom:1px dashed #ccc;padding-bottom:1px">
+                        border-bottom:1px dashed #ccc;padding-bottom:1px">
                         @(string.IsNullOrEmpty(context.Category) ? "—" : context.Category)
                     </span>
                 }
@@ -268,7 +287,7 @@ else
                 url += $"&category={Uri.EscapeDataString(_filterCategory)}";
 
             _transactions = await Http.GetFromJsonAsync<List<TransactionDto>>(url) ?? new();
-            
+
             if (_categories.Count == 0)
             {
                 await LoadAllCategories();
@@ -426,10 +445,10 @@ else
     );
 
     private record CategorySummaryDto(
-        string Category, 
-        decimal MonthDebit, 
-        decimal MonthCredit, 
-        decimal MonthNet, 
+        string Category,
+        decimal MonthDebit,
+        decimal MonthCredit,
+        decimal MonthNet,
         decimal AvgNet,
         decimal AvgDebit,
         decimal AvgCredit);
