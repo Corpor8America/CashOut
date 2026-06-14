@@ -1,4 +1,4 @@
-# Spening — Code Review #2
+# CashOut — Code Review #2
 
 Review of the codebase as of the `FeatureExpansion` + `creditdebitnormlize` migrations,
 including the new Merchants page and BusinessNormalizationController additions discussed in chat.
@@ -12,7 +12,7 @@ Severity levels: **🔴 Bug** (will break at runtime), **🟡 Risk** (breaks und
 
 ### 1. `Merchants.razor` — `MappingDto` deserialization will always fail
 
-**File:** `Spening/Pages/Merchants.razor` (new), `BusinessNormalizationController.cs`
+**File:** `CashOut/Pages/Merchants.razor` (new), `BusinessNormalizationController.cs`
 
 The page declares:
 ```csharp
@@ -52,7 +52,7 @@ public async Task<IActionResult> ListMappings()
 
 ### 2. `CsvImportController.ExportSkipped` — download link will 405
 
-**File:** `Spening/Controllers/CsvImportController.cs`, `Spening/Pages/CsvImport.razor`
+**File:** `CashOut/Controllers/CsvImportController.cs`, `CashOut/Pages/CsvImport.razor`
 
 The controller defines `ExportSkipped` as `[HttpPost]`:
 ```csharp
@@ -77,14 +77,14 @@ removing the server round-trip entirely:
 ```csharp
 var csv = "Row,RawData,Reason\n" + string.Join("\n",
     _result.SkippedRows.Select(r => $"{r.RowNumber},{Esc(r.RawData)},{Esc(r.Reason)}"));
-await JS.InvokeVoidAsync("speningBlazor.downloadText", "skipped-rows.csv", csv);
+await JS.InvokeVoidAsync("cashoutBlazor.downloadText", "skipped-rows.csv", csv);
 ```
 
 ---
 
 ### 3. `Merchants.razor` — alias category edits are lost on page refresh
 
-**File:** `Spening/Pages/Merchants.razor` (new)
+**File:** `CashOut/Pages/Merchants.razor` (new)
 
 `SaveAliasCategory` calls `PATCH /api/normalization/aliases/{id}/category`. That endpoint does
 not exist on the current controller. The method catches the non-success response and updates local
@@ -113,7 +113,7 @@ Alternatively, add `UpdateAliasCategory(int id, string category)` to
 
 ### 4. `Transaction.Amount` sign contract is violated for credits
 
-**File:** `Spening/Models/Transaction.cs`
+**File:** `CashOut/Models/Transaction.cs`
 
 The model XML doc comment states: *"Amount is always >= 0"*. But `NormalizeSingleAmount`
 returns a negative `Amount` for credits:
@@ -135,7 +135,7 @@ code assuming the documented invariant will break silently.
 
 ### 5. `Transactions.razor` — expenses display as negative numbers
 
-**File:** `Spening/Pages/Transactions.razor`
+**File:** `CashOut/Pages/Transactions.razor`
 
 ```razor
 <td style="color:@(t.Credit != null ? "black" : "red")">
@@ -163,7 +163,7 @@ expenses to show as positive red numbers (the colour already conveys direction).
 
 ### 6. Severe N+1 queries in `TransactionService.MergePlaid`
 
-**File:** `Spening/Services/TransactionService.cs`
+**File:** `CashOut/Services/TransactionService.cs`
 
 Inside the merge loop over incoming transactions:
 ```csharp
@@ -198,7 +198,7 @@ The same pattern applies to `CsvImportService.Import`.
 
 ### 7. `CsvImportController` — missing `[FromForm]` / multipart wiring for `IFormFile`
 
-**File:** `Spening/Controllers/CsvImportController.cs`
+**File:** `CashOut/Controllers/CsvImportController.cs`
 
 The `Preview` and `Import` endpoints accept `IFormFile file` without `[FromForm]`:
 ```csharp
@@ -220,7 +220,7 @@ public async Task<IActionResult> Preview(string accountId, [FromForm] IFormFile 
 
 ### 8. `BusinessNormalizationService.GetOrCreateRawBusiness` — race condition on concurrent imports
 
-**File:** `Spening/Services/BusinessNormalizationService.cs`
+**File:** `CashOut/Services/BusinessNormalizationService.cs`
 
 ```csharp
 var existing = await _db.RawBusinesses.FirstOrDefaultAsync(b => b.RawName == normalized);
@@ -256,7 +256,7 @@ catch (DbUpdateException ex) when (ex.InnerException?.Message.Contains("unique")
 
 ### 9. `CsvImport.razor` — InputFile size limit mismatched with server limit
 
-**File:** `Spening/Pages/CsvImport.razor`, `Spening/Program.cs`
+**File:** `CashOut/Pages/CsvImport.razor`, `CashOut/Program.cs`
 
 ```csharp
 // CsvImport.razor
@@ -281,10 +281,10 @@ o.MultipartBodyLengthLimit = 11 * 1024 * 1024; // 11 MB to accommodate multipart
 
 ### 10. `Dockerfile` — `dotnet nuget locals all --clear` breaks layer caching
 
-**File:** `Spening/Dockerfile`
+**File:** `CashOut/Dockerfile`
 
 ```dockerfile
-COPY Spening/Spening.csproj ./
+COPY CashOut/CashOut.csproj ./
 RUN dotnet nuget locals all --clear && dotnet restore
 ```
 
@@ -305,13 +305,13 @@ RUN dotnet restore
 
 **File:** (missing)
 
-Without a `.dockerignore`, `COPY Spening/ ./` in the Dockerfile copies `bin/`, `obj/`, any
+Without a `.dockerignore`, `COPY CashOut/ ./` in the Dockerfile copies `bin/`, `obj/`, any
 `.env` file present in the directory, and all migration designer files into the build context.
 This has two consequences: (1) the build context sent to Docker is much larger than necessary,
-slowing every build; (2) if a developer has a local `.env` inside `Spening/`, its contents
+slowing every build; (2) if a developer has a local `.env` inside `CashOut/`, its contents
 (Plaid secrets, encryption key) are baked into the image layer.
 
-**Fix:** Add `Spening/.dockerignore` (or root-level `.dockerignore`):
+**Fix:** Add `CashOut/.dockerignore` (or root-level `.dockerignore`):
 ```
 bin/
 obj/
@@ -323,14 +323,14 @@ obj/
 
 ### 12. `AppDbContextFactory` — hardcoded relative path for `.env`
 
-**File:** `Spening/Data/AppDbContextFactory.cs`
+**File:** `CashOut/Data/AppDbContextFactory.cs`
 
 ```csharp
 DotNetEnv.Env.Load("../.env");
 ```
 
 This path is relative to the working directory at the time `dotnet ef` runs. It works when
-running from `Spening/` but breaks if EF tools are invoked from the repo root or in a CI
+running from `CashOut/` but breaks if EF tools are invoked from the repo root or in a CI
 pipeline where the working directory is different. The migration will fail with a confusing
 "ConnectionStrings:Default is required" error.
 
@@ -338,7 +338,7 @@ pipeline where the working directory is different. The migration will fail with 
 ```csharp
 var envPath = Path.Combine(
     Directory.GetCurrentDirectory(),
-    Directory.GetCurrentDirectory().EndsWith("Spening") ? "../.env" : ".env");
+    Directory.GetCurrentDirectory().EndsWith("CashOut") ? "../.env" : ".env");
 if (File.Exists(envPath))
     DotNetEnv.Env.Load(envPath);
 ```
@@ -347,7 +347,7 @@ if (File.Exists(envPath))
 
 ### 13. `ManualAccounts.razor` — invalid HTML nesting
 
-**File:** `Spening/Pages/ManualAccounts.razor`
+**File:** `CashOut/Pages/ManualAccounts.razor`
 
 ```razor
 <a href="/csv-import/@acct.Id">
@@ -369,7 +369,7 @@ button directly:
 
 ### 14. `Accounts.razor` — "Add Account" button is active before JS interop is ready
 
-**File:** `Spening/Pages/Accounts.razor`
+**File:** `CashOut/Pages/Accounts.razor`
 
 The button is enabled on render and only shows an error if clicked before `_isRendered` is set:
 ```csharp
@@ -395,7 +395,7 @@ during a flow, but there's no `disabled` state for the pre-render window.
 
 ### 15. `ReportService` — all aggregations load full table into memory
 
-**File:** `Spening/Services/ReportService.cs`
+**File:** `CashOut/Services/ReportService.cs`
 
 All five report methods call `GetExpenses(year)` which fetches every expense transaction for the
 year into a `List<Transaction>` and then groups/sorts in-process with LINQ. For a user with
@@ -422,7 +422,7 @@ pivot query.
 
 ### 16. `Console.Error.WriteLine` used instead of `ILogger` throughout services
 
-**Files:** `Spening/Services/PlaidService.cs`, `Spening/Services/TransactionService.cs`
+**Files:** `CashOut/Services/PlaidService.cs`, `CashOut/Services/TransactionService.cs`
 
 ```csharp
 Console.Error.WriteLine($"[PlaidService] RemoveItem: Plaid revocation failed...");
@@ -440,7 +440,7 @@ also goes to stderr in Docker, which may be ignored or separated from stdout log
 
 ### 17. `SettingsServiceTests` — test names and assertions do not match test body
 
-**File:** `Spening.Tests/SettingsServiceTests.cs`
+**File:** `CashOut.Tests/SettingsServiceTests.cs`
 
 `Set_ThenGet_RoundTrips` contains no `await`, no `Set` call, and no round-trip:
 ```csharp
@@ -462,7 +462,7 @@ with no warning. The test name is actively misleading for anyone maintaining the
 
 ### 18. Test coverage gaps
 
-**Files:** `Spening.Tests/`
+**Files:** `CashOut.Tests/`
 
 The following services have zero test coverage:
 - `CsvImportService` — complex parsing, dedup, amount normalization, skipped-row logic
@@ -477,7 +477,7 @@ external dependencies — they are trivial to unit test and represent critical f
 
 ### 19. `CsvMappingProfile.MappedColumns()` yields empty strings
 
-**File:** `Spening/Models/CsvMappingProfile.cs`
+**File:** `CashOut/Models/CsvMappingProfile.cs`
 
 ```csharp
 public IEnumerable<string> MappedColumns()
@@ -506,7 +506,7 @@ empty required fields.
 
 ### 20. `ReportService.GetPivot` — `IndexOf` in nested loop is O(n²)
 
-**File:** `Spening/Services/ReportService.cs`
+**File:** `CashOut/Services/ReportService.cs`
 
 ```csharp
 topCats.Select(c => rows.Sum(r => r.Values[topCats.IndexOf(c)])).ToList()
@@ -527,7 +527,7 @@ topCats.Select((c, i) => rows.Sum(r => r.Values[i])).ToList()
 **File:** `docker-compose.yml`
 
 ```yaml
-image: yourusername/spening:latest
+image: yourusername/cashout:latest
 ```
 
 Anyone cloning the repo and running `docker compose up` will attempt to pull an image that does
@@ -538,7 +538,7 @@ as a required substitution step in the README.
 
 ### 22. `Transactions.razor` — categories populated from loaded results only
 
-**File:** `Spening/Pages/Transactions.razor`
+**File:** `CashOut/Pages/Transactions.razor`
 
 The category filter dropdown is populated from the currently loaded transactions:
 ```csharp

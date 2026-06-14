@@ -5,15 +5,15 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: spening
-      POSTGRES_USER: spening
+      POSTGRES_DB: cashout
+      POSTGRES_USER: cashout
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - pgdata_dev:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U spening" ]
+      test: [ "CMD-SHELL", "pg_isready -U cashout" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -21,7 +21,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: Spening/Dockerfile
+      dockerfile: CashOut/Dockerfile
     restart: unless-stopped
     depends_on:
       db:
@@ -32,7 +32,7 @@ services:
       - PLAID_PRODUCTION_SECRET=${PLAID_PRODUCTION_SECRET}
       - PLAID_ENV=${PLAID_ENV}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - ConnectionStrings__Default=Host=db;Database=spening;Username=spening;Password=${DB_PASSWORD}
+      - ConnectionStrings__Default=Host=db;Database=cashout;Username=cashout;Password=${DB_PASSWORD}
       - ASPNETCORE_ENVIRONMENT=Development
     ports:
       - "8080:8080"

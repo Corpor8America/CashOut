@@ -1,6 +1,6 @@
-# Spening Merchant Normalization & Alias Pattern System (Developer Specification)
+# CashOut Merchant Normalization & Alias Pattern System (Developer Specification)
 
-This document defines the technical architecture for merchant normalization, alias pattern matching, category assignment, and raw business tracking in Spening.  
+This document defines the technical architecture for merchant normalization, alias pattern matching, category assignment, and raw business tracking in CashOut.  
 It is intended for developers implementing or maintaining the ingestion pipeline.
 
 ---
@@ -282,4 +282,4 @@ This spec defines:
 - Safe handling of ambiguous merchants
 - Full auditability via RawBusinesses
 
-This is the reference implementation guide for Spening’s ingestion engine.
+This is the reference implementation guide for CashOut’s ingestion engine.

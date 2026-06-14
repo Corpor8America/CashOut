@@ -1,4 +1,4 @@
-# Spening
+# CashOut
 
 A self-hosted personal finance tracker that connects to your bank accounts via
 [Plaid](https://plaid.com) and shows your spending in a simple web interface.
@@ -32,7 +32,7 @@ A self-hosted personal finance tracker that connects to your bank accounts via
 
 ## Merchant Normalization
 
-Spening normalizes inconsistent merchant strings (e.g. `AMZN MKTP US 123456789`) into canonical
+CashOut normalizes inconsistent merchant strings (e.g. `AMZN MKTP US 123456789`) into canonical
 merchant identities called **Aliases**. Go to **Merchants & Aliases** in the sidebar to:
 
 1. **Create an alias** — e.g. "Amazon" with category "SHOPPING"
@@ -55,7 +55,7 @@ map existing raw merchants.
 ```bash
 cp .env.example .env   # fill in values
 docker compose -f docker-compose.dev.yml up -d
-cd Spening
+cd CashOut
 dotnet run
 ```
 

@@ -32,7 +32,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/spening
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/cashout
           tags: |
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
@@ -44,7 +44,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Spening/Dockerfile
+          file: ./CashOut/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

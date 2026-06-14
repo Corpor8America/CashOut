@@ -1,10 +1,10 @@
 # Merchant Aliasing, Raw Businesses, and Alias Deletion Behavior
-This document defines how Spening handles merchant identity, aliasing, raw business storage, and what happens when an alias is deleted. This is the authoritative specification for the merchant normalization pipeline.
+This document defines how CashOut handles merchant identity, aliasing, raw business storage, and what happens when an alias is deleted. This is the authoritative specification for the merchant normalization pipeline.
 
 ---
 
 # 1. Overview
-Spening uses a three-layer merchant identity system:
+CashOut uses a three-layer merchant identity system:
 
 1. RawBusiness  
    - Stores the exact merchant string from the transaction source.  
@@ -99,7 +99,7 @@ For each affected transaction:
    - category = transaction.category (first-seen rule)
 6. Category is reassigned using the standard priority rules.
 
-This effectively returns the transaction to the same state as if Spening had never seen that merchant before.
+This effectively returns the transaction to the same state as if CashOut had never seen that merchant before.
 
 ---
 
@@ -139,5 +139,5 @@ This allows users to refine or correct merchant names without disrupting the und
 - Deleted aliases cause merchants to reappear in the "Unmapped" list.
 - Alias names are fully editable without affecting mappings or categories.
 
-This system ensures that Spening remains debuggable, auditable, and capable of retroactive fixes without losing historical merchant identity.
+This system ensures that CashOut remains debuggable, auditable, and capable of retroactive fixes without losing historical merchant identity.
 

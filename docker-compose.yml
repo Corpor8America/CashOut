@@ -5,19 +5,19 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: spening
-      POSTGRES_USER: spening
+      POSTGRES_DB: cashout
+      POSTGRES_USER: cashout
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U spening" ]
+      test: [ "CMD-SHELL", "pg_isready -U cashout" ]
       interval: 5s
       timeout: 5s
       retries: 5
 
   app:
-    image: corpor8america/spening:latest
+    image: corpor8america/cashout:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -28,7 +28,7 @@ services:
       - PLAID_PRODUCTION_SECRET=${PLAID_PRODUCTION_SECRET}
       - PLAID_ENV=${PLAID_ENV}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - ConnectionStrings__Default=Host=db;Database=spening;Username=spening;Password=${DB_PASSWORD}
+      - ConnectionStrings__Default=Host=db;Database=cashout;Username=cashout;Password=${DB_PASSWORD}
     ports:
       - "8080:8080"
 

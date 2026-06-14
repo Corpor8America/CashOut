@@ -1,5 +1,5 @@
 # Run Matching Specification
-This document defines the behavior of the "Run Matching" operation in Spening. Running matching applies all alias patterns to unmapped transactions, updates merchant associations, cleans up RawBusiness entries, and recalculates categories. This process is deterministic and idempotent.
+This document defines the behavior of the "Run Matching" operation in CashOut. Running matching applies all alias patterns to unmapped transactions, updates merchant associations, cleans up RawBusiness entries, and recalculates categories. This process is deterministic and idempotent.
 
 ---
 
@@ -118,5 +118,5 @@ Running "Run Matching" multiple times without changing aliases or patterns produ
 7. Persistently update transaction.category_id using priority rules.
 8. Update the UI to reflect new mappings.
 
-This operation ensures that Spening remains consistent, predictable, and fully aligned with the user's alias definitions.
+This operation ensures that CashOut remains consistent, predictable, and fully aligned with the user's alias definitions.
 

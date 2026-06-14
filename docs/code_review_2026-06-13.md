@@ -1,6 +1,6 @@
-# Spening — Code Review (June 2026)
+# CashOut — Code Review (June 2026)
 
-This review evaluates the current state of the Spening codebase, following up on previous review cycles. Significant progress has been made in addressing critical bugs, particularly in merchant normalization and transaction sign handling. However, several architectural risks and UI/UX issues remain.
+This review evaluates the current state of the CashOut codebase, following up on previous review cycles. Significant progress has been made in addressing critical bugs, particularly in merchant normalization and transaction sign handling. However, several architectural risks and UI/UX issues remain.
 
 Severity levels: **🔴 Bug** (runtime failure), **🟡 Risk** (architectural/performance debt), **🔵 Improvement** (quality/consistency).
 

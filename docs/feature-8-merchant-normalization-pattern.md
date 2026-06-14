@@ -1,12 +1,12 @@
-# Spening Merchant Normalization & Alias Pattern System
+# CashOut Merchant Normalization & Alias Pattern System
 
-This document defines the architecture, workflow, and rules for Spening’s merchant identity resolution, alias pattern matching, category assignment, and raw business management. It also includes a section explaining how the system worked previously and why the redesign was necessary.
+This document defines the architecture, workflow, and rules for CashOut’s merchant identity resolution, alias pattern matching, category assignment, and raw business management. It also includes a section explaining how the system worked previously and why the redesign was necessary.
 
 ---
 
-# 1. Background: How Spening Worked Before
+# 1. Background: How CashOut Worked Before
 
-Originally, Spening attempted to categorize transactions using a direct mapping from raw merchant names to categories. The logic was:
+Originally, CashOut attempted to categorize transactions using a direct mapping from raw merchant names to categories. The logic was:
 
 - Each transaction had a `business_name` extracted from CSV/Plaid.
 - The system attempted to map that business name directly to a category.
@@ -50,7 +50,7 @@ This is backwards.
 
 The new system fixes the root cause: merchant identity resolution.
 
-Instead of treating every raw merchant string as a unique business, Spening now:
+Instead of treating every raw merchant string as a unique business, CashOut now:
 
 - Normalizes raw merchant strings
 - Maps them to canonical merchants (Aliases)
@@ -66,13 +66,13 @@ This means:
 - Noise and numeric identifiers no longer matter
 - The system becomes scalable and predictable
 
-This redesign transforms Spening from a basic importer into a professional‑grade financial ingestion engine.
+This redesign transforms CashOut from a basic importer into a professional‑grade financial ingestion engine.
 
 ---
 
 # 3. New Architecture Overview
 
-Spening now uses a multi‑layered system:
+CashOut now uses a multi‑layered system:
 
 - **Aliases** — canonical merchant identities  
 - **AliasPatterns** — substring/regex rules that map raw merchant strings to aliases  
