@@ -31,6 +31,12 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Stop if version already tagged
+        if: steps.tagcheck.outputs.exists == 'true'
+        run: |
+          echo "Version already exists. Skipping build."
+          exit 0
+
       - name: Create and push tag if missing
         if: steps.tagcheck.outputs.exists == 'false'
         run: |
