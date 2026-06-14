@@ -8,7 +8,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Spening.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class fixings : Migration
+    public partial class Fixings : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

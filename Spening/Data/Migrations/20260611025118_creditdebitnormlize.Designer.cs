@@ -12,7 +12,7 @@ namespace Spening.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     [Migration("20260611025118_creditdebitnormlize")]
-    partial class creditdebitnormlize
+    partial class Creditdebitnormlize
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

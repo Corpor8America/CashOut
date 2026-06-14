@@ -60,6 +60,108 @@
     }
 </MudTabs>
 
+@if (_summaryLoading)
+{
+    <MudProgressLinear Color="Color.Secondary" Indeterminate="true" Class="mt-4" />
+}
+else if (_categorySummary.Count > 0)
+{
+    <MudPaper Elevation="1" Class="mt-4 mb-6 pa-4">
+        <MudText Typo="Typo.h6" GutterBottom="true">Month Summary</MudText>
+        <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="width:100%">
+            <thead>
+                <tr>
+                    <th style="width: 40%">Category</th>
+                    <th style="width: 20%; text-align:right">Month Total (Net)</th>
+                    <th style="width: 20%; text-align:right">12 Month Avg (Net)</th>
+                    <th style="width: 20%; text-align:right">Diff</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var context in _categorySummary)
+                {
+                    var diff = context.MonthNet - context.AvgNet;
+                    var isIncome = context.Category.Contains("Income", StringComparison.OrdinalIgnoreCase);
+                    <tr>
+                        <td>@context.Category</td>
+                        <td style="text-align:right">
+                            <span style="color: @(context.MonthNet < 0 ? "var(--mud-palette-success)" : "inherit")">
+                                @context.MonthNet.ToString("C")
+                            </span>
+                        </td>
+                        <td style="text-align:right">@context.AvgNet.ToString("C")</td>
+                        <td style="text-align:right">
+                            @{
+                                bool isBad = isIncome ? diff < 0 : diff > 0;
+                            }
+                            <span style="color: @(isBad ? "var(--mud-palette-error)" : "var(--mud-palette-success)"); font-weight:bold">
+                                @((diff > 0 ? "+" : "") + diff.ToString("C"))
+                            </span>
+                        </td>
+                    </tr>
+                }
+
+                @{
+                    var mDebit = _categorySummary.Sum(s => s.MonthDebit);
+                    var mCredit = _categorySummary.Sum(s => s.MonthCredit);
+                    var mNet = mDebit - mCredit;
+                    
+                    var aDebit = _categorySummary.Sum(s => s.AvgDebit);
+                    var aCredit = _categorySummary.Sum(s => s.AvgCredit);
+                    var aNet = aDebit - aCredit;
+                }
+                
+                <tr class="footer-row-secondary">
+                    <td class="mud-table-cell">Debit Total</td>
+                    <td class="mud-table-cell" style="text-align:right">@mDebit.ToString("C")</td>
+                    <td class="mud-table-cell" style="text-align:right">@aDebit.ToString("C")</td>
+                    <td class="mud-table-cell" style="text-align:right"></td>
+                </tr>
+                <tr class="footer-row-secondary">
+                    <td class="mud-table-cell">Credit Total</td>
+                    <td class="mud-table-cell" style="text-align:right">@mCredit.ToString("C")</td>
+                    <td class="mud-table-cell" style="text-align:right">@aCredit.ToString("C")</td>
+                    <td class="mud-table-cell" style="text-align:right"></td>
+                </tr>
+                <tr class="footer-row-main">
+                    <td class="mud-table-cell">Net Total</td>
+                    <td class="mud-table-cell" style="text-align:right">
+                        <span style="color: @(mNet < 0 ? "var(--mud-palette-success)" : "inherit")">
+                            @mNet.ToString("C")
+                        </span>
+                    </td>
+                    <td class="mud-table-cell" style="text-align:right">@aNet.ToString("C")</td>
+                    <td class="mud-table-cell" style="text-align:right">
+                        @{ 
+                            var netDiff = mNet - aNet; 
+                            var netDiffColor = netDiff > 0 ? "var(--mud-palette-error)" : "var(--mud-palette-success)";
+                        }
+                        <span style="color: @netDiffColor; font-weight:bold">
+                            @((netDiff > 0 ? "+" : "") + netDiff.ToString("C"))
+                        </span>
+                    </td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+}
+
+<style>
+    .footer-row-secondary .mud-table-cell {
+        font-size: 0.875rem;
+        font-weight: 500;
+        background-color: var(--mud-palette-background-grey);
+        color: var(--mud-palette-text-secondary);
+        border: none !important;
+    }
+    .footer-row-main .mud-table-cell {
+        font-size: 1rem;
+        font-weight: 700;
+        background-color: var(--mud-palette-background-grey);
+        border-top: 2px solid var(--mud-palette-divider) !important;
+    }
+</style>
+
 @if (_loading)
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
@@ -121,11 +223,12 @@ else
     private List<TransactionDto> _transactions = new();
     private List<string> _categories = new();
     private List<int> _availableYears = new();
+    private List<CategorySummaryDto> _categorySummary = new();
     private int _filterYear = DateTime.Now.Year;
     private int _filterMonth = DateTime.Now.Month;
     private int _activeMonthTabIndex;
     private string _filterCategory = "";
-    private bool _loading, _busy, _syncing, _fetching;
+    private bool _loading, _busy, _syncing, _fetching, _summaryLoading;
     private string? _error, _message;
 
     // Inline category edit state
@@ -137,6 +240,7 @@ else
         _activeMonthTabIndex = _filterMonth - 1;
         await LoadYears();
         await LoadTransactions();
+        await LoadSummary();
     }
 
     private async Task LoadYears()
@@ -172,6 +276,18 @@ else
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
+    }
+
+    private async Task LoadSummary()
+    {
+        _summaryLoading = true;
+        try
+        {
+            _categorySummary = await Http.GetFromJsonAsync<List<CategorySummaryDto>>(
+                $"api/reports/category-summary?year={_filterYear}&month={_filterMonth}") ?? new();
+        }
+        catch { /* ignored */ }
+        finally { _summaryLoading = false; }
     }
 
     private async Task LoadAllCategories()
@@ -228,6 +344,9 @@ else
                 _categories.Add(newCategory);
                 _categories = _categories.OrderBy(c => c).ToList();
             }
+
+            // Refresh summary since categories changed
+            await LoadSummary();
         }
         catch (Exception ex) { _error = $"Failed to update category: {ex.Message}"; }
         finally { CancelEdit(); }
@@ -252,6 +371,7 @@ else
             _message = $"Sync complete — {result!.Added} added, {result.Removed} removed.";
             await LoadYears();
             await LoadTransactions();
+            await LoadSummary();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = _syncing = false; }
@@ -268,6 +388,7 @@ else
             _message = $"Fetch complete — {result!.Written} transactions written.";
             await LoadYears();
             await LoadTransactions();
+            await LoadSummary();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = _fetching = false; }
@@ -279,6 +400,7 @@ else
         _filterCategory = "";
         await LoadAllCategories();
         await LoadTransactions();
+        await LoadSummary();
     }
 
     private async Task OnMonthChanged(int month)
@@ -287,6 +409,7 @@ else
         _filterMonth = month;
         _activeMonthTabIndex = month - 1;
         await LoadTransactions();
+        await LoadSummary();
     }
 
     private async Task ApplyFilter() => await LoadTransactions();
@@ -302,6 +425,14 @@ else
         string Category
     );
 
+    private record CategorySummaryDto(
+        string Category, 
+        decimal MonthDebit, 
+        decimal MonthCredit, 
+        decimal MonthNet, 
+        decimal AvgNet,
+        decimal AvgDebit,
+        decimal AvgCredit);
     private record SyncResult(int Added, int Removed);
     private record FetchResult(int Written);
 }

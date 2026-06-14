@@ -60,4 +60,11 @@ public class ReportsController : ControllerBase
             return File(await _reports.LargestCsv(topN, year), "text/csv", "largest.csv");
         return Ok(await _reports.GetLargest(topN, year));
     }
+
+    [HttpGet("category-summary")]
+    public async Task<IActionResult> CategorySummary(
+        [FromQuery] int year, [FromQuery] int month)
+    {
+        return Ok(await _reports.GetCategorySummary(year, month));
+    }
 }

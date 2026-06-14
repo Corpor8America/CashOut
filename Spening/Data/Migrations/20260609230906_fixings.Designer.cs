@@ -12,7 +12,7 @@ namespace Spening.Data.Migrations
 {
     [DbContext(typeof(AppDbContext))]
     [Migration("20260609230906_fixings")]
-    partial class fixings
+    partial class Fixings
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

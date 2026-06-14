@@ -5,7 +5,7 @@
 namespace Spening.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class creditdebitnormlize : Migration
+    public partial class Creditdebitnormlize : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)

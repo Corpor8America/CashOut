@@ -149,6 +149,39 @@ public class ReportService
             .ToList();
     }
 
+    public async Task<List<CategorySummaryRow>> GetCategorySummary(int year, int month)
+    {
+        var targetDate = new DateOnly(year, month, 1);
+        var startDate = targetDate.AddMonths(-11);
+        var endDate = targetDate.AddMonths(1).AddDays(-1);
+
+        // Perform aggregation in the database for the 12-month period
+        var stats = await _db.Transactions
+            .Where(t => t.Date >= startDate && t.Date <= endDate)
+            .GroupBy(t => string.IsNullOrEmpty(t.Category) ? "(uncategorized)" : t.Category)
+            .Select(g => new
+            {
+                Category = g.Key,
+                TwelveMonthDebit = g.Sum(t => t.Debit ?? 0),
+                TwelveMonthCredit = g.Sum(t => t.Credit ?? 0),
+                MonthDebit = g.Where(t => t.Date.Year == year && t.Date.Month == month).Sum(t => t.Debit ?? 0),
+                MonthCredit = g.Where(t => t.Date.Year == year && t.Date.Month == month).Sum(t => t.Credit ?? 0)
+            })
+            .ToListAsync();
+
+        return stats
+            .Select(s => new CategorySummaryRow(
+                s.Category,
+                s.MonthDebit,
+                s.MonthCredit,
+                s.MonthCredit - s.MonthDebit,
+                (s.TwelveMonthCredit - s.TwelveMonthDebit) / 12m,
+                s.TwelveMonthDebit / 12m,
+                s.TwelveMonthCredit / 12m))
+            .OrderByDescending(r => Math.Abs(r.MonthNet))
+            .ToList();
+    }
+
     // ── CSV Helpers ───────────────────────────────────────────────────────
 
     public async Task<byte[]> MonthlyCsv(int? year = null)
@@ -213,3 +246,12 @@ public record PivotResult(
     List<PivotRow> Rows,
     decimal GrandTotal,
     List<decimal> ColumnTotals);
+
+public record CategorySummaryRow(
+    string Category, 
+    decimal MonthDebit, 
+    decimal MonthCredit, 
+    decimal MonthNet, 
+    decimal AvgNet,
+    decimal AvgDebit,
+    decimal AvgCredit);
