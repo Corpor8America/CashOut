@@ -295,6 +295,7 @@ public class MerchantNormalizationService
         {
             txn.AliasId = null;
             txn.RawBusinessId = null;
+            txn.Name = txn.RawName;
         }
 
         await ReprocessUnaliasedTransactions(affected);
