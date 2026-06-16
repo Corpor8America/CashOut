@@ -2,17 +2,15 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Copy VERSION file from repo root
-COPY VERSION ./VERSION
-
-# Copy only the project file first so Docker caches restore
-COPY CashOut/CashOut.csproj ./
-RUN dotnet restore
+# Copy VERSION file and project file first for better caching
+COPY VERSION ./
+COPY CashOut/CashOut.csproj ./CashOut/
+RUN dotnet restore CashOut/CashOut.csproj
 
 # Copy the rest of the source
-COPY CashOut/ ./
+COPY CashOut/ ./CashOut/
 
-RUN dotnet publish CashOut.csproj \
+RUN dotnet publish CashOut/CashOut.csproj \
     --configuration Release \
     --output /app/publish
 

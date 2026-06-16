@@ -25,13 +25,12 @@
             }
         </MudSelect>
 
-        <MudTabs Elevation="0" Rounded="false" Color="Color.Primary" @bind-ActivePanelIndex="_activeMonthTabIndex"
-                 Class="flex-grow-1" Style="min-width:0">
+        <MudTabs Elevation="0" Rounded="false" Color="Color.Primary" ActivePanelIndex="@_activeMonthTabIndex"
+                 Class="flex-grow-1" Style="min-width:0" ActivePanelIndexChanged="OnActiveMonthChanged">
             @for (int m = 1; m <= 12; m++)
             {
                 var monthIndex = m;
-                <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)"
-                             OnClick="() => OnMonthChanged(monthIndex)" />
+                <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)" />
             }
         </MudTabs>
 
@@ -87,7 +86,7 @@
     else if (_categorySummary.Count > 0)
     {
         <MudExpansionPanels Elevation="1" Class="mb-6">
-            <MudExpansionPanel Text="Month Summary" IsInitiallyExpanded="true">
+            <MudExpansionPanel Text="Month Summary" Expanded="true">
                 <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="width:100%">
                     <thead>
                         <tr>
@@ -317,11 +316,16 @@
         await LoadSummary();
     }
 
-    private async Task OnMonthChanged(int month)
+    private async Task OnActiveMonthChanged(int newIndex)
     {
-        if (_filterMonth == month) return;
-        _filterMonth = month;
-        _activeMonthTabIndex = month - 1;
+        // newIndex is 0-indexed, so add 1 to get the actual month number (1-12)
+        var newMonth = newIndex + 1;
+
+        // Only proceed if the month has actually changed to prevent unnecessary reloads
+        if (_filterMonth == newMonth) return;
+
+        _filterMonth = newMonth;
+
         await LoadTransactions();
         await LoadSummary();
     }

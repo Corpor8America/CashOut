@@ -45,12 +45,14 @@ public class Transaction
     // ── Business normalization links ──────────────────────────────────────
     /// <summary>FK to the matched BusinessAlias, if any pattern matched during import.</summary>
     public int? AliasId { get; set; }
+    public BusinessAlias? Alias { get; set; }
 
     /// <summary>
     /// FK to RawBusiness. Populated for transactions that did not match any alias pattern.
     /// Null for Plaid transactions that matched an alias (no RawBusiness created).
     /// </summary>
     public int? RawBusinessId { get; set; }
+    public RawBusiness? RawBusiness { get; set; }
 
     // ── CSV deduplication ─────────────────────────────────────────────────
     /// <summary>

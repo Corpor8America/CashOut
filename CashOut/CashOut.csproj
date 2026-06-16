@@ -20,7 +20,7 @@
 
   <!-- Copy VERSION file from repo root into publish output so VersionController can read it -->
   <ItemGroup>
-    <Content Include="VERSION">
+    <Content Include="..\VERSION">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
       <Link>VERSION</Link>

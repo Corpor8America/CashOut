@@ -71,20 +71,20 @@ public class MerchantNormalizationService
         };
     }
 
-    public async Task<(int? aliasId, int? rawBusinessId, string normalizedName, string effectiveCategory)> Resolve(
+    public async Task<(BusinessAlias? alias, RawBusiness? rawBusiness, string normalizedName, string effectiveCategory)> Resolve(
         string rawName, string categoryRaw = "")
     {
         var normalized = Normalize(rawName);
         var alias = await MatchAlias(normalized);
 
         if (alias != null)
-            return (alias.Id, null, normalized, EffectiveCategory(alias));
+            return (alias, null, normalized, EffectiveCategory(alias));
 
         var raw = await EnsureRawBusiness(rawName, normalized, categoryRaw);
-        return (null, raw.Id, normalized, EffectiveCategory(null));
+        return (null, raw, normalized, EffectiveCategory(null));
     }
 
-    public Task<(int? aliasId, int? rawBusinessId, string normalizedName, string effectiveCategory)> ResolveBulk(
+    public Task<(BusinessAlias? alias, RawBusiness? rawBusiness, string normalizedName, string effectiveCategory)> ResolveBulk(
         string rawName, string categoryRaw,
         IList<AliasPattern> allPatterns,
         Dictionary<string, RawBusiness> rawByNormalized)
@@ -93,8 +93,8 @@ public class MerchantNormalizationService
         var alias = MatchAliasFromPatterns(normalized, allPatterns);
 
         if (alias != null)
-            return Task.FromResult<(int?, int?, string, string)>(
-                (alias.Id, null, normalized, EffectiveCategory(alias)));
+            return Task.FromResult<(BusinessAlias?, RawBusiness?, string, string)>(
+                (alias, null, normalized, EffectiveCategory(alias)));
 
         if (!rawByNormalized.TryGetValue(normalized, out var raw))
         {
@@ -111,8 +111,8 @@ public class MerchantNormalizationService
             rawByNormalized[normalized] = raw;
         }
 
-        return Task.FromResult<(int?, int?, string, string)>(
-            (null, raw.Id == 0 ? null : raw.Id, normalized, EffectiveCategory(null)));
+        return Task.FromResult<(BusinessAlias?, RawBusiness?, string, string)>(
+            (null, raw, normalized, EffectiveCategory(null)));
     }
 
     private async Task<RawBusiness> EnsureRawBusiness(
@@ -282,6 +282,22 @@ public class MerchantNormalizationService
             .FirstOrDefaultAsync(a => a.Id == aliasId)
             ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
 
+        // Find RawBusiness entities mapped to this alias and unmap them
+        var rawBusinessMapsToUnmap = await _db.RawBusinessAliasMaps
+            .Where(m => m.AliasId == aliasId)
+            .Include(m => m.RawBusiness) // Include RawBusiness to update IsMapped flag
+            .ToListAsync();
+
+        foreach (var map in rawBusinessMapsToUnmap)
+        {
+            if (map.RawBusiness != null)
+            {
+                map.RawBusiness.IsMapped = false;
+                map.RawBusiness.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+        _db.RawBusinessAliasMaps.RemoveRange(rawBusinessMapsToUnmap);
+
         var affected = await _db.Transactions
             .Where(t => t.AliasId == aliasId)
             .OrderBy(t => t.Date)
@@ -289,13 +305,16 @@ public class MerchantNormalizationService
             .ToListAsync();
 
         _db.BusinessAliases.Remove(alias);
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(); // Save changes for RawBusiness and RawBusinessAliasMaps
 
         foreach (var txn in affected)
         {
             txn.AliasId = null;
-            txn.RawBusinessId = null;
+            txn.Alias = null;
+            // IMPORTANT: Do NOT set txn.RawBusinessId = null here.
+            // We want to keep the link to the RawBusiness if it exists.
             txn.Name = txn.RawName;
+            txn.UpdatedAt = DateTime.UtcNow; // Update timestamp
         }
 
         await ReprocessUnaliasedTransactions(affected);
@@ -322,7 +341,9 @@ public class MerchantNormalizationService
         foreach (var txn in transactions)
         {
             txn.AliasId = aliasId;
+            txn.Alias = alias;
             txn.RawBusinessId = null;
+            txn.RawBusiness = null;
             txn.Name = alias.AliasName;
             txn.Category = EffectiveCategory(alias);
             txn.UpdatedAt = DateTime.UtcNow;
@@ -399,7 +420,9 @@ public class MerchantNormalizationService
             if (alias != null)
             {
                 txn.AliasId = alias.Id;
+                txn.Alias = alias;
                 txn.RawBusinessId = null;
+                txn.RawBusiness = null;
                 txn.Name = alias.AliasName;
                 txn.Category = EffectiveCategory(alias);
                 txn.UpdatedAt = DateTime.UtcNow;
@@ -424,6 +447,9 @@ public class MerchantNormalizationService
             }
 
             txn.RawBusinessId = raw.Id == 0 ? null : raw.Id;
+            txn.RawBusiness = raw;
+            txn.AliasId = null;
+            txn.Alias = null;
             txn.Category = Unassigned;
             txn.UpdatedAt = DateTime.UtcNow;
         }

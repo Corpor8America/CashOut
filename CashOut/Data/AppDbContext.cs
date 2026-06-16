@@ -54,6 +54,8 @@ public class AppDbContext : DbContext
             e.Property(x => x.NormalizedName).IsRequired().HasDefaultValue("");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
             e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+            e.HasOne(x => x.Alias).WithMany().HasForeignKey(x => x.AliasId);
+            e.HasOne(x => x.RawBusiness).WithMany().HasForeignKey(x => x.RawBusinessId);
         });
 
         // ── AppSetting ────────────────────────────────────────────────────

@@ -17,7 +17,7 @@ public class ReportServiceTests
         return new AppDbContext(opts);
     }
 
-    private static IConfiguration BuildConfig(Dictionary<string, string>? initialData = null)
+    private static IConfiguration BuildConfig(Dictionary<string, string?>? initialData = null)
     {
         IEnumerable<KeyValuePair<string, string?>> data =
         initialData ?? new Dictionary<string, string?>() { { "PLAID_ENV", "production" } };

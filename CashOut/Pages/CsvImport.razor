@@ -358,7 +358,7 @@
     private void OnDragOver() => _isDragOver = true;
     private void OnDragLeave() => _isDragOver = false;
 
-    private async Task OnDrop(DragEventArgs e)
+    private void OnDrop(DragEventArgs e)
     {
         _isDragOver = false;
         // Drag-and-drop file access requires JS interop; Blazor Server's DragEventArgs

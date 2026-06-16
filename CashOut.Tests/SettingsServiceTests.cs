@@ -15,7 +15,7 @@ public class SettingsServiceTests
         return new AppDbContext(opts);
     }
 
-    private static IConfiguration BuildConfig(Dictionary<string, string>? initialData = null)
+    private static IConfiguration BuildConfig(Dictionary<string, string?>? initialData = null)
     {
         IEnumerable<KeyValuePair<string, string?>> data =
         initialData ?? new Dictionary<string, string?>() { { "PLAID_ENV", "production" } };
@@ -26,7 +26,7 @@ public class SettingsServiceTests
     }
 
     [TestMethod]
-    public async Task Set_ThenGet_RoundTrips()
+    public void Set_ThenGet_RoundTrips()
     {
         var db = BuildDb(nameof(Set_ThenGet_RoundTrips));
         var svc = new SettingsService(db, BuildConfig());
@@ -37,7 +37,7 @@ public class SettingsServiceTests
     }
 
     [TestMethod]
-    public async Task GetPlaidEnvironment_DefaultsToSandbox_WhenMissing()
+    public Task GetPlaidEnvironment_DefaultsToSandbox_WhenMissing()
     {
         var db = BuildDb(nameof(GetPlaidEnvironment_DefaultsToSandbox_WhenMissing));
         var svc = new SettingsService(db, BuildConfig(new Dictionary<string, string?>() { { "PLAID_ENV", null } }));
@@ -45,5 +45,6 @@ public class SettingsServiceTests
         var env = svc.GetPlaidEnvironment();
 
         Assert.AreEqual("sandbox", env);
+        return Task.CompletedTask;
     }
 }

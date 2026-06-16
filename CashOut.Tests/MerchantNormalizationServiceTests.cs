@@ -199,11 +199,11 @@ public class MerchantNormalizationServiceTests
         await db.SaveChangesAsync();
 
         var svc = BuildSvc(db);
-        var (aliasId, rawBusinessId, normalizedName, category) =
+        var (matchedAlias, rawBusiness, normalizedName, category) =
             await svc.Resolve("AMZN AMAZON MKTP US", "SOME_PLAID_CATEGORY");
 
-        Assert.AreEqual(1, aliasId);
-        Assert.IsNull(rawBusinessId);
+        Assert.AreEqual(1, matchedAlias?.Id);
+        Assert.IsNull(rawBusiness);
         Assert.AreEqual("AMZN AMAZON MKTP US", normalizedName);
         Assert.AreEqual("SHOPPING", category);
         // Verify CSV/Plaid category was ignored
@@ -211,9 +211,9 @@ public class MerchantNormalizationServiceTests
     }
 
     [TestMethod]
-    public async Task Resolve_MatchedAlias_NoCategory_ReturnsSourceCategory()
+    public async Task Resolve_MatchedAlias_NoCategory_ReturnsUnassigned()
     {
-        var db = BuildDb(nameof(Resolve_MatchedAlias_NoCategory_ReturnsSourceCategory));
+        var db = BuildDb(nameof(Resolve_MatchedAlias_NoCategory_ReturnsUnassigned));
         var alias = new BusinessAlias { Id = 1, AliasName = "Venmo", Category = "", CreatedAt = DateTime.UtcNow };
         db.BusinessAliases.Add(alias);
         db.AliasPatterns.Add(new AliasPattern
@@ -229,28 +229,28 @@ public class MerchantNormalizationServiceTests
         await db.SaveChangesAsync();
 
         var svc = BuildSvc(db);
-        var (aliasId, rawBusinessId, _, category) =
+        var (matchedAlias, rawBusiness, _, category) =
             await svc.Resolve("VENMO PAYMENT 12345678", "TRANSFER");
 
-        Assert.AreEqual(1, aliasId);
-        Assert.IsNull(rawBusinessId);
-        Assert.AreEqual("TRANSFER", category);
+        Assert.AreEqual(1, matchedAlias?.Id);
+        Assert.IsNull(rawBusiness);
+        Assert.AreEqual(MerchantNormalizationService.Unassigned, category);
     }
 
     [TestMethod]
-    public async Task Resolve_NoMatch_ReturnsRawCategory_AndCreatesRawBusiness()
+    public async Task Resolve_NoMatch_ReturnsUnassigned_AndCreatesRawBusiness()
     {
-        var db = BuildDb(nameof(Resolve_NoMatch_ReturnsRawCategory_AndCreatesRawBusiness));
+        var db = BuildDb(nameof(Resolve_NoMatch_ReturnsUnassigned_AndCreatesRawBusiness));
         var svc = BuildSvc(db);
 
-        var (aliasId, rawBusinessId, normalizedName, category) =
+        var (matchedAlias, rawBusiness, normalizedName, category) =
             await svc.Resolve("SQ *JOES COFFEE 9876543", "FOOD_AND_DRINK");
         await db.SaveChangesAsync();
 
-        Assert.IsNull(aliasId);
-        Assert.IsNotNull(rawBusinessId);
+        Assert.IsNull(matchedAlias);
+        Assert.IsNotNull(rawBusiness);
         Assert.AreEqual("SQ JOES COFFEE", normalizedName);
-        Assert.AreEqual("FOOD_AND_DRINK", category);
+        Assert.AreEqual(MerchantNormalizationService.Unassigned, category);
 
         var rawBiz = db.RawBusinesses.SingleOrDefault();
         Assert.IsNotNull(rawBiz);

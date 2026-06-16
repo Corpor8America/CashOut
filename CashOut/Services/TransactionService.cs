@@ -138,19 +138,19 @@ public class TransactionService
 
             foreach (var txn in incoming)
             {
-                var (aliasId, rawBusinessId, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
+                var (alias, rawBusiness, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                     txn.Name, txn.Category, allPatterns, rawByNormalized);
 
                 // When an alias matched, display the canonical alias name.
                 // RawName always preserves the original string from Plaid.
-                var displayName = aliasId.HasValue
-                    ? allPatterns.First(p => p.AliasId == aliasId).Alias.AliasName
-                    : txn.Name;
+                var displayName = alias != null ? alias.AliasName : txn.Name;
 
                 if (!existingEntities.TryGetValue(txn.TransactionId, out var existing))
                 {
-                    txn.AliasId = aliasId;
-                    txn.RawBusinessId = rawBusinessId;
+                    txn.AliasId = alias?.Id;
+                    txn.Alias = alias;
+                    txn.RawBusinessId = rawBusiness?.Id == 0 ? null : rawBusiness?.Id;
+                    txn.RawBusiness = rawBusiness;
                     txn.RawName = txn.Name;
                     txn.NormalizedName = normalizedName;
                     txn.Name = displayName;
@@ -170,10 +170,12 @@ public class TransactionService
                     existing.Amount = txn.Amount;
                     existing.Date = txn.Date;
                     existing.UpdatedAt = DateTime.UtcNow;
-                    existing.AliasId = aliasId;
-                    existing.RawBusinessId = rawBusinessId;
+                    existing.AliasId = alias?.Id;
+                    existing.Alias = alias;
+                    existing.RawBusinessId = rawBusiness?.Id == 0 ? null : rawBusiness?.Id;
+                    existing.RawBusiness = rawBusiness;
                     // Only update category if alias is set or existing has no category
-                    if (aliasId.HasValue || string.IsNullOrEmpty(existing.Category))
+                    if (alias != null || string.IsNullOrEmpty(existing.Category))
                         existing.Category = effectiveCategory;
                     _db.Transactions.Update(existing);
                 }

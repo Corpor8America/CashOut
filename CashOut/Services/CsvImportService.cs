@@ -222,14 +222,12 @@ public class CsvImportService
             var categoryRaw = GetField(row, categoryIdx);
 
             // Resolve merchant — alias name becomes the display name when matched
-            var (aliasId, rawBusinessId, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
+            var (alias, rawBusiness, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                 description, categoryRaw, allPatterns, rawByNormalized);
 
             // When an alias matched, use the canonical alias name as the display name.
             // description (raw) is preserved in RawName.
-            var displayName = aliasId.HasValue
-                ? allPatterns.First(p => p.AliasId == aliasId).Alias.AliasName
-                : description;
+            var displayName = alias != null ? alias.AliasName : description;
 
             var txn = new Transaction
             {
@@ -244,8 +242,10 @@ public class CsvImportService
                 Debit = debit,
                 Amount = amount,
                 Category = effectiveCategory,
-                AliasId = aliasId,
-                RawBusinessId = rawBusinessId,
+                AliasId = alias?.Id,
+                Alias = alias,
+                RawBusinessId = rawBusiness?.Id == 0 ? null : rawBusiness?.Id,
+                RawBusiness = rawBusiness,
                 DedupKey = dedupKey,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
