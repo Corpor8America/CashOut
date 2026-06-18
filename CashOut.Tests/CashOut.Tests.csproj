@@ -9,8 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
-    <PackageReference Include="MSTest.TestAdapter" Version="3.*" />
-    <PackageReference Include="MSTest.TestFramework" Version="3.*" />
+    <PackageReference Include="MSTest.TestAdapter" Version="4.*" />
+    <PackageReference Include="MSTest.TestFramework" Version="4.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.*" />
