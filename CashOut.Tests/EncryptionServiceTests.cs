@@ -65,21 +65,21 @@ public class EncryptionServiceTests
         parts[2] = Convert.ToBase64String(new byte[32]); // wrong bytes
         var tampered = string.Join('.', parts);
 
-        Assert.ThrowsExactly<System.Security.Cryptography.AuthenticationTagMismatchException>(() => svc.Decrypt(tampered));
+        Assert.ThrowsException<System.Security.Cryptography.AuthenticationTagMismatchException>(() => svc.Decrypt(tampered));
     }
 
     [TestMethod]
     public void Decrypt_MalformedPayload_ThrowsFormatException()
     {
         var svc = BuildService();
-        Assert.ThrowsExactly<FormatException>(() => svc.Decrypt("not.valid"));
+        Assert.ThrowsException<FormatException>(() => svc.Decrypt("not.valid"));
     }
 
     [TestMethod]
     public void Constructor_WrongKeyLength_Throws()
     {
         var shortKey = Convert.ToBase64String(new byte[16]);
-        Assert.ThrowsExactly<InvalidOperationException>(() => BuildService(shortKey));
+        Assert.ThrowsException<InvalidOperationException>(() => BuildService(shortKey));
     }
 
     [TestMethod]
