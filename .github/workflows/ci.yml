@@ -30,4 +30,54 @@ jobs:
         run: dotnet build --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal
+        run: dotnet test --no-build --configuration Release --verbosity normal --filter "TestCategory!=UI"
+
+  api-test:
+    name: Docker & UI/API Tests
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare Environment
+        run: |
+          cp .env.example .env
+          sed -i 's/your_client_id_here/ci-test/' .env
+          sed -i 's/your_sandbox_secret_here/ci-test/' .env
+          sed -i 's/your_production_secret_here/ci-test/' .env
+          sed -i 's/base64_encoded_32_byte_key_here/SGVsbG8gV29ybGQhISEhISEhISEhISEhISEhISEhIQ==/' .env
+          sed -i 's/changeme_use_a_strong_password/citestpass/' .env
+
+      - name: Build and Start Containers
+        run: docker compose -f docker-compose.dev.yml up -d --build
+
+      - name: Wait for App Readiness
+        run: |
+          timeout 60s bash -c 'until curl -s -f http://localhost:8080/api/version; do echo "Waiting for API..."; sleep 5; done'
+
+      - name: Build Test Project
+        run: dotnet build CashOut.Tests/CashOut.Tests.csproj --configuration Release
+
+      - name: Install Playwright Browsers
+        run: pwsh CashOut.Tests/bin/Release/net9.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run UI Tests
+        run: |
+          dotnet test CashOut.Tests/CashOut.Tests.csproj --filter TestCategory=UI --configuration Release --no-build --verbosity normal
+
+      - name: Collect Logs on Failure
+        if: failure()
+        run: docker compose -f docker-compose.dev.yml logs
+
+      - name: Stop Containers
+        if: always()
+        run: docker compose -f docker-compose.dev.yml down
