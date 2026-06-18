@@ -240,8 +240,12 @@
                     <td style="text-align:right"><strong>@_result.Imported</strong></td>
                 </tr>
                 <tr>
-                    <td>Duplicates skipped</td>
+                    <td>Duplicates skipped (internal)</td>
                     <td style="text-align:right">@_result.SkippedDuplicates</td>
+                </tr>
+                <tr>
+                    <td>Duplicates skipped (cross-source)</td>
+                    <td style="text-align:right">@_result.SkippedCrossSourceDuplicates</td>
                 </tr>
                 <tr>
                     <td>Other skipped</td>
@@ -501,5 +505,5 @@
     // Local mirror of server types for JSON deserialization
     private record CsvPreview(string[] Headers, string[][] Rows);
     private record SkippedRow(int RowNumber, string RawData, string Reason);
-    private record ImportResult(int Imported, int SkippedDuplicates, List<SkippedRow> SkippedRows);
+    private record ImportResult(int Imported, int SkippedDuplicates, int SkippedCrossSourceDuplicates, List<SkippedRow> SkippedRows);
 }

@@ -77,7 +77,7 @@ public class CsvImportService
         rows = ApplyRowTrimming(rows, profile.SkipRowsFromTop, profile.SkipRowsFromBottom);
 
         if (rows.Count <= 1)
-            return new ImportResult(0, 0, new List<SkippedRow>());
+            return new ImportResult(0, 0, 0, new List<SkippedRow>());
 
         var headers = rows[0].Select(h => h.ToLowerInvariant()).ToList();
         var dataRows = rows.Skip(1).ToList();
@@ -113,6 +113,7 @@ public class CsvImportService
 
         int imported = 0;
         int skippedDup = 0;
+        int skippedCrossSourceDup = 0;
         var skippedRows = new List<SkippedRow>();
 
         for (int rowNum = 0; rowNum < dataRows.Count; rowNum++)
@@ -225,6 +226,23 @@ public class CsvImportService
             var (alias, rawBusiness, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                 description, categoryRaw, allPatterns, rawByNormalized);
 
+            // ── Cross-source deduplication ────────────────────────────────
+            var matchDateMin = date.AddDays(-1);
+            var matchDateMax = date.AddDays(1);
+            var matchAmount = Math.Abs(amount);
+
+            var isCrossSourceDuplicate = await _db.Transactions
+                .AnyAsync(t => t.AccountId == accountId &&
+                               t.Date >= matchDateMin && t.Date <= matchDateMax &&
+                               Math.Abs(t.Amount) == matchAmount &&
+                               t.NormalizedName == normalizedName);
+
+            if (isCrossSourceDuplicate)
+            {
+                skippedCrossSourceDup++;
+                continue;
+            }
+
             // When an alias matched, use the canonical alias name as the display name.
             // description (raw) is preserved in RawName.
             var displayName = alias != null ? alias.AliasName : description;
@@ -257,7 +275,7 @@ public class CsvImportService
         }
 
         await _db.SaveChangesAsync();
-        return new ImportResult(imported, skippedDup, skippedRows);
+        return new ImportResult(imported, skippedDup, skippedCrossSourceDup, skippedRows);
     }
 
     // ── Row Trimming ──────────────────────────────────────────────────────
@@ -366,7 +384,7 @@ public class CsvImportService
 
 public record CsvPreview(string[] Headers, string[][] Rows);
 public record SkippedRow(int RowNumber, string RawData, string Reason);
-public record ImportResult(int Imported, int SkippedDuplicates, List<SkippedRow> SkippedRows)
+public record ImportResult(int Imported, int SkippedDuplicates, int SkippedCrossSourceDuplicates, List<SkippedRow> SkippedRows)
 {
-    public int TotalSkipped => SkippedDuplicates + SkippedRows.Count;
+    public int TotalSkipped => SkippedDuplicates + SkippedCrossSourceDuplicates + SkippedRows.Count;
 }

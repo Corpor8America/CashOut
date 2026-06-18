@@ -47,41 +47,68 @@ else
                 }
                 else
                 {
-                    <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
-                               OnClick="() => RequestRemove(context.Id)">Remove</MudButton>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                                   Href="@($"/csv-import/{context.Id}")">Backfill (CSV)</MudButton>
+                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
+                                   OnClick="() => RequestRemove(context.Id)">Remove</MudButton>
+                    </MudStack>
                 }
             </MudTd>
         </RowTemplate>
     </MudTable>
 }
 
-<MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartLinkFlow" Disabled="@(!_isRendered || _linking)"
-           StartIcon="@(_linking ? null : Icons.Material.Filled.Add)">
-    @if (!_isRendered)
-    {
-        <span>Loading…</span>
-    }
-    else if (_linking)
-    {
-        <span>Connecting...</span>
-    }
-    else
-    {
-        <span>Add Account</span>
-    }
-</MudButton>
+<MudStack Row="true" Spacing="2">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartLinkFlow" Disabled="@(!_isRendered || _linking || _syncing)"
+               StartIcon="@(_linking ? null : Icons.Material.Filled.Add)">
+        @if (!_isRendered)
+        {
+            <span>Loading…</span>
+        }
+        else if (_linking)
+        {
+            <span>Connecting...</span>
+        }
+        else
+        {
+            <span>Add Account</span>
+        }
+    </MudButton>
+
+    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="SyncTransactions" Disabled="@(!_isRendered || _linking || _syncing)"
+               StartIcon="@Icons.Material.Filled.Sync">
+        @if (_syncing)
+        {
+            <span>Syncing...</span>
+        }
+        else
+        {
+            <span>Sync Transactions</span>
+        }
+    </MudButton>
+</MudStack>
 
 @if (_newAccounts.Count > 0)
 {
     <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="mt-4">Added @_newAccounts.Count account(s)
         successfully.</MudAlert>
-    }
+}
+
+@if (_syncResult != null)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="mt-4" ContentAlignment="HorizontalAlignment.Center">
+        Sync complete: @_syncResult.Added new transactions, @_syncResult.Removed removed.
+    </MudAlert>
+}
 
 @code {
     private List<AccountDto> _accounts = new();
     private List<object> _newAccounts = new();
     private bool _loading = true;
     private bool _linking = false;
+    private bool _syncing = false;
+    private SyncResult? _syncResult;
     private bool _isRendered = false;
     private string? _error;
     private Guid? _confirmRemoveId;
@@ -234,6 +261,31 @@ else
         finally { _confirmRemoveId = null; }
     }
 
+    private async Task SyncTransactions()
+    {
+        _syncing = true;
+        _error = null;
+        _syncResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var resp = await Http.PostAsync("api/transactions/sync", null);
+            resp.EnsureSuccessStatusCode();
+            _syncResult = await resp.Content.ReadFromJsonAsync<SyncResult>();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Accounts: SyncTransactions failed");
+            _error = $"Sync failed: {ex.Message}";
+        }
+        finally
+        {
+            _syncing = false;
+            StateHasChanged();
+        }
+    }
+
     public void Dispose()
     {
         _dotNetRef?.Dispose();
@@ -242,4 +294,6 @@ else
 
     private record AccountDto(Guid Id, string Name, string Mask,
         string Subtype, string Institution);
+
+    private record SyncResult(int Added, int Removed);
 }
