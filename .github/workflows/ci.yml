@@ -6,9 +6,6 @@ on:
       - main
       - master
 
-permissions:
-  contents: read
-
 jobs:
   test:
     name: Build & Test
@@ -30,7 +27,7 @@ jobs:
         run: dotnet build --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test --no-build --configuration Release --verbosity normal
+        run: dotnet test --no-build --configuration Release --verbosity normal --filter "TestCategory!=UI"
 
   api-test:
     name: Docker & UI/API Tests
@@ -64,14 +61,18 @@ jobs:
         run: |
           timeout 60s bash -c 'until curl -s -f http://localhost:8080/api/version; do echo "Waiting for API..."; sleep 5; done'
 
-      - name: Install Playwright Browsers
+      - name: Install Playwright
         run: |
-          dotnet build CashOut.Tests/CashOut.Tests.csproj --configuration Release
-          pwsh CashOut.Tests/bin/Release/net9.0/playwright.ps1 install --with-deps chromium
+          dotnet tool install --global Microsoft.Playwright.CLI
+          # Add dotnet tools to PATH
+          echo "$HOME/.dotnet/tools" >> $GITHUB_PATH
 
-      - name: Run UI & API Tests
+      - name: Install Browsers
+        run: playwright install --with-deps chromium
+
+      - name: Run UI Tests
         run: |
-          dotnet test --filter TestCategory=UI --configuration Release --no-build
+          dotnet test CashOut.Tests/CashOut.Tests.csproj --filter TestCategory=UI --configuration Release
 
       - name: Collect Logs on Failure
         if: failure()
