@@ -61,10 +61,11 @@ jobs:
         run: |
           timeout 60s bash -c 'until curl -s -f http://localhost:8080/api/version; do echo "Waiting for API..."; sleep 5; done'
 
+      - name: Build Test Project
+        run: dotnet build CashOut.Tests/CashOut.Tests.csproj --configuration Release
+
       - name: Install Playwright Browsers
-        run: |
-          dotnet build CashOut.Tests/CashOut.Tests.csproj --configuration Release
-          dotnet run --project CashOut.Tests/CashOut.Tests.csproj --configuration Release -- playwright install --with-deps chromium
+        run: pwsh CashOut.Tests/bin/Release/net9.0/playwright.ps1 install --with-deps chromium
 
       - name: Run UI Tests
         run: |
