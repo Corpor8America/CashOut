@@ -5,9 +5,10 @@ on:
     branches:
       - main
       - master
-
-permissions:
-  contents: read
+  push:
+    branches:
+      - main
+      - master
 
 jobs:
   test:
