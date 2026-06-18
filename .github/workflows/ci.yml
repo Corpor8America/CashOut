@@ -69,7 +69,7 @@ jobs:
 
       - name: Run UI Tests
         run: |
-          dotnet test CashOut.Tests/CashOut.Tests.csproj --filter TestCategory=UI --configuration Release --no-build
+          dotnet test CashOut.Tests/CashOut.Tests.csproj --filter TestCategory=UI --configuration Release --no-build --verbosity normal
 
       - name: Collect Logs on Failure
         if: failure()
