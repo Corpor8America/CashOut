@@ -18,7 +18,166 @@
 }
 
 <MudTabs Elevation="1" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTabIndex">
-    <MudTabPanel Text="Aliases & Patterns" OnClick="() => SetTab(0)">
+    <MudTabPanel Text="@($"Unmapped ({_unmapped.Count})")" OnClick="() => SetTab(0)">
+        <MudStack Spacing="4">
+            <MudStack Row="true" AlignItems="AlignItems.Center">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    @_unmapped.Count unmapped merchant name(s). Click <strong>Map</strong> to create a new alias or assign to an existing one — the normalized name is added as a Contains pattern automatically.
+                </MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Refresh" 
+                           OnClick="RetroactiveMap" Disabled="@_retroMapping">
+                    @(_retroMapping ? "Running…" : "Re-run Pattern Matching")
+                </MudButton>
+            </MudStack>
+
+            <MudTextField @bind-Value="_rawFilter" Label="Filter by name…" Variant="Variant.Outlined" Margin="Margin.Dense" 
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" />
+
+            @{
+                var filtered = string.IsNullOrWhiteSpace(_rawFilter)
+                    ? _unmapped
+                    : _unmapped
+                        .Where(b => b.RawName.Contains(_rawFilter, StringComparison.OrdinalIgnoreCase)
+                                 || b.RawNameNormalized.Contains(_rawFilter, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+            }
+
+            @foreach (var biz in filtered)
+            {
+                <MudCard Elevation="1">
+                    <MudCardContent Class="py-3">
+                        <MudStack Spacing="2">
+                            @* ── Merchant info row ── *@
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                                <div style="flex:1; min-width:0">
+                                    <MudText Typo="Typo.body1" Style="font-weight:500">@biz.RawName</MudText>
+                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Normalized:</MudText>
+                                        <code style="font-size:0.8em; background:#f1f1f1; padding:1px 4px; border-radius:3px">@biz.RawNameNormalized</code>
+                                        @if (!string.IsNullOrEmpty(biz.CategoryRaw))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">Source: @biz.CategoryRaw</MudText>
+                                        }
+                                    </MudStack>
+                                </div>
+                                @if (_mappingRawId != biz.Id)
+                                {
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                               StartIcon="@Icons.Material.Filled.LinkOff"
+                                               OnClick="() => StartMapping(biz.Id, biz.RawNameNormalized)">
+                                        Map
+                                    </MudButton>
+                                }
+                            </MudStack>
+
+                            @* ── Inline mapping panel ── *@
+                            @if (_mappingRawId == biz.Id)
+                            {
+                                <MudDivider Class="my-1" />
+
+                                <MudTabs Elevation="0" Rounded="false" Color="Color.Primary" @bind-ActivePanelIndex="_mappingTabIndex" Class="mt-1">
+
+                                    @* Tab 1: Create new alias *@
+                                    <MudTabPanel Text="Create New Alias">
+                                        <MudStack Spacing="3" Class="pt-3">
+                                            <MudStack Row="true" AlignItems="AlignItems.Stretch" Spacing="3" Wrap="Wrap.Wrap">
+                                                <MudTextField @bind-Value="_newMappingAliasName"
+                                                              Label="Alias name" Placeholder="e.g. Amazon"
+                                                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                              Style="width:220px" />
+                                                <MudTextField @bind-Value="_newMappingCategory"
+                                                              Label="Category"
+                                                              Placeholder="e.g. SHOPPING"
+                                                              Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                              Style="width:220px" />
+                                            </MudStack>
+
+                                            <MudTextField @bind-Value="_newMappingPatternText"
+                                                          Label="Contains pattern"
+                                                          Variant="Variant.Outlined" Margin="Margin.Dense"
+                                                          FullWidth="true"
+                                                          OnKeyDown="@(e => OnNewAliasMappingKey(e, biz.Id, biz.RawNameNormalized))" />
+
+                                            @* Top alias categories for quick-pick *@
+                                            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
+                                                @foreach (var cat in _quickCategories)
+                                                {
+                                                    var c = cat;
+                                                    <MudChip T="string"
+                                                             Color="@(_newMappingCategory == c ? Color.Primary : Color.Default)"
+                                                             Variant="@(_newMappingCategory == c ? Variant.Filled : Variant.Outlined)"
+                                                             Size="Size.Small"
+                                                             OnClick="() => _newMappingCategory = c">
+                                                        @c
+                                                    </MudChip>
+                                                }
+                                            </MudStack>
+
+                                            <MudStack Row="true" Spacing="2">
+                                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                                           Disabled="@(string.IsNullOrWhiteSpace(_newMappingAliasName) || _mappingSaving)"
+                                                           OnClick="() => CreateAndMap(biz.Id, biz.RawNameNormalized)">
+                                                    @(_mappingSaving ? "Saving…" : "Create Alias & Map")
+                                                </MudButton>
+                                                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelMapping">Cancel</MudButton>
+                                            </MudStack>
+                                        </MudStack>
+                                    </MudTabPanel>
+
+                                    @* Tab 2: Map to existing alias *@
+                                    <MudTabPanel Text="Use Existing Alias">
+                                        <MudStack Spacing="3" Class="pt-3">
+                                            @if (_aliases.Count == 0)
+                                            {
+                                                <MudText Typo="Typo.body2" Color="Color.Secondary">No aliases yet — create one in the "Aliases &amp; Patterns" tab first.</MudText>
+                                            }
+                                            else
+                                            {
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                    A <strong>Contains</strong> pattern for <code style="font-size:0.85em">@biz.RawNameNormalized</code> will also be added to the selected alias.
+                                                </MudText>
+                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
+                                                    <MudSelect T="int" @bind-Value="_mappingTargetAliasId"
+                                                               Label="Select alias" Margin="Margin.Dense"
+                                                               Variant="Variant.Outlined" Style="width:240px">
+                                                        <MudSelectItem Value="0">— select —</MudSelectItem>
+                                                        @foreach (var a in _aliases)
+                                                        {
+                                                            <MudSelectItem Value="@a.Id">
+                                                                @a.AliasName @(string.IsNullOrEmpty(a.Category) ? "" : $"({a.Category})")
+                                                            </MudSelectItem>
+                                                        }
+                                                    </MudSelect>
+                                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
+                                                               Disabled="@(_mappingTargetAliasId == 0 || _mappingSaving)"
+                                                               OnClick="() => MapToExistingAlias(biz.Id, biz.RawNameNormalized)">
+                                                        @(_mappingSaving ? "Saving…" : "Map & Add Pattern")
+                                                    </MudButton>
+                                                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelMapping">Cancel</MudButton>
+                                                </MudStack>
+                                            }
+                                        </MudStack>
+                                    </MudTabPanel>
+                                </MudTabs>
+                            }
+                        </MudStack>
+                    </MudCardContent>
+                </MudCard>
+            }
+
+            @if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(_rawFilter))
+            {
+                <MudText Color="Color.Secondary" Typo="Typo.body2">No merchants match your filter.</MudText>
+            }
+            @if (filtered.Count == 0 && string.IsNullOrWhiteSpace(_rawFilter))
+            {
+                <MudText Color="Color.Secondary" Typo="Typo.body2">All merchants are mapped. 🎉</MudText>
+            }
+        </MudStack>
+    </MudTabPanel>
+
+    <MudTabPanel Text="Aliases & Patterns" OnClick="() => SetTab(1)">
         <MudPaper Class="pa-4 mb-6">
             <MudText Typo="Typo.h6" Class="mb-4">Add New Alias</MudText>
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4" Wrap="Wrap.Wrap">
@@ -114,163 +273,6 @@
         }
     </MudTabPanel>
 
-    <MudTabPanel Text="@($"Unmapped ({_unmapped.Count})")" OnClick="() => SetTab(1)">
-        <MudStack Spacing="4">
-            <MudStack Row="true" AlignItems="AlignItems.Center">
-                <MudText Typo="Typo.body2" Color="Color.Secondary">
-                    @_unmapped.Count unmapped merchant name(s). Click <strong>Map</strong> to create a new alias or assign to an existing one — the normalized name is added as a Contains pattern automatically.
-                </MudText>
-                <MudSpacer />
-                <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Refresh" 
-                           OnClick="RetroactiveMap" Disabled="@_retroMapping">
-                    @(_retroMapping ? "Running…" : "Re-run Pattern Matching")
-                </MudButton>
-            </MudStack>
-
-            <MudTextField @bind-Value="_rawFilter" Label="Filter by name…" Variant="Variant.Outlined" Margin="Margin.Dense" 
-                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Immediate="true" />
-
-            @{
-                var filtered = string.IsNullOrWhiteSpace(_rawFilter)
-                    ? _unmapped
-                    : _unmapped
-                        .Where(b => b.RawName.Contains(_rawFilter, StringComparison.OrdinalIgnoreCase)
-                                 || b.RawNameNormalized.Contains(_rawFilter, StringComparison.OrdinalIgnoreCase))
-                        .ToList();
-            }
-
-            @foreach (var biz in filtered)
-            {
-                <MudCard Elevation="1">
-                    <MudCardContent Class="py-3">
-                        <MudStack Spacing="2">
-                            @* ── Merchant info row ── *@
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
-                                <div style="flex:1; min-width:0">
-                                    <MudText Typo="Typo.body1" Style="font-weight:500">@biz.RawName</MudText>
-                                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                                        <MudText Typo="Typo.caption" Color="Color.Secondary">Normalized:</MudText>
-                                        <code style="font-size:0.8em; background:#f1f1f1; padding:1px 4px; border-radius:3px">@biz.RawNameNormalized</code>
-                                        @if (!string.IsNullOrEmpty(biz.CategoryRaw))
-                                        {
-                                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="ml-2">Source: @biz.CategoryRaw</MudText>
-                                        }
-                                    </MudStack>
-                                </div>
-                                @if (_mappingRawId != biz.Id)
-                                {
-                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                               StartIcon="@Icons.Material.Filled.LinkOff"
-                                               OnClick="() => StartMapping(biz.Id, biz.RawNameNormalized)">
-                                        Map
-                                    </MudButton>
-                                }
-                            </MudStack>
-
-                            @* ── Inline mapping panel ── *@
-                            @if (_mappingRawId == biz.Id)
-                            {
-                                <MudDivider Class="my-1" />
-
-                                <MudTabs Elevation="0" Rounded="false" Color="Color.Primary" @bind-ActivePanelIndex="_mappingTabIndex" Class="mt-1">
-
-                                    @* Tab 1: Create new alias *@
-                                    <MudTabPanel Text="Create New Alias">
-                                        <MudStack Spacing="3" Class="pt-3">
-                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                A <strong>Contains</strong> pattern for <code style="font-size:0.85em">@biz.RawNameNormalized</code> will be added automatically.
-                                            </MudText>
-                                            <MudStack Row="true" AlignItems="AlignItems.Stretch" Spacing="3" Wrap="Wrap.Wrap">
-                                                <MudTextField @bind-Value="_newMappingAliasName"
-                                                              Label="Alias name" Placeholder="e.g. Amazon"
-                                                              Variant="Variant.Outlined" Margin="Margin.Dense"
-                                                              Style="width:220px" />
-                                                <MudTextField @bind-Value="_newMappingCategory"
-                                                              Label="Category"
-                                                              Placeholder="e.g. SHOPPING"
-                                                              Variant="Variant.Outlined" Margin="Margin.Dense"
-                                                              Style="width:220px"
-                                                              OnKeyDown="@(e => OnNewAliasMappingKey(e, biz.Id, biz.RawNameNormalized))" />
-                                            </MudStack>
-
-                                            @* Quick-pick category buttons *@
-                                            <MudStack Row="true" Wrap="Wrap.Wrap" Spacing="1">
-                                                @foreach (var cat in _quickCategories)
-                                                {
-                                                    var c = cat;
-                                                    <MudChip T="string"
-                                                             Color="@(_newMappingCategory == c ? Color.Primary : Color.Default)"
-                                                             Variant="@(_newMappingCategory == c ? Variant.Filled : Variant.Outlined)"
-                                                             Size="Size.Small"
-                                                             OnClick="() => _newMappingCategory = c">
-                                                        @c
-                                                    </MudChip>
-                                                }
-                                            </MudStack>
-
-                                            <MudStack Row="true" Spacing="2">
-                                                <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                                           Disabled="@(string.IsNullOrWhiteSpace(_newMappingAliasName) || _mappingSaving)"
-                                                           OnClick="() => CreateAndMap(biz.Id, biz.RawNameNormalized)">
-                                                    @(_mappingSaving ? "Saving…" : "Create Alias & Map")
-                                                </MudButton>
-                                                <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelMapping">Cancel</MudButton>
-                                            </MudStack>
-                                        </MudStack>
-                                    </MudTabPanel>
-
-                                    @* Tab 2: Map to existing alias *@
-                                    <MudTabPanel Text="Use Existing Alias">
-                                        <MudStack Spacing="3" Class="pt-3">
-                                            @if (_aliases.Count == 0)
-                                            {
-                                                <MudText Typo="Typo.body2" Color="Color.Secondary">No aliases yet — create one in the "Aliases &amp; Patterns" tab first.</MudText>
-                                            }
-                                            else
-                                            {
-                                                <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                                    A <strong>Contains</strong> pattern for <code style="font-size:0.85em">@biz.RawNameNormalized</code> will also be added to the selected alias.
-                                                </MudText>
-                                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Wrap="Wrap.Wrap">
-                                                    <MudSelect T="int" @bind-Value="_mappingTargetAliasId"
-                                                               Label="Select alias" Margin="Margin.Dense"
-                                                               Variant="Variant.Outlined" Style="width:240px">
-                                                        <MudSelectItem Value="0">— select —</MudSelectItem>
-                                                        @foreach (var a in _aliases)
-                                                        {
-                                                            <MudSelectItem Value="@a.Id">
-                                                                @a.AliasName @(string.IsNullOrEmpty(a.Category) ? "" : $"({a.Category})")
-                                                            </MudSelectItem>
-                                                        }
-                                                    </MudSelect>
-                                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small"
-                                                               Disabled="@(_mappingTargetAliasId == 0 || _mappingSaving)"
-                                                               OnClick="() => MapToExistingAlias(biz.Id, biz.RawNameNormalized)">
-                                                        @(_mappingSaving ? "Saving…" : "Map & Add Pattern")
-                                                    </MudButton>
-                                                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelMapping">Cancel</MudButton>
-                                                </MudStack>
-                                            }
-                                        </MudStack>
-                                    </MudTabPanel>
-                                </MudTabs>
-                            }
-                        </MudStack>
-                    </MudCardContent>
-                </MudCard>
-            }
-
-            @if (filtered.Count == 0 && !string.IsNullOrWhiteSpace(_rawFilter))
-            {
-                <MudText Color="Color.Secondary" Typo="Typo.body2">No merchants match your filter.</MudText>
-            }
-            @if (filtered.Count == 0 && string.IsNullOrWhiteSpace(_rawFilter))
-            {
-                <MudText Color="Color.Secondary" Typo="Typo.body2">All merchants are mapped. 🎉</MudText>
-            }
-        </MudStack>
-    </MudTabPanel>
-
     <MudTabPanel Text="Pattern Tester" OnClick="() => SetTab(2)">
         <MudPaper Class="pa-6" MaxWidth="620px" Elevation="0">
             <MudText Typo="Typo.body1" Class="mb-4">
@@ -359,15 +361,17 @@
     private int _mappingTargetAliasId;   // for "Use existing"
     private string _newMappingAliasName = "";
     private string _newMappingCategory = "";
+    private string _newMappingPatternText = "";
     private bool _mappingSaving;
 
-    // Common spend categories for quick-pick
-    private static readonly string[] _quickCategories = new[]
-    {
-        "FOOD_AND_DRINK", "SHOPPING", "TRAVEL", "TRANSPORTATION",
-        "ENTERTAINMENT", "HEALTHCARE", "UTILITIES", "PERSONAL_CARE",
-        "EDUCATION", "INCOME", "TRANSFER", "OTHER"
-    };
+    // Top categories from existing aliases for quick-pick
+    private List<string> _quickCategories => _aliases
+        .Where(a => !string.IsNullOrEmpty(a.Category))
+        .GroupBy(a => a.Category)
+        .OrderByDescending(g => g.Count())
+        .Take(10)
+        .Select(g => g.Key)
+        .ToList();
 
     // Pattern tester
     private string _testInput = "";
@@ -406,8 +410,10 @@
         _saving = true; _message = null; _error = null;
         try
         {
+            var aliasName = ToTitleCase(_newAliasName.Trim());
+            var category = string.IsNullOrWhiteSpace(_newAliasCategory) ? "" : ToTitleCase(_newAliasCategory.Trim());
             var resp = await Http.PostAsJsonAsync("api/normalization/aliases",
-                new { AliasName = _newAliasName, Category = _newAliasCategory });
+                new { AliasName = aliasName, Category = category });
             resp.EnsureSuccessStatusCode();
             var result = await resp.Content.ReadFromJsonAsync<CreateAliasResult>();
             _newAliasName = "";
@@ -434,14 +440,16 @@
         _error = null;
         try
         {
+            var aliasName = ToTitleCase(_editAliasName.Trim());
+            var category = string.IsNullOrWhiteSpace(_editAliasCategory) ? "" : ToTitleCase(_editAliasCategory.Trim());
             var nameResp = await Http.PatchAsJsonAsync(
                 $"api/normalization/aliases/{id}/name",
-                new { AliasName = _editAliasName });
+                new { AliasName = aliasName });
             nameResp.EnsureSuccessStatusCode();
 
             var categoryResp = await Http.PatchAsJsonAsync(
                 $"api/normalization/aliases/{id}/category",
-                new { Category = _editAliasCategory });
+                new { Category = category });
             categoryResp.EnsureSuccessStatusCode();
             _message = "Alias updated.";
             await LoadAll();
@@ -546,6 +554,7 @@
         // Pre-fill alias name from the normalized name (title-cased, punctuation cleaned)
         _newMappingAliasName = ToTitleCase(normalizedName);
         _newMappingCategory = "";
+        _newMappingPatternText = normalizedName;
         _message = null;
         _error = null;
     }
@@ -556,35 +565,29 @@
         _mappingTargetAliasId = 0;
         _newMappingAliasName = "";
         _newMappingCategory = "";
+        _newMappingPatternText = "";
         _mappingSaving = false;
     }
 
-    /// <summary>
-    /// Creates a brand-new alias, then adds a Contains pattern for the normalized name.
-    /// AddPattern internally calls RetroactivelyMap → CleanupRawBusinesses, which matches
-    /// all transactions for this merchant to the new alias and removes the RawBusiness.
-    /// No explicit mapping step is needed — and calling it would 500 because the
-    /// RawBusiness is already gone by the time AddPattern returns.
-    /// </summary>
     private async Task CreateAndMap(int rawBusinessId, string normalizedName)
     {
         if (string.IsNullOrWhiteSpace(_newMappingAliasName)) return;
         _mappingSaving = true; _error = null;
         try
         {
-            // 1. Create alias
+            var aliasName = ToTitleCase(_newMappingAliasName.Trim());
+            var category = string.IsNullOrWhiteSpace(_newMappingCategory) ? "" : ToTitleCase(_newMappingCategory.Trim());
+            var pattern = string.IsNullOrWhiteSpace(_newMappingPatternText) ? normalizedName : _newMappingPatternText.Trim();
+
             var aliasResp = await Http.PostAsJsonAsync("api/normalization/aliases",
-                new { AliasName = _newMappingAliasName.Trim(), Category = _newMappingCategory.Trim() });
+                new { AliasName = aliasName, Category = category });
             aliasResp.EnsureSuccessStatusCode();
             var created = await aliasResp.Content.ReadFromJsonAsync<CreateAliasResult>();
             if (created == null) { _error = "Failed to create alias."; return; }
 
-            // 2. Add Contains pattern — this triggers RetroactivelyMap on the server,
-            //    which matches transactions and deletes the now-orphaned RawBusiness.
-            //    Do NOT call POST /mappings after this; the RawBusiness will be gone.
             var patternResp = await Http.PostAsJsonAsync(
                 $"api/normalization/aliases/{created.Id}/patterns",
-                new { Pattern = normalizedName, MatchType = "Contains" });
+                new { Pattern = pattern, MatchType = "Contains" });
             patternResp.EnsureSuccessStatusCode();
 
             _message = $"Created alias \"{created.AliasName}\" and mapped merchant.";
