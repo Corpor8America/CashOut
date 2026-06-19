@@ -14,6 +14,7 @@ The report must show how expense spending is distributed across categories for a
 
 - category totals
 - percent of total spending
+- 12-month rolling average spend by category
 - previous-year comparison
 - transaction counts
 - drill-down transaction list for a selected category
@@ -96,6 +97,11 @@ public record CategoryReportRow(
     decimal Total,
     int Count,
     decimal PctOfSpend,
+    decimal TwelveMonthAverage,
+    decimal TwelveMonthTotal,
+    int TwelveMonthCount,
+    decimal VsTwelveMonthAverageAmount,
+    decimal VsTwelveMonthAveragePercent,
     decimal PreviousTotal,
     int PreviousCount,
     decimal ChangeAmount,
@@ -123,6 +129,11 @@ Notes:
 - `CategoryReportRow.Transactions` is ordered by `Date` descending, then `Amount` descending.
 - `PreviousYear` is `Year - 1`.
 - `PreviousTotalSpend` is the total expense spend for `Year - 1`.
+- `TwelveMonthAverage` is the trailing 12-month average monthly spend for the category, ending on December 31 of the selected year.
+- `TwelveMonthTotal` is the category's total expense spend across that same trailing 12-month window.
+- `TwelveMonthCount` is the category's transaction count across that same trailing 12-month window.
+- `VsTwelveMonthAverageAmount` is `Total / 12 - TwelveMonthAverage` for year mode. This compares the selected year average month to the trailing baseline.
+- `VsTwelveMonthAveragePercent` is `(Total / 12 - TwelveMonthAverage) / TwelveMonthAverage * 100`, rounded to one decimal place. If the rolling average is zero, return `0`.
 - `TotalChangeAmount` is `TotalSpend - PreviousTotalSpend`.
 - `TotalChangePercent` is `(TotalSpend - PreviousTotalSpend) / PreviousTotalSpend * 100`, rounded to one decimal place. If the previous value is zero, return `0`.
 - The same change calculation applies to each category row.
@@ -141,17 +152,23 @@ Expected algorithm:
 4. Load previous-year expenses:
    - `Date.Year == previousYear`
    - `Amount > 0`
-5. Normalize empty category values to `"(uncategorized)"`.
-6. Compute:
+5. Load trailing 12-month expenses:
+   - start date is January 1 of selected year
+   - end date is December 31 of selected year
+   - `Amount > 0`
+   - This is a 12-month rolling average in the current year-level report. If future UI adds month selection, redefine the window as the 12 months ending at the selected month.
+6. Normalize empty category values to `"(uncategorized)"`.
+7. Compute:
    - current grand total
    - previous grand total
    - current transaction count
    - per-category current totals and counts
    - per-category previous totals and counts
-7. Include categories that appear in the current year.
-8. Do not include categories that only existed in the previous year and have no current-year spending.
-9. Round percentage fields to one decimal place.
-10. Return an empty `Categories` list when there are no current-year expenses.
+   - per-category trailing 12-month totals, counts, and monthly averages
+8. Include categories that appear in the current year.
+9. Do not include categories that only existed in the previous year or trailing window and have no current-year spending.
+10. Round percentage fields to one decimal place.
+11. Return an empty `Categories` list when there are no current-year expenses.
 
 Use this helper inside `ReportService`:
 
@@ -164,6 +181,9 @@ private static decimal Percent(decimal numerator, decimal denominator) =>
 
 private static decimal ChangePercent(decimal current, decimal previous) =>
     previous == 0 ? 0 : Math.Round((current - previous) / previous * 100m, 1);
+
+private static decimal RollingAveragePercent(decimal currentAverage, decimal rollingAverage) =>
+    rollingAverage == 0 ? 0 : Math.Round((currentAverage - rollingAverage) / rollingAverage * 100m, 1);
 ```
 
 Keep `GetExpenses(int year)` as the shared expense query helper, but confirm it still filters `Amount > 0`.
@@ -175,7 +195,7 @@ Update `ReportService.CategoryCsv(int? year = null)` to use the richer result.
 CSV headers:
 
 ```csv
-Category,Total,PctOfSpend,Transactions,PreviousTotal,PreviousTransactions,ChangeAmount,ChangePercent
+Category,Total,PctOfSpend,Transactions,TwelveMonthAverage,TwelveMonthTotal,TwelveMonthTransactions,VsTwelveMonthAverageAmount,VsTwelveMonthAveragePercent,PreviousTotal,PreviousTransactions,ChangeAmount,ChangePercent
 ```
 
 One row per category. Use invariant culture for decimal values. Keep using the existing `Esc` helper for category names.
@@ -277,6 +297,8 @@ Columns:
 - Category
 - Total
 - Percent of spend
+- 12-month avg
+- Vs 12-month avg
 - Transactions
 - Previous year
 - Change
@@ -289,6 +311,8 @@ Expected formatting:
 - money and percent columns are right-aligned
 - table is dense and hoverable
 - category rows are sorted by `Total` descending from the API
+- `12-month avg` shows `TwelveMonthAverage.ToString("C")`
+- `Vs 12-month avg` shows amount and percent difference; spending above average should be warning/negative-colored, and spending below average should be positive-colored
 
 The selected row should drive the drill-down panel.
 
@@ -399,6 +423,11 @@ private record CategoryReportRow(
     decimal Total,
     int Count,
     decimal PctOfSpend,
+    decimal TwelveMonthAverage,
+    decimal TwelveMonthTotal,
+    int TwelveMonthCount,
+    decimal VsTwelveMonthAverageAmount,
+    decimal VsTwelveMonthAveragePercent,
     decimal PreviousTotal,
     int PreviousCount,
     decimal ChangeAmount,
@@ -565,6 +594,19 @@ Add these tests:
    - Assert total spend is 100.
    - Assert category count only includes the expense.
 
+6. `GetByCategory_IncludesTwelveMonthRollingAverage`
+   - Add one FOOD expense per month in 2025 for 12 months.
+   - Use total spend of 1200.
+   - Assert FOOD `TwelveMonthTotal == 1200`.
+   - Assert FOOD `TwelveMonthAverage == 100`.
+   - Assert FOOD `TwelveMonthCount == 12`.
+
+7. `GetByCategory_ComputesVarianceFromTwelveMonthAverage`
+   - Add FOOD expenses totaling 2400 across 2025.
+   - Assert selected-year monthly average is 200.
+   - Assert variance fields compare current average month to `TwelveMonthAverage`.
+   - If the test data makes both values equal, assert amount `0` and percent `0`; otherwise assert the calculated delta.
+
 ### 14c. Optional UI Test
 
 If the scaffold and app server are already testable in the current branch, add a Playwright UI test in `CashOut.Tests/UiTests.cs`:
@@ -597,6 +639,7 @@ Manual checks:
 - Changing the year reloads the report.
 - Summary totals match the category table totals.
 - Category percentages add up to about 100, allowing one-decimal rounding drift.
+- Category rows show 12-month rolling average spend and variance from that average.
 - Clicking a category row updates the transaction drill-down.
 - CSV export downloads from `api/reports/category?year={year}&format=csv`.
 - Income/refund rows with `Amount < 0` are not counted as spending.
@@ -624,6 +667,7 @@ The implementation is complete when:
 - The category report page is no longer a stub.
 - The backend category endpoint returns `CategoryReportResult`.
 - The page displays summary metrics, category totals, comparison values, and transaction drill-down.
+- Category rows include 12-month rolling average fields and UI columns.
 - CSV export includes comparison values.
 - `dotnet test` passes.
 - Existing report routes and settings year loading still work.
