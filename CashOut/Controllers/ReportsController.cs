@@ -31,6 +31,15 @@ public class ReportsController : ControllerBase
         return Ok(await _reports.GetByCategory(year));
     }
 
+    [HttpGet("income")]
+    public async Task<IActionResult> Income(
+        [FromQuery] int? year, [FromQuery] string? format)
+    {
+        if (format == "csv")
+            return File(await _reports.IncomeCsv(year), "text/csv", "income.csv");
+        return Ok(await _reports.GetIncome(year));
+    }
+
     [HttpGet("pivot")]
     public async Task<IActionResult> Pivot(
         [FromQuery] int? year, [FromQuery] string? format)
@@ -59,6 +68,24 @@ public class ReportsController : ControllerBase
         if (format == "csv")
             return File(await _reports.LargestCsv(topN, year), "text/csv", "largest.csv");
         return Ok(await _reports.GetLargest(topN, year));
+    }
+
+    [HttpGet("summary")]
+    public async Task<IActionResult> Summary(
+        [FromQuery] int? year, [FromQuery] string? format)
+    {
+        if (format == "csv")
+            return File(await _reports.ExecutiveSummaryCsv(year), "text/csv", "executive-summary.csv");
+        return Ok(await _reports.GetExecutiveSummary(year));
+    }
+
+    [HttpGet("cashflow")]
+    public async Task<IActionResult> CashFlow(
+        [FromQuery] int? year, [FromQuery] string? format)
+    {
+        if (format == "csv")
+            return File(await _reports.CashFlowCsv(year), "text/csv", "cashflow.csv");
+        return Ok(await _reports.GetCashFlow(year));
     }
 
     [HttpGet("category-summary")]

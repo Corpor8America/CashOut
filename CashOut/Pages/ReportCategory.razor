@@ -1,0 +1,276 @@
+@page "/reports/category"
+@inject HttpClient Http
+
+<ReportShell Title="Spending by Category"
+             Year="_year"
+             AvailableYears="_availableYears"
+             OnYearChanged="OnYearChanged"
+             Loading="_loading"
+             Error="@_error"
+             ExportHref="@($"api/reports/category?year={_year}&format=csv")">
+
+    @if (_report is null || _report.Categories.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No category spending found for @_year.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="report-summary-grid">
+            <MudPaper Class="metric-panel pa-4" Elevation="1">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Total Spend</MudText>
+                <MudText Typo="Typo.h5">@_report.TotalSpend.ToString("C")</MudText>
+            </MudPaper>
+            <MudPaper Class="metric-panel pa-4" Elevation="1">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Transactions</MudText>
+                <MudText Typo="Typo.h5">@_report.TransactionCount</MudText>
+            </MudPaper>
+            <MudPaper Class="metric-panel pa-4" Elevation="1">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Change vs @_report.PreviousYear</MudText>
+                <MudText Typo="Typo.h5" Class="@ChangeColorClass(_report.TotalChangeAmount)">
+                    @(_report.TotalChangeAmount.ToString("C"))
+                    (@_report.TotalChangePercent.ToString("F1")%)
+                </MudText>
+            </MudPaper>
+        </div>
+
+        <MudTable Items="@_report.Categories"
+                  Dense="true"
+                  Hover="true"
+                  Breakpoint="Breakpoint.Sm"
+                  Elevation="0"
+                  row-click="OnCategoryRowClick"
+                  Class="my-4">
+            <ColGroup>
+                <col style="width: 22%" />
+                <col style="width: 11%" />
+                <col style="width: 9%" />
+                <col style="width: 11%" />
+                <col style="width: 12%" />
+                <col style="width: 8%" />
+                <col style="width: 11%" />
+                <col style="width: 16%" />
+            </ColGroup>
+            <HeaderContent>
+                <MudTh><MudTableSortLabel SortBy="new Func<CategoryReportRow, object>(r => r.Category)">Category</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right"><MudTableSortLabel InitialDirection="SortDirection.Descending" SortBy="new Func<CategoryReportRow, object>(r => r.Total)">Total</MudTableSortLabel></MudTh>
+                <MudTh Style="text-align:right">% of Spend</MudTh>
+                <MudTh Style="text-align:right">12-Month Avg</MudTh>
+                <MudTh Style="text-align:right">Vs 12-Month Avg</MudTh>
+                <MudTh Style="text-align:right">Transactions</MudTh>
+                <MudTh Style="text-align:right">@_report.PreviousYear</MudTh>
+                <MudTh Style="text-align:right">Change</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Category">@context.Category</MudTd>
+                <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
+                <MudTd DataLabel="%" Style="text-align:right">@context.PctOfSpend.ToString("F1")%</MudTd>
+                <MudTd DataLabel="12-Mo Avg" Style="text-align:right">@context.TwelveMonthAverage.ToString("C")</MudTd>
+                <MudTd DataLabel="Vs Avg" Style="text-align:right" Class="@VsAverageColorClass(context.VsTwelveMonthAverageAmount)">
+                    @(context.VsTwelveMonthAverageAmount.ToString("C"))
+                    (@context.VsTwelveMonthAveragePercent.ToString("F1")%)
+                </MudTd>
+                <MudTd DataLabel="Txns" Style="text-align:right">@context.Count</MudTd>
+                <MudTd DataLabel="Prev Yr" Style="text-align:right">@context.PreviousTotal.ToString("C")</MudTd>
+                <MudTd DataLabel="Change" Style="text-align:right" Class="@ChangeColorClass(context.ChangeAmount)">
+                    @(context.ChangeAmount.ToString("C"))
+                    (@context.ChangePercent.ToString("F1")%)
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_selectedCategory is not null)
+        {
+            <MudText Typo="Typo.h6" Class="mt-4 mb-2">
+                @_selectedCategory.Category
+                (@_selectedCategory.Total.ToString("C"), @_selectedCategory.Count transactions)
+            </MudText>
+
+            @if (_selectedCategory.Transactions.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No transactions for this category in @_year.
+                </MudText>
+            }
+            else
+            {
+                <MudTable Items="@_selectedCategory.Transactions"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0">
+                    <ColGroup>
+                        <col style="width: 12%" />
+                        <col style="width: 35%" />
+                        <col style="width: 10%" />
+                        <col style="width: 12%" />
+                        <col style="width: 16%" />
+                        <col style="width: 15%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Merchant</MudTh>
+                        <MudTh>Source</MudTh>
+                        <MudTh Style="text-align:right">Amount</MudTh>
+                        <MudTh>Raw Name</MudTh>
+                        <MudTh>Normalized</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Date">@context.Date.ToString("MMM dd, yyyy")</MudTd>
+                        <MudTd DataLabel="Merchant">@context.Name</MudTd>
+                        <MudTd DataLabel="Source">@context.Source</MudTd>
+                        <MudTd DataLabel="Amount" Style="text-align:right">@context.Amount.ToString("C")</MudTd>
+                        <MudTd DataLabel="Raw Name">@context.RawName</MudTd>
+                        <MudTd DataLabel="Normalized">@context.NormalizedName</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-4">
+                Select a category to view transactions.
+            </MudText>
+        }
+    }
+</ReportShell>
+
+<style>
+    .report-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .metric-panel {
+        border-radius: 8px;
+    }
+    .positive-change {
+        color: #4caf50;
+    }
+    .negative-change {
+        color: #f44336;
+    }
+    .neutral-change {
+        color: inherit;
+    }
+</style>
+
+@code {
+    private int _year = DateTime.Now.Year;
+    private List<int> _availableYears = new() { DateTime.Now.Year };
+    private bool _loading;
+    private string? _error;
+    private CategoryReportResult? _report;
+    private CategoryReportRow? _selectedCategory;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadYears();
+        await LoadReport();
+    }
+
+    private async Task LoadYears()
+    {
+        try
+        {
+            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years")
+                              ?? _availableYears;
+            if (_availableYears.Count > 0)
+                _year = _availableYears[0];
+        }
+        catch
+        {
+            _availableYears = Enumerable.Range(DateTime.Now.Year - 6, 7)
+                .OrderByDescending(y => y)
+                .ToList();
+        }
+    }
+
+    private async Task OnYearChanged(int year)
+    {
+        _year = year;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _report = await Http.GetFromJsonAsync<CategoryReportResult>(
+                $"api/reports/category?year={_year}");
+            _selectedCategory = _report?.Categories.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnCategoryRowClick(TableRowClickEventArgs<CategoryReportRow> args)
+    {
+        _selectedCategory = args.Item;
+    }
+
+    private string ChangeColorClass(decimal amount) => amount switch
+    {
+        > 0 => "negative-change",
+        < 0 => "positive-change",
+        _ => "neutral-change"
+    };
+
+    private string VsAverageColorClass(decimal amount) => amount switch
+    {
+        > 0 => "negative-change",
+        < 0 => "positive-change",
+        _ => "neutral-change"
+    };
+
+    // ── UI DTOs ────────────────────────────────────────────────────────────
+
+    private record CategoryReportResult(
+        int Year,
+        int PreviousYear,
+        decimal TotalSpend,
+        decimal PreviousTotalSpend,
+        decimal TotalChangeAmount,
+        decimal TotalChangePercent,
+        int TransactionCount,
+        List<CategoryReportRow> Categories);
+
+    private record CategoryReportRow(
+        string Category,
+        decimal Total,
+        int Count,
+        decimal PctOfSpend,
+        decimal TwelveMonthAverage,
+        decimal TwelveMonthTotal,
+        int TwelveMonthCount,
+        decimal VsTwelveMonthAverageAmount,
+        decimal VsTwelveMonthAveragePercent,
+        decimal PreviousTotal,
+        int PreviousCount,
+        decimal ChangeAmount,
+        decimal ChangePercent,
+        List<CategoryTransactionRow> Transactions);
+
+    private record CategoryTransactionRow(
+        string TransactionId,
+        string AccountId,
+        DateOnly Date,
+        string Name,
+        string RawName,
+        string NormalizedName,
+        decimal Amount,
+        decimal? Debit,
+        decimal? Credit,
+        string Category,
+        TransactionSource Source);
+}

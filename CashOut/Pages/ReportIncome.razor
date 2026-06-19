@@ -1,0 +1,326 @@
+@page "/reports/income"
+@inject HttpClient Http
+
+<ReportShell Title="Income"
+             Year="_year"
+             AvailableYears="_availableYears"
+             OnYearChanged="OnYearChanged"
+             Loading="_loading"
+             Error="@_error"
+             ExportHref="@($"api/reports/income?year={_year}&format=csv")">
+    @if (_report is null || _report.Sources.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No income found for @_year.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="report-summary-grid">
+            <div class="metric-panel">
+                <div class="metric-label">Total Income</div>
+                <div class="metric-value">@_report.TotalIncome.ToString("C")</div>
+            </div>
+            <div class="metric-panel">
+                <div class="metric-label">Transactions</div>
+                <div class="metric-value">@_report.TransactionCount.ToString("N0")</div>
+            </div>
+            <div class="metric-panel">
+                <div class="metric-label">Change vs Previous Year</div>
+                <div class="metric-value @ChangeClass(_report.TotalChangeAmount)">
+                    @(_report.TotalChangeAmount >= 0 ? "+" : "")@_report.TotalChangeAmount.ToString("C")
+                </div>
+                <div class="metric-sub @ChangeClass(_report.TotalChangeAmount)">
+                    @(_report.TotalChangePercent >= 0 ? "+" : "")@_report.TotalChangePercent.ToString("F1")%
+                </div>
+            </div>
+        </div>
+
+        <MudTable Items="@_report.Sources"
+                  Dense="true"
+                  Hover="true"
+                  Breakpoint="Breakpoint.Sm"
+                  Elevation="0"
+                  RowClick="OnSourceRowClick"
+                  Class="mt-4">
+            <ColGroup>
+                <col style="width: 28%" />
+                <col style="width: 12%" />
+                <col style="width: 12%" />
+                <col style="width: 10%" />
+                <col style="width: 10%" />
+                <col style="width: 10%" />
+                <col style="width: 10%" />
+                <col style="width: 8%" />
+            </ColGroup>
+            <HeaderContent>
+                <MudTh>Source</MudTh>
+                <MudTh Class="right-align">Category</MudTh>
+                <MudTh Class="right-align">Total</MudTh>
+                <MudTh Class="right-align">% of Income</MudTh>
+                <MudTh Class="right-align">Transactions</MudTh>
+                <MudTh Class="right-align">Avg Amount</MudTh>
+                <MudTh Class="right-align">Previous Year</MudTh>
+                <MudTh Class="right-align">Change</MudTh>
+                <MudTh>Status</MudTh>
+            </HeaderContent>
+            <RowTemplate Context="source">
+                <MudTd DataLabel="Source">
+                    <div>@source.Name</div>
+                    @if (!source.IsMapped && !string.IsNullOrWhiteSpace(source.NormalizedName) && source.NormalizedName != source.Name)
+                    {
+                        <div class="muted-subtext">@source.NormalizedName</div>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Category" Class="right-align">@source.PrimaryCategory</MudTd>
+                <MudTd DataLabel="Total" Class="right-align">@source.Total.ToString("C")</MudTd>
+                <MudTd DataLabel="% of Income" Class="right-align">@source.PctOfIncome.ToString("F1")%</MudTd>
+                <MudTd DataLabel="Transactions" Class="right-align">@source.Count.ToString("N0")</MudTd>
+                <MudTd DataLabel="Avg Amount" Class="right-align">@source.AvgAmount.ToString("C")</MudTd>
+                <MudTd DataLabel="Previous Year" Class="right-align">@source.PreviousTotal.ToString("C")</MudTd>
+                <MudTd DataLabel="Change" Class="@ChangeAlignClass(source.ChangeAmount)">
+                    @(source.ChangeAmount >= 0 ? "+" : "")@source.ChangeAmount.ToString("C")
+                    <span class="change-pct">(@(source.ChangePercent >= 0 ? "+" : "")@source.ChangePercent.ToString("F1")%)</span>
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    <span class="@(source.IsMapped ? "status-mapped" : "status-unmapped")">
+                        @(source.IsMapped ? "Mapped" : "Unmapped")
+                    </span>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_selectedSource is not null)
+        {
+            <div class="drilldown-header mt-4">
+                <span class="drilldown-title">@_selectedSource.Name</span>
+                <span class="drilldown-meta">@_selectedSource.Total.ToString("C") — @_selectedSource.Count.ToString("N0") transactions — @(_selectedSource.IsMapped ? "Mapped" : "Unmapped")</span>
+            </div>
+
+            @if (_selectedSource.Transactions.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mt-2">No transactions for this source.</MudText>
+            }
+            else
+            {
+                <MudTable Items="@_selectedSource.Transactions"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0"
+                          Class="mt-2">
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Source</MudTh>
+                        <MudTh>Raw Name</MudTh>
+                        <MudTh>Category</MudTh>
+                        <MudTh>Source Type</MudTh>
+                        <MudTh Class="right-align">Amount</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="txn">
+                        <MudTd DataLabel="Date">@txn.Date.ToString("MMM dd, yyyy")</MudTd>
+                        <MudTd DataLabel="Source">@txn.Name</MudTd>
+                        <MudTd DataLabel="Raw Name">@txn.RawName</MudTd>
+                        <MudTd DataLabel="Category">@txn.Category</MudTd>
+                        <MudTd DataLabel="Source Type">@txn.Source</MudTd>
+                        <MudTd DataLabel="Amount" Class="right-align">@txn.DisplayAmount.ToString("C")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mt-4">Select an income source to view transactions.</MudText>
+        }
+    }
+</ReportShell>
+
+<style>
+    .report-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 16px;
+    }
+    .metric-panel {
+        padding: 12px 16px;
+        border: 1px solid var(--mud-palette-lines-inputs, #e0e0e0);
+        border-radius: 8px;
+    }
+    .metric-label {
+        font-size: 0.8rem;
+        color: var(--mud-palette-text-secondary, #757575);
+        margin-bottom: 4px;
+    }
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+    .metric-sub {
+        font-size: 0.85rem;
+        margin-top: 2px;
+    }
+    .positive-change { color: #1b5e20; }
+    .negative-change { color: #b71c1c; }
+    .neutral-change { color: var(--mud-palette-text-secondary, #757575); }
+    .right-align { text-align: right; }
+    .muted-subtext {
+        font-size: 0.8rem;
+        color: var(--mud-palette-text-secondary, #757575);
+    }
+    .status-mapped {
+        display: inline-block;
+        padding: 0 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: #e8f5e9;
+        color: #1b5e20;
+    }
+    .status-unmapped {
+        display: inline-block;
+        padding: 0 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: #fff3e0;
+        color: #e65100;
+    }
+    .drilldown-header {
+        padding: 12px 0 4px 0;
+        border-bottom: 1px solid var(--mud-palette-lines-inputs, #e0e0e0);
+    }
+    .drilldown-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-right: 12px;
+    }
+    .drilldown-meta {
+        font-size: 0.85rem;
+        color: var(--mud-palette-text-secondary, #757575);
+    }
+    .change-pct {
+        display: inline-block;
+        margin-left: 4px;
+    }
+    ::deep .mud-table-root .right-align {
+        text-align: right;
+    }
+</style>
+
+@code {
+    private int _year = DateTime.Now.Year;
+    private List<int> _availableYears = new() { DateTime.Now.Year };
+    private bool _loading;
+    private string? _error;
+    private IncomeReportResult? _report;
+    private IncomeReportRow? _selectedSource;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadYears();
+        await LoadReport();
+    }
+
+    private async Task LoadYears()
+    {
+        try
+        {
+            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years")
+                              ?? _availableYears;
+            if (_availableYears.Count > 0)
+                _year = _availableYears[0];
+        }
+        catch
+        {
+            _availableYears = Enumerable.Range(DateTime.Now.Year - 6, 7)
+                .OrderByDescending(y => y)
+                .ToList();
+        }
+    }
+
+    private async Task OnYearChanged(int year)
+    {
+        _year = year;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _report = await Http.GetFromJsonAsync<IncomeReportResult>(
+                $"api/reports/income?year={_year}");
+            _selectedSource = _report?.Sources.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnSourceRowClick(TableRowClickEventArgs<IncomeReportRow> args)
+    {
+        _selectedSource = args.Item;
+    }
+
+    private string ChangeClass(decimal value) => value switch
+    {
+        > 0 => "positive-change",
+        < 0 => "negative-change",
+        _ => "neutral-change"
+    };
+
+    private string ChangeAlignClass(decimal value) => $"right-align {ChangeClass(value)}";
+
+    private record IncomeReportResult(
+        int Year,
+        int PreviousYear,
+        decimal TotalIncome,
+        decimal PreviousTotalIncome,
+        decimal TotalChangeAmount,
+        decimal TotalChangePercent,
+        int TransactionCount,
+        int SourceCount,
+        List<IncomeReportRow> Sources);
+
+    private record IncomeReportRow(
+        string SourceKey,
+        int? AliasId,
+        int? RawBusinessId,
+        string Name,
+        string NormalizedName,
+        bool IsMapped,
+        string PrimaryCategory,
+        decimal Total,
+        int Count,
+        decimal AvgAmount,
+        decimal PctOfIncome,
+        decimal PreviousTotal,
+        int PreviousCount,
+        decimal ChangeAmount,
+        decimal ChangePercent,
+        List<IncomeTransactionRow> Transactions);
+
+    private record IncomeTransactionRow(
+        string TransactionId,
+        string AccountId,
+        DateOnly Date,
+        string Name,
+        string RawName,
+        string NormalizedName,
+        decimal Amount,
+        decimal DisplayAmount,
+        decimal? Debit,
+        decimal? Credit,
+        string Category,
+        int? AliasId,
+        int? RawBusinessId,
+        TransactionSource Source);
+}

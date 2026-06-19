@@ -1,0 +1,314 @@
+@page "/reports/merchant"
+@inject HttpClient Http
+
+<ReportShell Title="Spending by Merchant"
+             Year="_year"
+             AvailableYears="_availableYears"
+             OnYearChanged="OnYearChanged"
+             Loading="_loading"
+             Error="@_error"
+             ExportHref="@($"api/reports/merchants?year={_year}&topN={_topN}&format=csv")">
+
+    <MudPaper Class="pa-4 mb-4" Elevation="0">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
+            <MudNumericField @bind-Value="_topN"
+                             Label="Top N"
+                             Min="1"
+                             Max="100"
+                             Variant="Variant.Outlined"
+                             Margin="Margin.Dense"
+                             Style="width:120px" />
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       OnClick="LoadReport"
+                       Disabled="@_loading">
+                Apply
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+
+    @if (_report is null || _report.Merchants.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No merchant spending found for @_year.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="report-summary-grid">
+            <MudPaper Class="metric-panel pa-4" Elevation="1">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Total Spend</MudText>
+                <MudText Typo="Typo.h5">@_report.TotalSpend.ToString("C")</MudText>
+            </MudPaper>
+            <MudPaper Class="metric-panel pa-4" Elevation="1">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Transactions</MudText>
+                <MudText Typo="Typo.h5">@_report.TransactionCount</MudText>
+            </MudPaper>
+            <MudPaper Class="metric-panel pa-4" Elevation="1">
+                <MudText Typo="Typo.body2" Color="Color.Secondary">Merchants</MudText>
+                <MudText Typo="Typo.h5">@_report.Merchants.Count of @_report.MerchantCount</MudText>
+            </MudPaper>
+        </div>
+
+        <MudTable Items="@_report.Merchants"
+                  Dense="true"
+                  Hover="true"
+                  Breakpoint="Breakpoint.Sm"
+                  Elevation="0"
+                  row-click="OnMerchantRowClick"
+                  Class="my-4">
+            <ColGroup>
+                <col style="width: 18%" />
+                <col style="width: 12%" />
+                <col style="width: 10%" />
+                <col style="width: 8%" />
+                <col style="width: 7%" />
+                <col style="width: 8%" />
+                <col style="width: 10%" />
+                <col style="width: 14%" />
+                <col style="width: 7%" />
+            </ColGroup>
+            <HeaderContent>
+                <MudTh>Merchant</MudTh>
+                <MudTh>Category</MudTh>
+                <MudTh Style="text-align:right">Total</MudTh>
+                <MudTh Style="text-align:right">%</MudTh>
+                <MudTh Style="text-align:right">Txns</MudTh>
+                <MudTh Style="text-align:right">Avg/Visit</MudTh>
+                <MudTh Style="text-align:right">@_report.PreviousYear</MudTh>
+                <MudTh Style="text-align:right">Change</MudTh>
+                <MudTh>Status</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Merchant">
+                    <div>@context.Name</div>
+                    @if (!context.IsMapped && !string.IsNullOrWhiteSpace(context.NormalizedName) && context.NormalizedName != context.Name)
+                    {
+                        <div class="muted-subtext">@context.NormalizedName</div>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Category">@context.PrimaryCategory</MudTd>
+                <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
+                <MudTd DataLabel="%" Style="text-align:right">@context.PctOfSpend.ToString("F1")%</MudTd>
+                <MudTd DataLabel="Txns" Style="text-align:right">@context.Count</MudTd>
+                <MudTd DataLabel="Avg" Style="text-align:right">@context.AvgPerVisit.ToString("C")</MudTd>
+                <MudTd DataLabel="Prev Yr" Style="text-align:right">@context.PreviousTotal.ToString("C")</MudTd>
+                <MudTd DataLabel="Change" Style="text-align:right" Class="@ChangeColorClass(context.ChangeAmount)">
+                    @(context.ChangeAmount.ToString("C"))
+                    (@context.ChangePercent.ToString("F1")%)
+                </MudTd>
+                <MudTd DataLabel="Status">
+                    <span class="@(context.IsMapped ? "status-mapped" : "status-unmapped")">
+                        @(context.IsMapped ? "Mapped" : "Unmapped")
+                    </span>
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        @if (_selectedMerchant is not null)
+        {
+            <MudText Typo="Typo.h6" Class="mt-4 mb-2">
+                @_selectedMerchant.Name
+                (@_selectedMerchant.Total.ToString("C"),
+                @_selectedMerchant.Count transactions,
+                @(_selectedMerchant.IsMapped ? "Mapped" : "Unmapped"))
+            </MudText>
+
+            @if (_selectedMerchant.Transactions.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    No transactions for this merchant in @_year.
+                </MudText>
+            }
+            else
+            {
+                <MudTable Items="@_selectedMerchant.Transactions"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0">
+                    <ColGroup>
+                        <col style="width: 12%" />
+                        <col style="width: 22%" />
+                        <col style="width: 20%" />
+                        <col style="width: 14%" />
+                        <col style="width: 10%" />
+                        <col style="width: 12%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Merchant</MudTh>
+                        <MudTh>Raw Name</MudTh>
+                        <MudTh>Category</MudTh>
+                        <MudTh>Source</MudTh>
+                        <MudTh Style="text-align:right">Amount</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Date">@context.Date.ToString("MMM dd, yyyy")</MudTd>
+                        <MudTd DataLabel="Merchant">@context.Name</MudTd>
+                        <MudTd DataLabel="Raw Name">@context.RawName</MudTd>
+                        <MudTd DataLabel="Category">@context.Category</MudTd>
+                        <MudTd DataLabel="Source">@context.Source</MudTd>
+                        <MudTd DataLabel="Amount" Style="text-align:right">@context.Amount.ToString("C")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-4">
+                Select a merchant to view transactions.
+            </MudText>
+        }
+    }
+</ReportShell>
+
+<style>
+    .report-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .metric-panel {
+        border-radius: 8px;
+    }
+    .muted-subtext {
+        font-size: 0.8em;
+        color: var(--mud-palette-text-secondary);
+    }
+    .positive-change {
+        color: #4caf50;
+    }
+    .negative-change {
+        color: #f44336;
+    }
+    .neutral-change {
+        color: inherit;
+    }
+    .status-mapped {
+        color: #4caf50;
+        font-size: 0.85em;
+    }
+    .status-unmapped {
+        color: var(--mud-palette-text-secondary);
+        font-size: 0.85em;
+    }
+</style>
+
+@code {
+    private int _year = DateTime.Now.Year;
+    private int _topN = 10;
+    private List<int> _availableYears = new() { DateTime.Now.Year };
+    private bool _loading;
+    private string? _error;
+    private MerchantReportResult? _report;
+    private MerchantReportRow? _selectedMerchant;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadYears();
+        await LoadReport();
+    }
+
+    private async Task LoadYears()
+    {
+        try
+        {
+            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years")
+                              ?? _availableYears;
+            if (_availableYears.Count > 0)
+                _year = _availableYears[0];
+        }
+        catch
+        {
+            _availableYears = Enumerable.Range(DateTime.Now.Year - 6, 7)
+                .OrderByDescending(y => y)
+                .ToList();
+        }
+    }
+
+    private async Task OnYearChanged(int year)
+    {
+        _year = year;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            var topN = Math.Clamp(_topN, 1, 100);
+            _topN = topN;
+            _report = await Http.GetFromJsonAsync<MerchantReportResult>(
+                $"api/reports/merchants?year={_year}&topN={topN}");
+            _selectedMerchant = _report?.Merchants.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void OnMerchantRowClick(TableRowClickEventArgs<MerchantReportRow> args)
+    {
+        _selectedMerchant = args.Item;
+    }
+
+    private string ChangeColorClass(decimal amount) => amount switch
+    {
+        > 0 => "negative-change",
+        < 0 => "positive-change",
+        _ => "neutral-change"
+    };
+
+    // ── UI DTOs ────────────────────────────────────────────────────────────
+
+    private record MerchantReportResult(
+        int Year,
+        int PreviousYear,
+        int TopN,
+        decimal TotalSpend,
+        int TransactionCount,
+        int MerchantCount,
+        List<MerchantReportRow> Merchants);
+
+    private record MerchantReportRow(
+        string MerchantKey,
+        int? AliasId,
+        int? RawBusinessId,
+        string Name,
+        string NormalizedName,
+        bool IsMapped,
+        string PrimaryCategory,
+        decimal Total,
+        int Count,
+        decimal AvgPerVisit,
+        decimal PctOfSpend,
+        decimal PreviousTotal,
+        int PreviousCount,
+        decimal ChangeAmount,
+        decimal ChangePercent,
+        List<MerchantTransactionRow> Transactions);
+
+    private record MerchantTransactionRow(
+        string TransactionId,
+        string AccountId,
+        DateOnly Date,
+        string Name,
+        string RawName,
+        string NormalizedName,
+        decimal Amount,
+        decimal? Debit,
+        decimal? Credit,
+        string Category,
+        int? AliasId,
+        int? RawBusinessId,
+        TransactionSource Source);
+}
