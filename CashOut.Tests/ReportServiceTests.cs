@@ -1046,4 +1046,251 @@ public class ReportServiceTests
 
         Assert.AreEqual(result.Rows.Sum(r => r.RowTotal), result.GrandTotal);
     }
+
+    // ── Excluded Categories ─────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetCategorySummary_FiltersExcludedCategories()
+    {
+        var txns = new[]
+        {
+            new Transaction
+            {
+                TransactionId = "t1", AccountId = "acct-1",
+                Date = new DateOnly(2025, 1, 1), Amount = 100m,
+                Debit = 100m, Name = "M1", Category = "FOOD",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            },
+            new Transaction
+            {
+                TransactionId = "t2", AccountId = "acct-1",
+                Date = new DateOnly(2025, 1, 1), Amount = 50m,
+                Debit = 50m, Name = "M2", Category = "TRAVEL",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            },
+            new Transaction
+            {
+                TransactionId = "t3", AccountId = "acct-1",
+                Date = new DateOnly(2025, 2, 1), Amount = 200m,
+                Debit = 200m, Name = "M3", Category = "FOOD",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            },
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetCategorySummary_FiltersExcludedCategories), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetCategorySummary(2025, 1);
+
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("TRAVEL", result[0].Category);
+        Assert.AreEqual(50, result[0].MonthDebit);
+    }
+
+    [TestMethod]
+    public async Task GetCategorySummary_FiltersMultipleExcludedCategories()
+    {
+        var txns = new[]
+        {
+            new Transaction
+            {
+                TransactionId = "t1", AccountId = "acct-1",
+                Date = new DateOnly(2025, 1, 1), Amount = 100m,
+                Debit = 100m, Name = "M1", Category = "FOOD",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            },
+            new Transaction
+            {
+                TransactionId = "t2", AccountId = "acct-1",
+                Date = new DateOnly(2025, 1, 1), Amount = 50m,
+                Debit = 50m, Name = "M2", Category = "TRAVEL",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            },
+            new Transaction
+            {
+                TransactionId = "t3", AccountId = "acct-1",
+                Date = new DateOnly(2025, 1, 1), Amount = 75m,
+                Debit = 75m, Name = "M3", Category = "UTILITIES",
+                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
+            },
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetCategorySummary_FiltersMultipleExcludedCategories), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD,UTILITIES" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetCategorySummary(2025, 1);
+
+        Assert.AreEqual(1, result.Count);
+        Assert.AreEqual("TRAVEL", result[0].Category);
+    }
+
+    [TestMethod]
+    public async Task GetCategorySummary_NoFilteredCategories_ReturnsAll()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetCategorySummary_NoFilteredCategories_ReturnsAll), txns);
+
+        var result = await svc.GetCategorySummary(2025, 1);
+
+        Assert.AreEqual(2, result.Count);
+    }
+
+    [TestMethod]
+    public async Task GetCashFlow_FiltersExcludedCategories()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 1, 200m, name: "M2", category: "SHOPPING"),
+            MakeTxn("t3", 2025, 1, 15, -50m, name: "M3", category: "REFUND"),
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetCashFlow_FiltersExcludedCategories), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetCashFlow(2025);
+
+        var jan = result.Months.Single(m => m.Month == "2025-01");
+        Assert.AreEqual(200, jan.Expenses);
+        Assert.AreEqual(50, jan.Income);
+        Assert.AreEqual(-150, jan.Net);
+    }
+
+    [TestMethod]
+    public async Task GetCashFlow_AllCategoriesExcluded_ReturnsZero()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetCashFlow_AllCategoriesExcluded_ReturnsZero), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetCashFlow(2025);
+
+        foreach (var row in result.Months)
+        {
+            Assert.AreEqual(0, row.Expenses);
+            Assert.AreEqual(0, row.Income);
+            Assert.AreEqual(0, row.Net);
+        }
+    }
+
+    [TestMethod]
+    public async Task GetExecutiveSummary_FiltersExcludedCategories()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 1, 200m, name: "M2", category: "SHOPPING"),
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetExecutiveSummary_FiltersExcludedCategories), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetExecutiveSummary(2025);
+
+        Assert.AreEqual(200, result.MonthlyOverview.TotalSpending);
+        Assert.AreEqual(1, result.TopCategories.Count);
+        Assert.AreEqual("SHOPPING", result.TopCategories[0].Category);
+    }
+
+    [TestMethod]
+    public async Task GetExecutiveSummary_FiltersExcludedCategoriesFromMerchants()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "MerchantA", category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 5, 200m, name: "MerchantA", category: "FOOD"),
+            MakeTxn("t3", 2025, 1, 10, 150m, name: "MerchantB", category: "SHOPPING"),
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetExecutiveSummary_FiltersExcludedCategoriesFromMerchants), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetExecutiveSummary(2025);
+
+        Assert.AreEqual(1, result.TopMerchants.Count);
+        Assert.AreEqual("MerchantB", result.TopMerchants[0].Name);
+    }
+
+    [TestMethod]
+    public async Task GetByCategory_FiltersExcludedCategories()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetByCategory_FiltersExcludedCategories), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetByCategory(2025);
+
+        Assert.AreEqual(1, result.Categories.Count);
+        Assert.IsFalse(result.Categories.Any(r => r.Category == "FOOD"));
+        Assert.AreEqual("TRAVEL", result.Categories[0].Category);
+    }
+
+    [TestMethod]
+    public async Task GetTopMerchants_FiltersExcludedCategories()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetTopMerchants_FiltersExcludedCategories), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetTopMerchants(year: 2025);
+
+        Assert.AreEqual(1, result.Merchants.Count);
+        Assert.IsFalse(result.Merchants.Any(r => r.PrimaryCategory == "FOOD"));
+        Assert.AreEqual("M2", result.Merchants[0].Name);
+    }
+
+    [TestMethod]
+    public async Task GetPivot_FiltersExcludedCategories()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
+        };
+        var (db, svc) = await BuildAsync(
+            nameof(GetPivot_FiltersExcludedCategories), txns);
+
+        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
+        await db.SaveChangesAsync();
+
+        var result = await svc.GetPivot(2025);
+
+        Assert.IsFalse(result.Categories.Contains("FOOD"));
+        Assert.AreEqual("TRAVEL", result.Categories.Single());
+    }
 }

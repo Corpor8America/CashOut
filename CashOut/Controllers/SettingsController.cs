@@ -1,12 +1,18 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("api/settings")]
 public class SettingsController : ControllerBase
 {
     private readonly SettingsService _settings;
+    private readonly AppDbContext _db;
 
-    public SettingsController(SettingsService settings) => _settings = settings;
+    public SettingsController(SettingsService settings, AppDbContext db)
+    {
+        _settings = settings;
+        _db = db;
+    }
 
     /// <summary>
     /// Returns current settings.
@@ -22,12 +28,35 @@ public class SettingsController : ControllerBase
     public async Task<IActionResult> AvailableYears() =>
         Ok(await _settings.GetAvailableYears());
 
+    /// <summary>Returns the list of excluded category names.</summary>
+    [HttpGet("excluded-categories")]
+    public async Task<IActionResult> GetExcludedCategories() =>
+        Ok(await _settings.GetExcludedCategories());
+
+    /// <summary>Updates the list of excluded category names.</summary>
+    [HttpPut("excluded-categories")]
+    public async Task<IActionResult> SetExcludedCategories([FromBody] List<string> categories)
+    {
+        await _settings.SetExcludedCategories(categories);
+        return Ok(await _settings.GetExcludedCategories());
+    }
+
+    /// <summary>Returns all distinct category names from transactions (for the UI picker).</summary>
+    [HttpGet("categories")]
+    public async Task<IActionResult> GetAllCategories()
+    {
+        var categories = await _db.Transactions
+            .Where(t => t.Category != null && t.Category != "")
+            .Select(t => t.Category)
+            .Distinct()
+            .OrderBy(c => c)
+            .ToListAsync();
+        return Ok(categories);
+    }
+
     [HttpPut]
     public IActionResult Update()
     {
-        // All settings are now read-only via the API.
-        // plaid_environment: set via PLAID_ENV environment variable
-        // output_year: derived from most recent transaction
         return BadRequest(new
         {
             error = "Settings are managed via environment variables. " +
