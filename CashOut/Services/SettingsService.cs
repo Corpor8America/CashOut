@@ -83,6 +83,34 @@ public class SettingsService
     }
 
     /// <summary>
+    /// Returns the list of category names excluded from all reports.
+    /// Stored as a comma-separated string in AppSetting.ExcludedCategories.
+    /// </summary>
+    public async Task<List<string>> GetExcludedCategories()
+    {
+        var row = await GetRow();
+        if (string.IsNullOrWhiteSpace(row.ExcludedCategories))
+            return new List<string>();
+        return row.ExcludedCategories
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Updates the list of excluded categories. Persists as a comma-separated string.
+    /// </summary>
+    public async Task SetExcludedCategories(List<string> categories)
+    {
+        var row = await GetRow();
+        row.ExcludedCategories = string.Join(",", categories
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        await _db.SaveChangesAsync();
+    }
+
+    /// <summary>
     /// Returns settings as a dictionary for API consumers.
     /// plaid_environment is now read-only (from env var, not DB).
     /// output_year is dynamic (derived from last transaction).
@@ -90,10 +118,12 @@ public class SettingsService
     public async Task<Dictionary<string, string>> GetAll()
     {
         var outputYear = await GetOutputYear();
+        var excluded = string.Join(", ", await GetExcludedCategories());
         return new Dictionary<string, string>
         {
             ["plaid_environment"] = GetPlaidEnvironment(),
-            ["output_year"] = outputYear.ToString()
+            ["output_year"] = outputYear.ToString(),
+            ["excluded_categories"] = excluded
         };
     }
 }

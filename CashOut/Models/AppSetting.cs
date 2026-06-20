@@ -7,4 +7,5 @@
 public class AppSetting
 {
     public int Id { get; set; } = 1;
+    public string? ExcludedCategories { get; set; }
 }

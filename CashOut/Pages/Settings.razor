@@ -1,5 +1,6 @@
 @page "/settings"
 @inject HttpClient Http
+@using System.Net.Http.Json
 
 <MudText Typo="Typo.h4" GutterBottom="true">Settings</MudText>
 
@@ -62,7 +63,63 @@ else
             </MudAlert>
         }
     </MudPaper>
+
+    <MudPaper Elevation="1" Class="pa-6 mt-6" MaxWidth="600px">
+        <MudText Typo="Typo.h6" GutterBottom="true">Excluded Categories</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Categories selected below are excluded from all reports. Toggle a category to exclude or include it, then click Save.
+        </MudText>
+
+        @if (_allCategories.Count == 0)
+        {
+            <MudText Typo="Typo.body2" Color="Color.Secondary">No categories found. Add transactions with categories first.</MudText>
+        }
+        else
+        {
+            <div class="category-grid">
+                @foreach (var cat in _allCategories)
+                {
+                    var isExcluded = _selectedExcluded.Contains(cat);
+                    <MudChip T="string"
+                             Color="@(isExcluded ? Color.Warning : Color.Default)"
+                             Variant="@(isExcluded ? Variant.Filled : Variant.Outlined)"
+                             Size="Size.Small"
+                             OnClick="@(() => ToggleCategory(cat))">
+                        @cat
+                    </MudChip>
+                }
+            </div>
+
+            <div class="mt-4">
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           Disabled="@(!_hasChanges)"
+                           OnClick="@SaveExcludedCategories"
+                           Class="mr-2">
+                    Save
+                </MudButton>
+                @if (_saving)
+                {
+                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-2" />
+                }
+                @if (_saveSuccess)
+                {
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-2" Dense="true">
+                        Excluded categories saved.
+                    </MudAlert>
+                }
+            </div>
+        }
+    </MudPaper>
 }
+
+<style>
+    .category-grid {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+</style>
 
 @code {
     private string _plaidEnvironment = "sandbox";
@@ -70,6 +127,13 @@ else
     private string _version = "—";
     private bool _loading = true;
     private string? _error;
+
+    private List<string> _allCategories = new();
+    private HashSet<string> _selectedExcluded = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _originalExcluded = new(StringComparer.OrdinalIgnoreCase);
+    private bool _saving;
+    private bool _saveSuccess;
+    private bool _hasChanges => !_selectedExcluded.SetEquals(_originalExcluded);
 
     protected override async Task OnInitializedAsync()
     {
@@ -85,8 +149,50 @@ else
             var versionResp = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/version");
             if (versionResp?.TryGetValue("version", out var v) == true)
                 _version = v;
+
+            var excluded = await Http.GetFromJsonAsync<List<string>>("api/settings/excluded-categories")
+                           ?? new();
+            _selectedExcluded = new HashSet<string>(excluded, StringComparer.OrdinalIgnoreCase);
+            _originalExcluded = new HashSet<string>(_selectedExcluded, StringComparer.OrdinalIgnoreCase);
+
+            _allCategories = await Http.GetFromJsonAsync<List<string>>("api/settings/categories")
+                             ?? new();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
+    }
+
+    private void ToggleCategory(string category)
+    {
+        if (_selectedExcluded.Contains(category))
+            _selectedExcluded.Remove(category);
+        else
+            _selectedExcluded.Add(category);
+        _saveSuccess = false;
+    }
+
+    private async Task SaveExcludedCategories()
+    {
+        _saving = true;
+        _saveSuccess = false;
+        try
+        {
+            var updated = await Http.PutAsJsonAsync(
+                "api/settings/excluded-categories",
+                _selectedExcluded.ToList());
+            updated.EnsureSuccessStatusCode();
+            var result = await updated.Content.ReadFromJsonAsync<List<string>>() ?? new();
+            _selectedExcluded = new HashSet<string>(result, StringComparer.OrdinalIgnoreCase);
+            _originalExcluded = new HashSet<string>(_selectedExcluded, StringComparer.OrdinalIgnoreCase);
+            _saveSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
     }
 }
