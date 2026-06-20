@@ -1,277 +1,524 @@
 @page "/reports"
 @inject HttpClient Http
 
-<MudText Typo="Typo.h4" GutterBottom="true">Reports</MudText>
+<ReportShell Title="Executive Summary"
+             Year="_year"
+             AvailableYears="_availableYears"
+             OnYearChanged="OnYearChanged"
+             Loading="_loading"
+             Error="@_error"
+             ExportHref="@($"api/reports/summary?year={_year}&format=csv")">
+    @if (_summary is null)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No summary data found for @_year.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="dashboard-section">
+            <div class="section-title">Monthly Overview — @_summary.MonthLabel</div>
+            <div class="summary-grid">
+                <div class="metric-panel">
+                    <div class="metric-label">Total Spending</div>
+                    <div class="metric-value">@_summary.MonthlyOverview.TotalSpending.ToString("C")</div>
+                    <div class="metric-sub @ChangeClass(_summary.MonthlyOverview.SpendingChangeAmount)">
+                        vs prev month: @(_summary.MonthlyOverview.SpendingChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.SpendingChangeAmount.ToString("C")
+                        (@(_summary.MonthlyOverview.SpendingChangePercent >= 0 ? "+" : "")@_summary.MonthlyOverview.SpendingChangePercent.ToString("F1")%)
+                    </div>
+                </div>
+                <div class="metric-panel">
+                    <div class="metric-label">Total Income</div>
+                    <div class="metric-value income-value">@_summary.MonthlyOverview.TotalIncome.ToString("C")</div>
+                    <div class="metric-sub @PosChangeClass(_summary.MonthlyOverview.IncomeChangeAmount)">
+                        vs prev month: @(_summary.MonthlyOverview.IncomeChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.IncomeChangeAmount.ToString("C")
+                        (@(_summary.MonthlyOverview.IncomeChangePercent >= 0 ? "+" : "")@_summary.MonthlyOverview.IncomeChangePercent.ToString("F1")%)
+                    </div>
+                </div>
+                <div class="metric-panel">
+                    <div class="metric-label">Net Cash Flow</div>
+                    <div class="metric-value @NetClass(_summary.MonthlyOverview.NetCashFlow)">@_summary.MonthlyOverview.NetCashFlow.ToString("C")</div>
+                    <div class="metric-sub @NetClass(_summary.MonthlyOverview.NetCashFlowChangeAmount)">
+                        vs prev month: @(_summary.MonthlyOverview.NetCashFlowChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.NetCashFlowChangeAmount.ToString("C")
+                        (@(_summary.MonthlyOverview.NetCashFlowChangePercent >= 0 ? "+" : "")@_summary.MonthlyOverview.NetCashFlowChangePercent.ToString("F1")%)
+                    </div>
+                </div>
+                <div class="metric-panel">
+                    <div class="metric-label">Transactions</div>
+                    <div class="metric-value">@_summary.MonthlyOverview.TransactionCount.ToString("N0")</div>
+                    <div class="metric-sub">@_summary.MonthlyOverview.IncomeTransactionCount income / @_summary.MonthlyOverview.ExpenseTransactionCount expenses</div>
+                </div>
+            </div>
+        </div>
 
-@if (_error != null)
-{
-    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
-}
-
-<MudPaper Class="pa-4 mb-4">
-    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-        <MudSelect T="int" Label="Year" Value="_year" ValueChanged="OnYearChanged" Dense="true" Margin="Margin.Dense" Style="width:100px">
-            @foreach (var y in _availableYears)
+        <div class="dashboard-section">
+            <div class="section-title">Top Spending Categories</div>
+            @if (_summary.TopCategories.Count == 0)
             {
-                <MudSelectItem Value="@y">@y</MudSelectItem>
+                <MudText Typo="Typo.body2">No category spending for this month.</MudText>
             }
-        </MudSelect>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Refresh" Disabled="@_loading">Refresh</MudButton>
-    </MudStack>
-</MudPaper>
-
-<MudTabs Elevation="1" Rounded="true" Color="Color.Primary" @bind-ActivePanelIndex="_activeTabIndex">
-    <MudTabPanel Text="Monthly" OnClick="() => SetTab(0)">
-        <MudStack Spacing="4">
-            <MudStack Row="true" Justify="Justify.FlexEnd">
-                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
-                           Href="@($"api/reports/monthly?year={_year}&format=csv")" Target="_blank">
-                    Export CSV
-                </MudButton>
-            </MudStack>
-            <MudTable Items="@_monthly" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
-                <HeaderContent>
-                    <MudTh>Month</MudTh>
-                    <MudTh Style="text-align:right">Total</MudTh>
-                    <MudTh Style="text-align:right">Transactions</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Month">@context.Label</MudTd>
-                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
-                    <MudTd DataLabel="Transactions" Style="text-align:right">@context.Count</MudTd>
-                </RowTemplate>
-                <FooterContent>
-                    <MudTFootRow Class="bold-footer">
-                        <MudTd>Total</MudTd>
-                        <MudTd Style="text-align:right">@_monthly.Sum(r => r.Total).ToString("C")</MudTd>
-                        <MudTd Style="text-align:right">@_monthly.Sum(r => r.Count)</MudTd>
-                    </MudTFootRow>
-                </FooterContent>
-            </MudTable>
-        </MudStack>
-    </MudTabPanel>
-
-    <MudTabPanel Text="By Category" OnClick="() => SetTab(1)">
-        <MudStack Spacing="4">
-            <MudStack Row="true" Justify="Justify.FlexEnd">
-                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
-                           Href="@($"api/reports/category?year={_year}&format=csv")" Target="_blank">
-                    Export CSV
-                </MudButton>
-            </MudStack>
-            <MudTable Items="@_categories" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
-                <HeaderContent>
-                    <MudTh>Category</MudTh>
-                    <MudTh Style="text-align:right">Total</MudTh>
-                    <MudTh Style="text-align:right">% of Spend</MudTh>
-                    <MudTh Style="text-align:right">Transactions</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Category">@context.Category</MudTd>
-                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
-                    <MudTd DataLabel="% of Spend" Style="text-align:right">@context.PctOfSpend%</MudTd>
-                    <MudTd DataLabel="Transactions" Style="text-align:right">@context.Count</MudTd>
-                </RowTemplate>
-                <FooterContent>
-                    <MudTFootRow Class="bold-footer">
-                        <MudTd>Total</MudTd>
-                        <MudTd Style="text-align:right">@_categories.Sum(r => r.Total).ToString("C")</MudTd>
-                        <MudTd Style="text-align:right">100%</MudTd>
-                        <MudTd Style="text-align:right">@_categories.Sum(r => r.Count)</MudTd>
-                    </MudTFootRow>
-                </FooterContent>
-            </MudTable>
-        </MudStack>
-    </MudTabPanel>
-
-    <MudTabPanel Text="Pivot" OnClick="() => SetTab(2)">
-        @if (_pivot != null)
-        {
-            <MudTable Items="@_pivot.Rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
-                <HeaderContent>
-                    <MudTh>Month</MudTh>
-                    @foreach (var cat in _pivot.Categories)
-                    {
-                        <MudTh Style="text-align:right" title="@cat">
-                            @(cat.Length > 12 ? cat[..11] + "…" : cat)
-                        </MudTh>
-                    }
-                    <MudTh Style="text-align:right">Total</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Month">@context.Label</MudTd>
-                    @for (int i = 0; i < context.Values.Count; i++)
-                    {
-                        var val = context.Values[i];
-                        <MudTd DataLabel="@_pivot.Categories[i]" Style="text-align:right">
-                            @(val == 0 ? "—" : val.ToString("C"))
+            else
+            {
+                <MudTable Items="@_summary.TopCategories"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0">
+                    <ColGroup>
+                        <col style="width: 28%" />
+                        <col style="width: 18%" />
+                        <col style="width: 14%" />
+                        <col style="width: 14%" />
+                        <col style="width: 26%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Category</MudTh>
+                        <MudTh Class="right-align">Total</MudTh>
+                        <MudTh Class="right-align">Percent</MudTh>
+                        <MudTh Class="right-align">Transactions</MudTh>
+                        <MudTh Class="right-align">Change</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="cat">
+                        <MudTd DataLabel="Category">@cat.Category</MudTd>
+                        <MudTd DataLabel="Total" Class="right-align">@cat.Total.ToString("C")</MudTd>
+                        <MudTd DataLabel="Percent" Class="right-align">@cat.PctOfSpend.ToString("F1")%</MudTd>
+                        <MudTd DataLabel="Transactions" Class="right-align">@cat.Count.ToString("N0")</MudTd>
+                        <MudTd DataLabel="Change" Class="@ChangeAlignClass(cat.ChangeAmount)">
+                            @(cat.ChangeAmount >= 0 ? "+" : "")@cat.ChangeAmount.ToString("C")
+                            <span class="change-pct">(@(cat.ChangePercent >= 0 ? "+" : "")@cat.ChangePercent.ToString("F1")%)</span>
                         </MudTd>
-                    }
-                    <MudTd DataLabel="Total" Style="text-align:right; font-weight:bold">@context.RowTotal.ToString("C")</MudTd>
-                </RowTemplate>
-                <FooterContent>
-                    <MudTFootRow Class="bold-footer">
-                        <MudTd>Total</MudTd>
-                        @foreach (var ct in _pivot.ColumnTotals)
-                        {
-                            <MudTd Style="text-align:right">@ct.ToString("C")</MudTd>
-                        }
-                        <MudTd Style="text-align:right">@_pivot.GrandTotal.ToString("C")</MudTd>
-                    </MudTFootRow>
-                </FooterContent>
-            </MudTable>
-            <MudText Typo="Typo.caption" Class="mt-2">Showing top 8 categories by spend.</MudText>
-        }
-    </MudTabPanel>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </div>
 
-    <MudTabPanel Text="Top Merchants" OnClick="() => SetTab(3)">
-        <MudStack Spacing="4">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                <MudNumericField @bind-Value="_topN" Label="Top N" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="100" Style="width:80px" />
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Refresh">Apply</MudButton>
-                <MudSpacer />
-                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
-                           Href="@($"api/reports/merchants?year={_year}&topN={_topN}&format=csv")" Target="_blank">
-                    Export CSV
-                </MudButton>
-            </MudStack>
-            <MudTable Items="@_merchants" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
-                <HeaderContent>
-                    <MudTh>Merchant</MudTh>
-                    <MudTh Style="text-align:right">Total</MudTh>
-                    <MudTh Style="text-align:right">Visits</MudTh>
-                    <MudTh Style="text-align:right">Avg/Visit</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Merchant">@context.Name</MudTd>
-                    <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
-                    <MudTd DataLabel="Visits" Style="text-align:right">@context.Count</MudTd>
-                    <MudTd DataLabel="Avg/Visit" Style="text-align:right">@context.AvgPerVisit.ToString("C")</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudStack>
-    </MudTabPanel>
+        <div class="dashboard-section">
+            <div class="section-title">Top Spending Merchants</div>
+            @if (_summary.TopMerchants.Count == 0)
+            {
+                <MudText Typo="Typo.body2">No merchant spending for this month.</MudText>
+            }
+            else
+            {
+                <MudTable Items="@_summary.TopMerchants"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0">
+                    <ColGroup>
+                        <col style="width: 22%" />
+                        <col style="width: 14%" />
+                        <col style="width: 16%" />
+                        <col style="width: 12%" />
+                        <col style="width: 10%" />
+                        <col style="width: 26%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Merchant</MudTh>
+                        <MudTh>Category</MudTh>
+                        <MudTh Class="right-align">Total</MudTh>
+                        <MudTh Class="right-align">Percent</MudTh>
+                        <MudTh Class="right-align">Txns</MudTh>
+                        <MudTh Class="right-align">Change</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="merch">
+                        <MudTd DataLabel="Merchant">
+                            <div>@merch.Name</div>
+                            @if (!merch.IsMapped && !string.IsNullOrWhiteSpace(merch.NormalizedName) && merch.NormalizedName != merch.Name)
+                            {
+                                <div class="muted-subtext">@merch.NormalizedName</div>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Category">@merch.PrimaryCategory</MudTd>
+                        <MudTd DataLabel="Total" Class="right-align">@merch.Total.ToString("C")</MudTd>
+                        <MudTd DataLabel="Percent" Class="right-align">@merch.PctOfSpend.ToString("F1")%</MudTd>
+                        <MudTd DataLabel="Txns" Class="right-align">@merch.Count.ToString("N0")</MudTd>
+                        <MudTd DataLabel="Change" Class="@ChangeAlignClass(merch.ChangeAmount)">
+                            @(merch.ChangeAmount >= 0 ? "+" : "")@merch.ChangeAmount.ToString("C")
+                            <span class="change-pct">(@(merch.ChangePercent >= 0 ? "+" : "")@merch.ChangePercent.ToString("F1")%)</span>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </div>
 
-    <MudTabPanel Text="Largest" OnClick="() => SetTab(4)">
-        <MudStack Spacing="4">
-            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-                <MudNumericField @bind-Value="_topN" Label="Top N" Variant="Variant.Outlined" Margin="Margin.Dense" Min="1" Max="100" Style="width:80px" />
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Refresh">Apply</MudButton>
-                <MudSpacer />
-                <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download" 
-                           Href="@($"api/reports/largest?year={_year}&topN={_topN}&format=csv")" Target="_blank">
-                    Export CSV
-                </MudButton>
-            </MudStack>
-            <MudTable Items="@_largest" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
-                <HeaderContent>
-                    <MudTh>Date</MudTh>
-                    <MudTh>Merchant</MudTh>
-                    <MudTh>Category</MudTh>
-                    <MudTh Style="text-align:right">Amount</MudTh>
-                </HeaderContent>
-                <RowTemplate>
-                    <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
-                    <MudTd DataLabel="Merchant">@context.Name</MudTd>
-                    <MudTd DataLabel="Category" Class="text-muted">@(string.IsNullOrEmpty(context.Category) ? "—" : context.Category)</MudTd>
-                    <MudTd DataLabel="Amount" Style="text-align:right">@context.Amount.ToString("C")</MudTd>
-                </RowTemplate>
-            </MudTable>
-        </MudStack>
-    </MudTabPanel>
-</MudTabs>
+        <div class="dashboard-section">
+            <div class="section-title">Recurring Charges</div>
+            @if (_summary.RecurringCharges.Count == 0)
+            {
+                <MudText Typo="Typo.body2">No recurring charge candidates found.</MudText>
+            }
+            else
+            {
+                <MudTable Items="@_summary.RecurringCharges"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0">
+                    <ColGroup>
+                        <col style="width: 20%" />
+                        <col style="width: 12%" />
+                        <col style="width: 14%" />
+                        <col style="width: 14%" />
+                        <col style="width: 10%" />
+                        <col style="width: 14%" />
+                        <col style="width: 10%" />
+                        <col style="width: 6%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Merchant</MudTh>
+                        <MudTh>Category</MudTh>
+                        <MudTh Class="right-align">Latest Amount</MudTh>
+                        <MudTh Class="right-align">Avg Amount</MudTh>
+                        <MudTh Class="right-align">Occurrences</MudTh>
+                        <MudTh Class="right-align">Latest Date</MudTh>
+                        <MudTh>Cadence</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="rc">
+                        <MudTd DataLabel="Merchant">@rc.Name</MudTd>
+                        <MudTd DataLabel="Category">@rc.Category</MudTd>
+                        <MudTd DataLabel="Latest Amount" Class="right-align">@rc.LatestAmount.ToString("C")</MudTd>
+                        <MudTd DataLabel="Avg Amount" Class="right-align">@rc.AverageAmount.ToString("C")</MudTd>
+                        <MudTd DataLabel="Occurrences" Class="right-align">@rc.OccurrenceCount.ToString("N0")</MudTd>
+                        <MudTd DataLabel="Latest Date" Class="right-align">@rc.LatestDate.ToString("MMM dd, yyyy")</MudTd>
+                        <MudTd DataLabel="Cadence">@rc.Cadence</MudTd>
+                        <MudTd>
+                            @if (rc.IsAmountChanged)
+                            {
+                                <span class="warning-chip">Changed</span>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </div>
+
+        <div class="dashboard-section">
+            <div class="section-title">Alerts</div>
+            @if (_summary.Alerts.Items.Count == 0)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined">
+                    No report alerts for this year.
+                </MudAlert>
+            }
+            else
+            {
+                <MudTable Items="@_summary.Alerts.Items"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0">
+                    <HeaderContent>
+                        <MudTh>Severity</MudTh>
+                        <MudTh>Title</MudTh>
+                        <MudTh>Detail</MudTh>
+                        <MudTh Class="right-align">Count</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="alert">
+                        <MudTd DataLabel="Severity">
+                            <span class="@AlertSeverityClass(alert.Severity)">@alert.Severity</span>
+                        </MudTd>
+                        <MudTd DataLabel="Title">@alert.Title</MudTd>
+                        <MudTd DataLabel="Detail">@alert.Detail</MudTd>
+                        <MudTd DataLabel="Count" Class="right-align">@alert.Count.ToString("N0")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </div>
+
+        <div class="dashboard-section">
+            <div class="section-title">Account Summary</div>
+            @if (_summary.Accounts.Count == 0)
+            {
+                <MudText Typo="Typo.body2">No account activity for this year.</MudText>
+            }
+            else
+            {
+                <MudTable Items="@_summary.Accounts"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0">
+                    <ColGroup>
+                        <col style="width: 20%" />
+                        <col style="width: 14%" />
+                        <col style="width: 18%" />
+                        <col style="width: 18%" />
+                        <col style="width: 18%" />
+                        <col style="width: 12%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Account</MudTh>
+                        <MudTh>Type</MudTh>
+                        <MudTh Class="right-align">Income</MudTh>
+                        <MudTh Class="right-align">Expenses</MudTh>
+                        <MudTh Class="right-align">Net</MudTh>
+                        <MudTh Class="right-align">Transactions</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="acct">
+                        <MudTd DataLabel="Account">@acct.AccountName</MudTd>
+                        <MudTd DataLabel="Type">@acct.AccountType</MudTd>
+                        <MudTd DataLabel="Income" Class="right-align income-value">@acct.Income.ToString("C")</MudTd>
+                        <MudTd DataLabel="Expenses" Class="right-align expense-value">@acct.Expenses.ToString("C")</MudTd>
+                        <MudTd DataLabel="Net" Class="@NetAlignClass(acct.NetCashFlow)">@acct.NetCashFlow.ToString("C")</MudTd>
+                        <MudTd DataLabel="Transactions" Class="right-align">@acct.TransactionCount.ToString("N0")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        </div>
+    }
+</ReportShell>
 
 <style>
-    .bold-footer td {
-        font-weight: bold;
-        background-color: var(--mud-palette-background-grey);
+    .dashboard-section {
+        margin-bottom: 24px;
+    }
+    .section-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid var(--mud-palette-lines-inputs, #e0e0e0);
+    }
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+    }
+    .metric-panel {
+        padding: 12px 16px;
+        border: 1px solid var(--mud-palette-lines-inputs, #e0e0e0);
+        border-radius: 8px;
+    }
+    .metric-label {
+        font-size: 0.8rem;
+        color: var(--mud-palette-text-secondary, #757575);
+        margin-bottom: 4px;
+    }
+    .metric-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+    }
+    .metric-sub {
+        font-size: 0.85rem;
+        margin-top: 2px;
+    }
+    .income-value { color: #1b5e20; }
+    .expense-value { color: #b71c1c; }
+    .net-positive { color: #1b5e20; }
+    .net-negative { color: #b71c1c; }
+    .positive-change { color: #1b5e20; }
+    .negative-change { color: #b71c1c; }
+    .neutral-change { color: var(--mud-palette-text-secondary, #757575); }
+    .warning-chip {
+        display: inline-block;
+        padding: 0 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: #fff3e0;
+        color: #e65100;
+    }
+    .alert-warning {
+        display: inline-block;
+        padding: 0 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: #fff3e0;
+        color: #e65100;
+    }
+    .alert-info {
+        display: inline-block;
+        padding: 0 8px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        background: #e3f2fd;
+        color: #0d47a1;
+    }
+    .right-align { text-align: right; }
+    .change-pct {
+        display: inline-block;
+        margin-left: 4px;
+    }
+    .muted-subtext {
+        font-size: 0.8rem;
+        color: var(--mud-palette-text-secondary, #757575);
+    }
+    ::deep .mud-table-root .right-align {
+        text-align: right;
     }
 </style>
 
 @code {
-    private readonly string[] _tabNames = { "Monthly", "By Category", "Pivot", "Top Merchants", "Largest" };
-    private int _activeTabIndex = 0;
     private int _year = DateTime.Now.Year;
-    private int _topN = 10;
+    private List<int> _availableYears = new() { DateTime.Now.Year };
     private bool _loading;
     private string? _error;
-    private List<int> _availableYears = new();
-
-    private List<MonthlyRow> _monthly = new();
-    private List<CategoryRow> _categories = new();
-    private PivotResult? _pivot;
-    private List<MerchantRow> _merchants = new();
-    private List<TransactionDto> _largest = new();
+    private ExecutiveSummaryResult? _summary;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadYears();
-        await Refresh();
+        await LoadSummary();
     }
 
     private async Task LoadYears()
     {
         try
         {
-            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years") ?? new();
+            _availableYears = await Http.GetFromJsonAsync<List<int>>("api/settings/years")
+                              ?? _availableYears;
             if (_availableYears.Count > 0)
                 _year = _availableYears[0];
         }
         catch
         {
             _availableYears = Enumerable.Range(DateTime.Now.Year - 6, 7)
-                .OrderByDescending(y => y).ToList();
+                .OrderByDescending(y => y)
+                .ToList();
         }
-    }
-
-    private async Task SetTab(int index)
-    {
-        _activeTabIndex = index;
-        await Refresh();
     }
 
     private async Task OnYearChanged(int year)
     {
         _year = year;
-        await Refresh();
+        await LoadSummary();
     }
 
-    private async Task Refresh()
+    private async Task LoadSummary()
     {
-        _loading = true; _error = null;
+        _loading = true;
+        _error = null;
         try
         {
-            var tabName = _tabNames[_activeTabIndex];
-            if (tabName == "Monthly")
-                _monthly = await Http.GetFromJsonAsync<List<MonthlyRow>>(
-                    $"api/reports/monthly?year={_year}") ?? new();
-
-            else if (tabName == "By Category")
-                _categories = await Http.GetFromJsonAsync<List<CategoryRow>>(
-                    $"api/reports/category?year={_year}") ?? new();
-
-            else if (tabName == "Pivot")
-                _pivot = await Http.GetFromJsonAsync<PivotResult>(
-                    $"api/reports/pivot?year={_year}");
-
-            else if (tabName == "Top Merchants")
-                _merchants = await Http.GetFromJsonAsync<List<MerchantRow>>(
-                    $"api/reports/merchants?year={_year}&topN={_topN}") ?? new();
-
-            else if (tabName == "Largest")
-                _largest = await Http.GetFromJsonAsync<List<TransactionDto>>(
-                    $"api/reports/largest?year={_year}&topN={_topN}") ?? new();
+            _summary = await Http.GetFromJsonAsync<ExecutiveSummaryResult>(
+                $"api/reports/summary?year={_year}");
         }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _loading = false; }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
     }
 
-    private record MonthlyRow(string Month, string Label, decimal Total, int Count);
-    private record CategoryRow(string Category, decimal Total, int Count, decimal PctOfSpend);
-    private record MerchantRow(string Name, decimal Total, int Count, decimal AvgPerVisit);
-    private record PivotRow(string Month, string Label, List<decimal> Values, decimal RowTotal);
-    private record PivotResult(List<string> Categories, List<PivotRow> Rows,
-        decimal GrandTotal, List<decimal> ColumnTotals);
-    private record TransactionDto(string TransactionId, string AccountId, DateOnly Date,
-        string Name, decimal Amount, string Category);
+    private string NetClass(decimal value) => value switch
+    {
+        > 0 => "net-positive",
+        < 0 => "net-negative",
+        _ => "neutral-change"
+    };
+
+    private string NetAlignClass(decimal value) => $"right-align {NetClass(value)}";
+
+    private string ChangeAlignClass(decimal value) => $"right-align {ChangeClass(value)}";
+
+    private string ChangeClass(decimal value) => value switch
+    {
+        > 0 => "negative-change",
+        < 0 => "positive-change",
+        _ => "neutral-change"
+    };
+
+    private string PosChangeClass(decimal value) => value switch
+    {
+        > 0 => "positive-change",
+        < 0 => "negative-change",
+        _ => "neutral-change"
+    };
+
+    private string AlertSeverityClass(string severity) =>
+        severity == "Warning" ? "alert-warning" : "alert-info";
+
+    private record ExecutiveSummaryResult(
+        int Year,
+        int Month,
+        string MonthKey,
+        string MonthLabel,
+        ExecutiveMonthlyOverview MonthlyOverview,
+        List<ExecutiveTopCategoryRow> TopCategories,
+        List<ExecutiveTopMerchantRow> TopMerchants,
+        List<ExecutiveRecurringChargeRow> RecurringCharges,
+        ExecutiveAlertSummary Alerts,
+        List<ExecutiveAccountSummaryRow> Accounts);
+
+    private record ExecutiveMonthlyOverview(
+        decimal TotalSpending,
+        decimal PreviousMonthSpending,
+        decimal SpendingChangeAmount,
+        decimal SpendingChangePercent,
+        decimal TotalIncome,
+        decimal PreviousMonthIncome,
+        decimal IncomeChangeAmount,
+        decimal IncomeChangePercent,
+        decimal NetCashFlow,
+        decimal PreviousMonthNetCashFlow,
+        decimal NetCashFlowChangeAmount,
+        decimal NetCashFlowChangePercent,
+        int IncomeTransactionCount,
+        int ExpenseTransactionCount,
+        int TransactionCount);
+
+    private record ExecutiveTopCategoryRow(
+        string Category,
+        decimal Total,
+        decimal PctOfSpend,
+        int Count,
+        decimal PreviousMonthTotal,
+        decimal ChangeAmount,
+        decimal ChangePercent);
+
+    private record ExecutiveTopMerchantRow(
+        string MerchantKey,
+        int? AliasId,
+        string Name,
+        string NormalizedName,
+        bool IsMapped,
+        string PrimaryCategory,
+        decimal Total,
+        decimal PctOfSpend,
+        int Count,
+        decimal PreviousMonthTotal,
+        decimal ChangeAmount,
+        decimal ChangePercent);
+
+    private record ExecutiveRecurringChargeRow(
+        string MerchantKey,
+        string Name,
+        string Category,
+        decimal LatestAmount,
+        decimal AverageAmount,
+        decimal AmountChange,
+        int OccurrenceCount,
+        DateOnly LatestDate,
+        string Cadence,
+        bool IsAmountChanged);
+
+    private record ExecutiveAlertSummary(
+        int UnmatchedMerchantCount,
+        int UncategorizedTransactionCount,
+        int PossibleDuplicateCount,
+        int RuleConflictCount,
+        List<ExecutiveAlertRow> Items);
+
+    private record ExecutiveAlertRow(
+        string Severity,
+        string Type,
+        string Title,
+        string Detail,
+        int Count);
+
+    private record ExecutiveAccountSummaryRow(
+        string AccountId,
+        string AccountName,
+        string AccountType,
+        decimal Income,
+        decimal Expenses,
+        decimal NetCashFlow,
+        int TransactionCount);
 }

@@ -37,7 +37,31 @@
                 <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="ml-4 mt-4 mb-1">Data</MudText>
             }
             <MudNavLink Href="/transactions" Icon="@Icons.Material.Filled.List">Transactions</MudNavLink>
-            <MudNavLink Href="/reports" Icon="@Icons.Material.Filled.BarChart">Reports</MudNavLink>
+
+            @if (_drawerOpen)
+            {
+                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="ml-4 mt-4 mb-1">Reports</MudText>
+            }
+            <MudNavLink Href="/reports" Match="NavLinkMatch.All"
+                        Icon="@Icons.Material.Filled.Dashboard">
+                Executive Summary
+            </MudNavLink>
+            <MudNavLink Href="/reports/category"
+                        Icon="@Icons.Material.Filled.Category">
+                By Category
+            </MudNavLink>
+            <MudNavLink Href="/reports/merchant"
+                        Icon="@Icons.Material.Filled.Store">
+                By Merchant
+            </MudNavLink>
+            <MudNavLink Href="/reports/income"
+                        Icon="@Icons.Material.Filled.TrendingUp">
+                Income
+            </MudNavLink>
+            <MudNavLink Href="/reports/cashflow"
+                        Icon="@Icons.Material.Filled.SwapVert">
+                Cash Flow
+            </MudNavLink>
 
             @if (_drawerOpen)
             {

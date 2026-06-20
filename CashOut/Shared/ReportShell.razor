@@ -1,0 +1,61 @@
+@* CashOut/Shared/ReportShell.razor *@
+@using MudBlazor
+<MudText Typo="Typo.h4" GutterBottom="true">@Title</MudText>
+
+@if (Error != null)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@Error</MudAlert>
+}
+
+<MudPaper Class="pa-4 mb-4" Elevation="1">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
+        <MudSelect T="int" Label="Year" Value="Year" ValueChanged="OnYearChanged"
+                   Dense="true" Margin="Margin.Dense" Style="width:100px">
+            @foreach (var y in AvailableYears)
+            {
+                <MudSelectItem Value="@y">@y</MudSelectItem>
+            }
+        </MudSelect>
+        @if (!string.IsNullOrEmpty(ExportHref))
+        {
+            <MudSpacer />
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
+                       Href="@ExportHref" Target="_blank">
+                Export CSV
+            </MudButton>
+        }
+    </MudStack>
+</MudPaper>
+
+@if (Loading)
+{
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+}
+
+@if (IsStub)
+{
+    <MudPaper Class="pa-8" Elevation="0" Style="text-align:center; border: 2px dashed var(--mud-palette-divider)">
+        <MudIcon Icon="@Icons.Material.Filled.Construction"
+                 Style="font-size:3rem; color:var(--mud-palette-text-secondary); margin-bottom:12px" />
+        <MudText Typo="Typo.h6" Color="Color.Secondary">Coming Soon</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
+            This report is not yet implemented.
+        </MudText>
+    </MudPaper>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<int> OnYearChanged { get; set; }
+    [Parameter] public int Year { get; set; } = DateTime.Now.Year;
+    [Parameter] public List<int> AvailableYears { get; set; } = new();
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string? ExportHref { get; set; }
+    [Parameter] public bool IsStub { get; set; }
+}
