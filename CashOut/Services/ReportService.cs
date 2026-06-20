@@ -6,6 +6,7 @@ public class ReportService
 {
     private readonly AppDbContext _db;
     private readonly SettingsService _settings;
+    private List<string>? _excluded;
 
     public ReportService(AppDbContext db, SettingsService settings)
     {
@@ -15,26 +16,43 @@ public class ReportService
 
     // ── Shared ────────────────────────────────────────────────────────────
 
+    private async Task<List<string>> GetExcludedCategories()
+    {
+        _excluded ??= await _settings.GetExcludedCategories();
+        return _excluded;
+    }
+
     /// <summary>
-    /// Returns expense transactions for the year.
+    /// Returns expense transactions for the year, excluding categories the user has hidden.
     /// Amount > 0 means Debit > Credit (net outflow) — consistent with the sign spec.
     /// </summary>
     private async Task<List<Transaction>> GetExpenses(int year)
     {
+        var excluded = await GetExcludedCategories();
+        if (excluded.Count == 0)
+            return await _db.Transactions
+                .Where(t => t.Date.Year == year && t.Amount > 0)
+                .ToListAsync();
         return await _db.Transactions
-            .Where(t => t.Date.Year == year && t.Amount > 0)
+            .Where(t => t.Date.Year == year && t.Amount > 0 && !excluded.Contains(t.Category))
             .ToListAsync();
     }
 
     /// <summary>
-    /// Returns income transactions for the year.
+    /// Returns income transactions for the year, excluding categories the user has hidden.
     /// Amount < 0 means Credit > Debit (net inflow) in the current CashOut model.
     /// </summary>
     private async Task<List<Transaction>> GetIncomeTransactions(int year)
     {
+        var excluded = await GetExcludedCategories();
+        if (excluded.Count == 0)
+            return await _db.Transactions
+                .Include(t => t.Alias)
+                .Where(t => t.Date.Year == year && t.Amount < 0)
+                .ToListAsync();
         return await _db.Transactions
             .Include(t => t.Alias)
-            .Where(t => t.Date.Year == year && t.Amount < 0)
+            .Where(t => t.Date.Year == year && t.Amount < 0 && !excluded.Contains(t.Category))
             .ToListAsync();
     }
 
@@ -63,13 +81,8 @@ public class ReportService
         var y = year ?? await _settings.GetOutputYear();
         var previousYear = y - 1;
 
-        var currentExpenses = await _db.Transactions
-            .Where(t => t.Date.Year == y && t.Amount > 0)
-            .ToListAsync();
-
-        var previousExpenses = await _db.Transactions
-            .Where(t => t.Date.Year == previousYear && t.Amount > 0)
-            .ToListAsync();
+        var currentExpenses = await GetExpenses(y);
+        var previousExpenses = await GetExpenses(previousYear);
 
         // Trailing 12-month window is the full selected year
         var trailingExpenses = currentExpenses;
@@ -229,15 +242,26 @@ public class ReportService
         if (topN < 1) topN = 10;
         if (topN > 100) topN = 100;
 
-        var currentExpenses = await _db.Transactions
-            .Where(t => t.Date.Year == y && t.Amount > 0)
-            .Include(t => t.Alias)
-            .ToListAsync();
+        var excluded = await GetExcludedCategories();
+        var currentExpenses = excluded.Count == 0
+            ? await _db.Transactions
+                .Where(t => t.Date.Year == y && t.Amount > 0)
+                .Include(t => t.Alias)
+                .ToListAsync()
+            : await _db.Transactions
+                .Where(t => t.Date.Year == y && t.Amount > 0 && !excluded.Contains(t.Category))
+                .Include(t => t.Alias)
+                .ToListAsync();
 
-        var previousExpenses = await _db.Transactions
-            .Where(t => t.Date.Year == previousYear && t.Amount > 0)
-            .Include(t => t.Alias)
-            .ToListAsync();
+        var previousExpenses = excluded.Count == 0
+            ? await _db.Transactions
+                .Where(t => t.Date.Year == previousYear && t.Amount > 0)
+                .Include(t => t.Alias)
+                .ToListAsync()
+            : await _db.Transactions
+                .Where(t => t.Date.Year == previousYear && t.Amount > 0 && !excluded.Contains(t.Category))
+                .Include(t => t.Alias)
+                .ToListAsync();
 
         var grandTotal = currentExpenses.Sum(t => t.Amount);
         var transactionCount = currentExpenses.Count;
@@ -504,13 +528,22 @@ public class ReportService
         var y = year ?? await _settings.GetOutputYear();
         var previousYear = y - 1;
 
-        var currentTxns = await _db.Transactions
-            .Where(t => t.Date.Year == y && t.Amount != 0)
-            .ToListAsync();
+        var excluded = await GetExcludedCategories();
+        var currentTxns = excluded.Count == 0
+            ? await _db.Transactions
+                .Where(t => t.Date.Year == y && t.Amount != 0)
+                .ToListAsync()
+            : await _db.Transactions
+                .Where(t => t.Date.Year == y && t.Amount != 0 && !excluded.Contains(t.Category))
+                .ToListAsync();
 
-        var previousTxns = await _db.Transactions
-            .Where(t => t.Date.Year == previousYear && t.Amount != 0)
-            .ToListAsync();
+        var previousTxns = excluded.Count == 0
+            ? await _db.Transactions
+                .Where(t => t.Date.Year == previousYear && t.Amount != 0)
+                .ToListAsync()
+            : await _db.Transactions
+                .Where(t => t.Date.Year == previousYear && t.Amount != 0 && !excluded.Contains(t.Category))
+                .ToListAsync();
 
         var currentByMonth = currentTxns
             .GroupBy(t => t.Date.Month)
@@ -659,10 +692,16 @@ public class ReportService
     {
         var y = year ?? await _settings.GetOutputYear();
 
-        var transactions = await _db.Transactions
-            .Where(t => t.Date.Year == y && t.Amount != 0)
-            .Include(t => t.Alias)
-            .ToListAsync();
+        var excluded = await GetExcludedCategories();
+        var transactions = excluded.Count == 0
+            ? await _db.Transactions
+                .Where(t => t.Date.Year == y && t.Amount != 0)
+                .Include(t => t.Alias)
+                .ToListAsync()
+            : await _db.Transactions
+                .Where(t => t.Date.Year == y && t.Amount != 0 && !excluded.Contains(t.Category))
+                .Include(t => t.Alias)
+                .ToListAsync();
 
         var latestWithData = transactions
             .OrderByDescending(t => t.Date.Month)
@@ -682,9 +721,13 @@ public class ReportService
             .Where(t => t.Date.Month == dashMonth)
             .ToList();
 
-        var prevMonthTxns = await _db.Transactions
-            .Where(t => t.Date.Year == prevYear && t.Date.Month == prevMonth && t.Amount != 0)
-            .ToListAsync();
+        var prevMonthTxns = excluded.Count == 0
+            ? await _db.Transactions
+                .Where(t => t.Date.Year == prevYear && t.Date.Month == prevMonth && t.Amount != 0)
+                .ToListAsync()
+            : await _db.Transactions
+                .Where(t => t.Date.Year == prevYear && t.Date.Month == prevMonth && t.Amount != 0 && !excluded.Contains(t.Category))
+                .ToListAsync();
 
         // ── Monthly Overview ───────────────────────────────────────────
 
@@ -965,9 +1008,11 @@ public class ReportService
         var startDate = targetDate.AddMonths(-11);
         var endDate = targetDate.AddMonths(1).AddDays(-1);
 
+        var excluded = await GetExcludedCategories();
+
         // Perform aggregation in the database for the 12-month period
         var stats = await _db.Transactions
-            .Where(t => t.Date >= startDate && t.Date <= endDate)
+            .Where(t => t.Date >= startDate && t.Date <= endDate && !excluded.Contains(t.Category))
             .GroupBy(t => string.IsNullOrEmpty(t.Category) ? "(uncategorized)" : t.Category)
             .Select(g => new
             {
