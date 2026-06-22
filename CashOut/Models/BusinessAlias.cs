@@ -17,6 +17,7 @@ public class BusinessAlias
     public string Category { get; set; } = "";
 
     public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
     public ICollection<AliasPattern> Patterns { get; set; } = new List<AliasPattern>();
 }

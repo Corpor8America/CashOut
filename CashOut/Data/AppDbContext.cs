@@ -26,7 +26,7 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.AccountId).IsUnique();
             e.Property(x => x.ItemId).IsRequired().HasDefaultValue("");
             e.HasIndex(x => x.ItemId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
         });
 
         // ── ManualAccount ─────────────────────────────────────────────────
@@ -36,7 +36,7 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Name).IsRequired();
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
         });
 
         // ── Transaction ───────────────────────────────────────────────────
@@ -52,8 +52,8 @@ public class AppDbContext : DbContext
             e.Property(x => x.DedupKey).IsRequired(false);
             e.Property(x => x.RawName).IsRequired().HasDefaultValue("");
             e.Property(x => x.NormalizedName).IsRequired().HasDefaultValue("");
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
-            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
+            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now() at time zone 'utc'");
             e.HasOne(x => x.Alias).WithMany().HasForeignKey(x => x.AliasId);
             e.HasOne(x => x.RawBusiness).WithMany().HasForeignKey(x => x.RawBusinessId);
         });
@@ -76,8 +76,8 @@ public class AppDbContext : DbContext
             e.HasIndex(x => x.RawNameNormalized).IsUnique();
             e.Property(x => x.CategoryRaw).IsRequired().HasDefaultValue("");
             e.Property(x => x.IsMapped).IsRequired().HasDefaultValue(false);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
-            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
+            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now() at time zone 'utc'");
         });
 
         // ── BusinessAlias ─────────────────────────────────────────────────
@@ -87,7 +87,8 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.AliasName).IsRequired();
             e.HasIndex(x => x.AliasName).IsUnique();
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
+            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now() at time zone 'utc'");
             e.HasMany(x => x.Patterns)
              .WithOne(x => x.Alias)
              .HasForeignKey(x => x.AliasId)
@@ -101,8 +102,8 @@ public class AppDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.Pattern).IsRequired();
             e.Property(x => x.MatchType).HasConversion<string>().IsRequired();
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
-            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
+            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now() at time zone 'utc'");
             e.HasOne(x => x.Alias)
              .WithMany(x => x.Patterns)
              .HasForeignKey(x => x.AliasId)
@@ -125,7 +126,8 @@ public class AppDbContext : DbContext
             e.ToTable("csv_mapping_profiles");
             e.HasKey(x => x.Id);
             e.Property(x => x.AccountId).IsRequired();
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now()");
+            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
+            e.Property(x => x.UpdatedAt).HasDefaultValueSql("now() at time zone 'utc'");
         });
     }
 }

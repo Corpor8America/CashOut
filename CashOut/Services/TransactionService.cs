@@ -189,9 +189,9 @@ public class TransactionService
     // ── Query ─────────────────────────────────────────────────────────────
 
     public async Task<List<Transaction>> Query(
-    int? year = null, int? month = null, string? accountId = null,
-    List<string>? categories = null,
-    TransactionSource? source = null)
+        int? year = null, int? month = null, string? accountId = null,
+        List<string>? categories = null,
+        TransactionSource? source = null)
     {
         var q = _db.Transactions.AsQueryable();
 

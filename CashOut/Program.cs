@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Http.Features;
 using System.Globalization;
 using MudBlazor;
 using MudBlazor.Services;
@@ -26,7 +27,7 @@ builder.Services.AddServerSideBlazor();
 builder.Services.AddControllers();
 
 // Enable IFormFile support for CSV upload endpoints
-builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+builder.Services.Configure<FormOptions>(o =>
 {
     o.MultipartBodyLengthLimit = 11 * 1024 * 1024; // 11 MB (slightly above 10 MB client limit)
 });

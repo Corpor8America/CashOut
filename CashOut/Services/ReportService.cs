@@ -1080,7 +1080,8 @@ public class ReportService
     }
 
     private static string Esc(string s) =>
-        s.Contains(',') || s.Contains('"') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
+        s.Contains(',') || s.Contains('"') || s.Contains('\n')
+            ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
 }
 
 // ── Result Types ──────────────────────────────────────────────────────────────
