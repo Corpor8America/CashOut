@@ -842,53 +842,55 @@ public class ReportServiceTests
     // ── Executive Summary ─────────────────────────────────────────────────
 
     [TestMethod]
-    public async Task GetExecutiveSummary_UsesLatestTransactionMonth()
+    public async Task GetExecutiveSummary_NoMonth_ReturnsYearToDate()
     {
         var txns = new[]
         {
             MakeTxn("t1", 2025, 1, 15, 100m),
             MakeTxn("t2", 2025, 3, 1, 50m),
         };
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_UsesLatestTransactionMonth), txns);
+        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_NoMonth_ReturnsYearToDate), txns);
 
         var result = await svc.GetExecutiveSummary(2025);
 
-        Assert.AreEqual(3, result.Month);
-        Assert.AreEqual("2025-03", result.MonthKey);
+        Assert.AreEqual(0, result.Month);
+        Assert.AreEqual("2025 Year-to-Date", result.MonthLabel);
+        Assert.AreEqual(150m, result.MonthlyOverview.TotalSpending);
     }
 
     [TestMethod]
-    public async Task GetExecutiveSummary_EmptyYear_UsesDecemberWithZeroTotals()
+    public async Task GetExecutiveSummary_NoMonthEmptyYear_ReturnsYearToDateWithZeroTotals()
     {
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_EmptyYear_UsesDecemberWithZeroTotals), []);
+        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_NoMonthEmptyYear_ReturnsYearToDateWithZeroTotals), []);
 
         var result = await svc.GetExecutiveSummary(2025);
 
-        Assert.AreEqual(12, result.Month);
+        Assert.AreEqual(0, result.Month);
         Assert.AreEqual(0m, result.MonthlyOverview.TotalSpending);
         Assert.AreEqual(0m, result.MonthlyOverview.TotalIncome);
         Assert.AreEqual(0m, result.MonthlyOverview.NetCashFlow);
     }
 
     [TestMethod]
-    public async Task GetExecutiveSummary_ComputesMonthlyOverview()
+    public async Task GetExecutiveSummary_WithExplicitMonth_ComputesMonthlyOverview()
     {
         var txns = new[]
         {
             MakeTxn("t1", 2025, 3, 1, -1000m, name: "Payroll"),
             MakeTxn("t2", 2025, 3, 2, 300m, name: "Store"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_ComputesMonthlyOverview), txns);
+        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_WithExplicitMonth_ComputesMonthlyOverview), txns);
 
-        var result = await svc.GetExecutiveSummary(2025);
+        var result = await svc.GetExecutiveSummary(2025, 3);
 
+        Assert.AreEqual(3, result.Month);
         Assert.AreEqual(300m, result.MonthlyOverview.TotalSpending);
         Assert.AreEqual(1000m, result.MonthlyOverview.TotalIncome);
         Assert.AreEqual(700m, result.MonthlyOverview.NetCashFlow);
     }
 
     [TestMethod]
-    public async Task GetExecutiveSummary_ComputesPreviousMonthComparison()
+    public async Task GetExecutiveSummary_NoMonth_ComputesYearOverYearComparison()
     {
         var txns = new[]
         {
@@ -897,13 +899,13 @@ public class ReportServiceTests
             MakeTxn("t3", 2025, 2, 1, -900m, name: "Payroll"),
             MakeTxn("t4", 2025, 2, 2, 400m, name: "Store"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_ComputesPreviousMonthComparison), txns);
+        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_NoMonth_ComputesYearOverYearComparison), txns);
 
         var result = await svc.GetExecutiveSummary(2025);
 
-        // Mar net = 1200 - 500 = 700, Feb net = 900 - 400 = 500
-        Assert.AreEqual(200m, result.MonthlyOverview.NetCashFlowChangeAmount);
-        Assert.AreEqual(40m, result.MonthlyOverview.NetCashFlowChangePercent);
+        // 2025 net = (1200+900) - (500+400) = 1200, prev year net = 0
+        Assert.AreEqual(1200m, result.MonthlyOverview.NetCashFlowChangeAmount);
+        Assert.AreEqual(0m, result.MonthlyOverview.NetCashFlowChangePercent);
     }
 
     [TestMethod]

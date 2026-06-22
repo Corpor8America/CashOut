@@ -20,13 +20,13 @@
     else
     {
         <div class="dashboard-section">
-            <div class="section-title">Monthly Overview — @_summary.MonthLabel</div>
+            <div class="section-title">@(_summary.Month == 0 ? "Year-to-Date Overview" : "Monthly Overview") — @_summary.MonthLabel</div>
             <div class="summary-grid">
                 <div class="metric-panel">
                     <div class="metric-label">Total Spending</div>
                     <div class="metric-value">@_summary.MonthlyOverview.TotalSpending.ToString("C")</div>
                     <div class="metric-sub @ChangeClass(_summary.MonthlyOverview.SpendingChangeAmount)">
-                        vs prev month: @(_summary.MonthlyOverview.SpendingChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.SpendingChangeAmount.ToString("C")
+                        @_vsLabel: @(_summary.MonthlyOverview.SpendingChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.SpendingChangeAmount.ToString("C")
                         (@(_summary.MonthlyOverview.SpendingChangePercent >= 0 ? "+" : "")@_summary.MonthlyOverview.SpendingChangePercent.ToString("F1")%)
                     </div>
                 </div>
@@ -34,7 +34,7 @@
                     <div class="metric-label">Total Income</div>
                     <div class="metric-value income-value">@_summary.MonthlyOverview.TotalIncome.ToString("C")</div>
                     <div class="metric-sub @PosChangeClass(_summary.MonthlyOverview.IncomeChangeAmount)">
-                        vs prev month: @(_summary.MonthlyOverview.IncomeChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.IncomeChangeAmount.ToString("C")
+                        @_vsLabel: @(_summary.MonthlyOverview.IncomeChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.IncomeChangeAmount.ToString("C")
                         (@(_summary.MonthlyOverview.IncomeChangePercent >= 0 ? "+" : "")@_summary.MonthlyOverview.IncomeChangePercent.ToString("F1")%)
                     </div>
                 </div>
@@ -42,7 +42,7 @@
                     <div class="metric-label">Net Cash Flow</div>
                     <div class="metric-value @NetClass(_summary.MonthlyOverview.NetCashFlow)">@_summary.MonthlyOverview.NetCashFlow.ToString("C")</div>
                     <div class="metric-sub @NetClass(_summary.MonthlyOverview.NetCashFlowChangeAmount)">
-                        vs prev month: @(_summary.MonthlyOverview.NetCashFlowChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.NetCashFlowChangeAmount.ToString("C")
+                        @_vsLabel: @(_summary.MonthlyOverview.NetCashFlowChangeAmount >= 0 ? "+" : "")@_summary.MonthlyOverview.NetCashFlowChangeAmount.ToString("C")
                         (@(_summary.MonthlyOverview.NetCashFlowChangePercent >= 0 ? "+" : "")@_summary.MonthlyOverview.NetCashFlowChangePercent.ToString("F1")%)
                     </div>
                 </div>
@@ -58,7 +58,7 @@
             <div class="section-title">Top Spending Categories</div>
             @if (_summary.TopCategories.Count == 0)
             {
-                <MudText Typo="Typo.body2">No category spending for this month.</MudText>
+                <MudText Typo="Typo.body2">No category spending for @(_summary.Month == 0 ? "this year" : "this month").</MudText>
             }
             else
             {
@@ -99,7 +99,7 @@
             <div class="section-title">Top Spending Merchants</div>
             @if (_summary.TopMerchants.Count == 0)
             {
-                <MudText Typo="Typo.body2">No merchant spending for this month.</MudText>
+                <MudText Typo="Typo.body2">No merchant spending for @(_summary.Month == 0 ? "this year" : "this month").</MudText>
             }
             else
             {
@@ -362,6 +362,7 @@
     private bool _loading;
     private string? _error;
     private ExecutiveSummaryResult? _summary;
+    private string _vsLabel => _summary?.Month == 0 ? "vs prev year" : "vs prev month";
 
     protected override async Task OnInitializedAsync()
     {
