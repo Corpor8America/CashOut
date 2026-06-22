@@ -1,4 +1,4 @@
-# Monthly Drill-Down Reports — Implementation Spec
+# Monthly Filter Drill-Down Reports — Implementation Spec
 
 **Status:** Implementation-ready  
 **Scope:** Add month-level filtering to all five existing report pages without adding new routes or breaking existing behavior.  
@@ -164,14 +164,38 @@ public async Task<byte[]> CategoryCsv(int? year = null, int? month = null)
 }
 ```
 
-**Important behavior when month is set:** The trailing 12-month average and previous-year comparison still use the full year or previous year. Only the `currentExpenses` list (the set of transactions being grouped into category rows) is filtered to the selected month. The `trailingExpenses` and `previousExpenses` loads remain full-year and full-previous-year respectively. This means `TwelveMonthAverage` and `PreviousTotal` remain meaningful context even when viewing a single month.
+**Important behavior when month is set — trailing 12-month average becomes a rolling window:**
+
+When a month is selected, `trailingExpenses` loads the **12-month period ending with the selected month** (e.g., if January 2025 is selected, trailing expenses span February 2024 through January 2025). This ensures `TwelveMonthAverage` is a true trailing average, not a year-to-date figure.
+
+Only `currentExpenses` is filtered to the selected month. `previousExpenses` remains the full previous year. `previousExpenses` is not adjusted — the previous-year comparison stays full-year so the user can see how a single month compares to the full prior year.
+
+The `GetExpenses` call for trailing expenses when a month is selected:
+
+```csharp
+if (month.HasValue)
+{
+    // trailing 12 months: the 12-month period ending with the selected month
+    // e.g., for Jan 2025: Feb 2024 through Jan 2025
+    var trailingStart = new DateTime(y - 1, month.Value, 1).AddMonths(1);
+    var trailingEnd = new DateTime(y, month.Value, 1).AddMonths(1).AddDays(-1);
+    trailingExpenses = await GetExpensesInRange(trailingStart, trailingEnd);
+}
+else
+{
+    trailingExpenses = await GetExpenses(y);
+}
+```
+
+*(`GetExpensesInRange` is described in section 4g.)*
 
 **What changes in the response when month is set:**
 
 - `TotalSpend` reflects only the selected month's expenses.
 - `TransactionCount` reflects only the selected month.
 - Each `CategoryReportRow.Total` and `.Count` reflects only the selected month.
-- `PreviousTotal`, `TwelveMonthAverage`, and comparison fields are unchanged (they still use full-year windows).
+- `PreviousTotal` remains the full previous year (unchanged).
+- `TwelveMonthAverage` reflects the trailing 12-month period ending with the selected month.
 - The `Transactions` list within each row contains only the selected month's transactions.
 
 ### 4b. Merchant Report — `GET /api/reports/merchants`
@@ -270,7 +294,9 @@ private async Task<List<Transaction>> GetIncomeTransactions(int year, int? month
 }
 ```
 
-Call the new overload for `currentIncome`:
+**Remove the old `GetIncomeTransactions(int year)` overload** — the new `(int year, int? month)` signature replaces it entirely. Passing `null` for month reproduces the old full-year behavior.
+
+Call the new overload for both current and previous income:
 
 ```csharp
 var currentIncome = await GetIncomeTransactions(y, month);
@@ -354,7 +380,7 @@ public async Task<byte[]> ExecutiveSummaryCsv(int? year = null, int? month = nul
 
 ### 4f. Shared `GetExpenses` Helper Overload
 
-Add a private overload of `GetExpenses` that accepts a month:
+Add a private overload of `GetExpenses` that accepts a month (used for `currentExpenses` and `previousExpenses`):
 
 ```csharp
 private async Task<List<Transaction>> GetExpenses(int year, int month)
@@ -372,13 +398,47 @@ private async Task<List<Transaction>> GetExpenses(int year, int month)
 
 The existing `GetExpenses(int year)` overload remains unchanged.
 
+### 4g. Shared `GetExpensesInRange` Helper for Trailing 12-Month Window
+
+Add a private method that loads expenses between two dates, used when a month is selected and the trailing 12-month average must be calculated:
+
+```csharp
+private async Task<List<Transaction>> GetExpensesInRange(DateTime start, DateTime end)
+{
+    var excluded = await GetExcludedCategories();
+    if (excluded.Count == 0)
+        return await _db.Transactions
+            .Where(t => t.Date >= start && t.Date <= end && t.Amount > 0)
+            .ToListAsync();
+    return await _db.Transactions
+        .Where(t => t.Date >= start && t.Date <= end && t.Amount > 0 && !excluded.Contains(t.Category))
+        .ToListAsync();
+}
+```
+
 ---
 
 ## 5. UI Page Changes
 
 Each report page needs three things: a `_month` field, wiring to `ReportShell`, and updated API calls. The patterns are identical across pages, so the spec is explicit for each.
 
-### 5a. `ReportCategory.razor`
+### 5a. Shared `DateHelper` Utility
+
+Create `CashOut/Helpers/DateHelper.cs` with a static `MonthName` method used by multiple pages:
+
+```csharp
+namespace CashOut.Helpers;
+
+public static class DateHelper
+{
+    public static string MonthName(int month) =>
+        new DateOnly(2000, month, 1).ToString("MMMM");
+}
+```
+
+All page-specific specs below reference `DateHelper.MonthName` instead of defining their own copy.
+
+### 5b. `ReportCategory.razor`
 
 **New field:**
 
@@ -461,16 +521,11 @@ private async Task LoadReport()
 
 ```razor
 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-    No category spending found for @(_month.HasValue ? $"{MonthName(_month.Value)} {_year}" : _year.ToString()).
+    No category spending found for @(_month.HasValue ? $"{DateHelper.MonthName(_month.Value)} {_year}" : _year.ToString()).
 </MudAlert>
 ```
 
-**Add `MonthName` helper to `@code`:**
-
-```csharp
-private static string MonthName(int month) =>
-    new DateOnly(2000, month, 1).ToString("MMMM");
-```
+**No `MonthName` helper needed on this page** — use `DateHelper.MonthName` from the shared utility (section 5a). Add `@using CashOut.Helpers` to the top of the page if not already present.
 
 **Optional context label** (place directly above the summary metrics grid when a month is selected):
 
@@ -478,12 +533,12 @@ private static string MonthName(int month) =>
 @if (_month.HasValue)
 {
     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
-        Showing data for @MonthName(_month.Value) @_year only. Previous year and rolling average figures still reflect full-year context.
+        Showing data for @DateHelper.MonthName(_month.Value) @_year only. Previous year total reflects full-year context; trailing 12-month average is the rolling window ending with this month.
     </MudText>
 }
 ```
 
-### 5b. `ReportMerchant.razor`
+### 5c. `ReportMerchant.razor`
 
 **New field:**
 
@@ -568,15 +623,15 @@ private async Task LoadReport()
 
 ```razor
 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-    No merchant spending found for @(_month.HasValue ? $"{MonthName(_month.Value)} {_year}" : _year.ToString()).
+    No merchant spending found for @(_month.HasValue ? $"{DateHelper.MonthName(_month.Value)} {_year}" : _year.ToString()).
 </MudAlert>
 ```
 
-**Add `MonthName` helper** (same implementation as category page).
+**No `MonthName` helper needed** — use `DateHelper.MonthName` from the shared utility (section 5a). Add `@using CashOut.Helpers` if not already present.
 
 **Optional context label** (same pattern as category page, placed above summary metrics grid).
 
-### 5c. `ReportIncome.razor`
+### 5d. `ReportIncome.razor`
 
 **New field:**
 
@@ -659,17 +714,19 @@ private async Task LoadReport()
 
 ```razor
 <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-    No income found for @(_month.HasValue ? $"{MonthName(_month.Value)} {_year}" : _year.ToString()).
+    No income found for @(_month.HasValue ? $"{DateHelper.MonthName(_month.Value)} {_year}" : _year.ToString()).
 </MudAlert>
 ```
 
-**Add `MonthName` helper** (same implementation as category page).
+**No `MonthName` helper needed** — use `DateHelper.MonthName` from the shared utility (section 5a). Add `@using CashOut.Helpers` if not already present.
 
 **Optional context label** (same pattern as category page, placed above summary metrics grid).
 
-### 5d. `ReportCashFlow.razor`
+### 5e. `ReportCashFlow.razor`
 
 The cash flow page already shows a 12-row monthly table and has a drill-down panel for a selected month. The month picker here acts as a shortcut: selecting a month auto-selects that month's row and populates the drill-down, but the full 12-month table remains visible. No API reload occurs when the month picker changes on this page.
+
+**Important:** `_month` on this page is purely UI state — it is never sent as an API parameter. The cash flow endpoint always returns all 12 months. The month picker only controls which row's drill-down panel is shown.
 
 **New field:**
 
@@ -726,7 +783,7 @@ private async Task OnYearChanged(int year)
 
 Note: The `ExportHref` for cash flow does not include a month parameter because the CSV always exports all 12 months. This is intentional.
 
-### 5e. `Reports.razor` (Executive Summary)
+### 5f. `Reports.razor` (Executive Summary)
 
 **New field:**
 
@@ -820,7 +877,8 @@ These rules apply to all report pages uniformly.
 **When a month is selected:**
 - The report reloads from the API with the selected month.
 - Current-period totals, counts, and transaction lists reflect only the selected month.
-- Previous-year comparisons and rolling averages retain full-year context (they are not filtered to the selected month).
+- Previous-year comparisons retain full-year context (not filtered to the selected month).
+- For the category report, the trailing 12-month average uses a rolling 12-month window ending with the selected month (not the full year).
 - The empty state message names the specific month.
 - The export CSV reflects the selected month's data (except cash flow, which always exports 12 months).
 
@@ -848,6 +906,14 @@ Setup: Add a January expense and a February expense for category FOOD. Call `Get
 **`GetByCategory_MonthFilter_PreviousYearTotalStillUsesFullYear`**
 
 Setup: Add three January 2025 expenses for FOOD and one July 2024 expense for FOOD. Call `GetByCategory(2025, 1)`. Assert `Categories[0].PreviousTotal` equals the full 2024 FOOD total (not filtered to January 2024).
+
+**`GetByCategory_MonthFilter_TrailingAverageUsesRolling12Months`**
+
+Setup: Add expenses in January 2025, February 2025, and January 2024, all for category FOOD. Call `GetByCategory(2025, 1)`. Assert `Categories[0].TwelveMonthAverage` reflects only the trailing 12 months (Feb 2024 – Jan 2025), not the full year 2025.
+
+**`GetByCategory_MonthFilter_NoDataInMonth_ReturnsEmpty`**
+
+Setup: Add only a March expense. Call `GetByCategory(2025, 1)`. Assert `TotalSpend == 0`. Assert `Categories` is empty or contains the row with `Total == 0`. Assert no exception is thrown.
 
 ### 7b. Merchants
 
@@ -887,13 +953,14 @@ Setup: Add a March expense for "FOOD" and a June expense for "TRAVEL". Call `Get
 |---|---|
 | `CashOut/Shared/ReportShell.razor` | Add `Month`, `OnMonthChanged`, `ShowMonthPicker` parameters and month picker markup |
 | `CashOut/Controllers/ReportsController.cs` | Add `month` parameter to `Category`, `Merchants`, `Income`, and `Summary` actions |
-| `CashOut/Services/ReportService.cs` | Add `month` parameter to `GetByCategory`, `GetTopMerchants`, `GetIncome`, `GetExecutiveSummary`, their CSV counterparts, and the `GetExpenses(int year, int month)` overload |
+| `CashOut/Services/ReportService.cs` | Add `month` parameter to `GetByCategory`, `GetTopMerchants`, `GetIncome`, `GetExecutiveSummary`, their CSV counterparts, `GetExpenses(int year, int month)` overload, and `GetExpensesInRange(DateTime, DateTime)` helper |
 | `CashOut/Pages/ReportCategory.razor` | Add `_month`, `OnMonthChanged`, `ExportUrl`; update `LoadReport` and `OnYearChanged` |
 | `CashOut/Pages/ReportMerchant.razor` | Same set of changes as category |
 | `CashOut/Pages/ReportIncome.razor` | Same set of changes as category |
 | `CashOut/Pages/ReportCashFlow.razor` | Add `_month`, `OnMonthCashFlowChanged`; update `OnYearChanged` |
 | `CashOut/Pages/Reports.razor` | Add `_month`, `OnMonthChanged`, `ExportUrl`; update `LoadSummary` and `OnYearChanged` |
-| `CashOut.Tests/ReportServiceTests.cs` | Add the eight new tests from section 7 |
+| `CashOut/Helpers/DateHelper.cs` | New file — shared `MonthName` utility |
+| `CashOut.Tests/ReportServiceTests.cs` | Add the ten new tests from section 7 |
 
 No database migration is required. No new routes are added. No new page files are created.
 
@@ -907,11 +974,12 @@ The implementation is complete when:
 - Selecting a month on any report page reloads the report filtered to that month.
 - Clearing the month picker reloads as a full-year report.
 - Changing the year resets the month picker to "All months" and reloads as full-year.
-- Previous-year and rolling-average comparison fields are not affected by the month filter.
+- Previous-year comparison fields are not affected by the month filter.
+- On the category report, the trailing 12-month average reflects the rolling 12-month window ending with the selected month (not the full year).
 - The category, merchant, and income CSV exports include the `month` parameter when a month is selected.
 - The cash flow CSV always exports 12 months regardless of month picker state.
 - The executive summary `MonthLabel` reflects the explicitly selected month when one is chosen.
 - Empty state messages name the specific month when one is selected.
-- All eight new tests pass.
+- All ten new tests pass.
 - All existing tests continue to pass.
 - `dotnet test` exits with zero failures.
