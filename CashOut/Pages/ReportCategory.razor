@@ -35,12 +35,14 @@
             </MudPaper>
         </div>
 
-        <MudTable Items="@_report.Categories"
+        <MudTable T="CategoryReportRow"
+                  Items="@_report.Categories"
                   Dense="true"
                   Hover="true"
                   Breakpoint="Breakpoint.Sm"
                   Elevation="0"
-                  row-click="OnCategoryRowClick"
+                  OnRowClick="OnCategoryRowClick"
+                  RowClassFunc="GetRowClass"
                   Class="my-4">
             <ColGroup>
                 <col style="width: 22%" />
@@ -155,6 +157,12 @@
     .neutral-change {
         color: inherit;
     }
+    ::deep .selected-row {
+        background-color: rgba(46, 125, 50, 0.08);
+    }
+    ::deep .selected-row:hover {
+        background-color: rgba(46, 125, 50, 0.12);
+    }
 </style>
 
 @code {
@@ -216,7 +224,12 @@
 
     private void OnCategoryRowClick(TableRowClickEventArgs<CategoryReportRow> args)
     {
-        _selectedCategory = args.Item;
+        _selectedCategory = args.Item == _selectedCategory ? null : args.Item;
+    }
+
+    private string GetRowClass(CategoryReportRow row, int index)
+    {
+        return row == _selectedCategory ? "selected-row" : "";
     }
 
     private string ChangeColorClass(decimal amount) => amount switch

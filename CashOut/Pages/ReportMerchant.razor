@@ -50,12 +50,14 @@
             </MudPaper>
         </div>
 
-        <MudTable Items="@_report.Merchants"
+        <MudTable T="MerchantReportRow"
+                  Items="@_report.Merchants"
                   Dense="true"
                   Hover="true"
                   Breakpoint="Breakpoint.Sm"
                   Elevation="0"
-                  row-click="OnMerchantRowClick"
+                  OnRowClick="OnMerchantRowClick"
+                  RowClassFunc="GetRowClass"
                   Class="my-4">
             <ColGroup>
                 <col style="width: 18%" />
@@ -194,6 +196,12 @@
         color: var(--mud-palette-text-secondary);
         font-size: 0.85em;
     }
+    ::deep .selected-row {
+        background-color: rgba(46, 125, 50, 0.08);
+    }
+    ::deep .selected-row:hover {
+        background-color: rgba(46, 125, 50, 0.12);
+    }
 </style>
 
 @code {
@@ -259,6 +267,11 @@
     private void OnMerchantRowClick(TableRowClickEventArgs<MerchantReportRow> args)
     {
         _selectedMerchant = args.Item;
+    }
+
+    private string GetRowClass(MerchantReportRow row, int index)
+    {
+        return row == _selectedMerchant ? "selected-row" : "";
     }
 
     private string ChangeColorClass(decimal amount) => amount switch
