@@ -46,6 +46,7 @@ public class CsvMappingProfile
     public string? CategoryColumn { get; set; }
 
     public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
     /// <summary>
     /// Returns all mapped column names (lower-cased) so callers can validate
