@@ -36,12 +36,14 @@
             </div>
         </div>
 
-        <MudTable Items="@_report.Sources"
+        <MudTable T="IncomeReportRow"
+                  Items="@_report.Sources"
                   Dense="true"
                   Hover="true"
                   Breakpoint="Breakpoint.Sm"
                   Elevation="0"
-                   row-click="OnSourceRowClick"
+                  OnRowClick="OnSourceRowClick"
+                  RowClassFunc="GetRowClass"
                   Class="mt-4">
             <ColGroup>
                 <col style="width: 28%" />
@@ -206,6 +208,12 @@
     ::deep .mud-table-root .right-align {
         text-align: right;
     }
+    ::deep .selected-row {
+        background-color: rgba(46, 125, 50, 0.08);
+    }
+    ::deep .selected-row:hover {
+        background-color: rgba(46, 125, 50, 0.12);
+    }
 </style>
 
 @code {
@@ -268,6 +276,11 @@
     private void OnSourceRowClick(TableRowClickEventArgs<IncomeReportRow> args)
     {
         _selectedSource = args.Item;
+    }
+
+    private string GetRowClass(IncomeReportRow row, int index)
+    {
+        return row == _selectedSource ? "selected-row" : "";
     }
 
     private string ChangeClass(decimal value) => value switch
