@@ -39,21 +39,50 @@ public class ReportService
     }
 
     /// <summary>
-    /// Returns income transactions for the year, excluding categories the user has hidden.
-    /// Amount < 0 means Credit > Debit (net inflow) in the current CashOut model.
+    /// Returns expense transactions for a specific month, excluding categories the user has hidden.
     /// </summary>
-    private async Task<List<Transaction>> GetIncomeTransactions(int year)
+    private async Task<List<Transaction>> GetExpenses(int year, int month)
     {
         var excluded = await GetExcludedCategories();
         if (excluded.Count == 0)
             return await _db.Transactions
-                .Include(t => t.Alias)
-                .Where(t => t.Date.Year == year && t.Amount < 0)
+                .Where(t => t.Date.Year == year && t.Date.Month == month && t.Amount > 0)
                 .ToListAsync();
         return await _db.Transactions
-            .Include(t => t.Alias)
-            .Where(t => t.Date.Year == year && t.Amount < 0 && !excluded.Contains(t.Category))
+            .Where(t => t.Date.Year == year && t.Date.Month == month && t.Amount > 0 && !excluded.Contains(t.Category))
             .ToListAsync();
+    }
+
+    /// <summary>
+    /// Returns expense transactions within a date range, excluding categories the user has hidden.
+    /// </summary>
+    private async Task<List<Transaction>> GetExpensesInRange(DateTime start, DateTime end)
+    {
+        var excluded = await GetExcludedCategories();
+        if (excluded.Count == 0)
+            return await _db.Transactions
+                .Where(t => t.Date >= DateOnly.FromDateTime(start) && t.Date <= DateOnly.FromDateTime(end) && t.Amount > 0)
+                .ToListAsync();
+        return await _db.Transactions
+            .Where(t => t.Date >= DateOnly.FromDateTime(start) && t.Date <= DateOnly.FromDateTime(end) && t.Amount > 0 && !excluded.Contains(t.Category))
+            .ToListAsync();
+    }
+
+    /// <summary>
+    /// Returns income transactions for the year (optionally filtered by month), excluding categories the user has hidden.
+    /// Amount < 0 means Credit > Debit (net inflow) in the current CashOut model.
+    /// </summary>
+    private async Task<List<Transaction>> GetIncomeTransactions(int year, int? month = null)
+    {
+        var excluded = await GetExcludedCategories();
+        var query = _db.Transactions
+            .Include(t => t.Alias)
+            .Where(t => t.Date.Year == year && t.Amount < 0);
+        if (month.HasValue)
+            query = query.Where(t => t.Date.Month == month.Value);
+        if (excluded.Count > 0)
+            query = query.Where(t => !excluded.Contains(t.Category));
+        return await query.ToListAsync();
     }
 
     // ── Monthly Totals ────────────────────────────────────────────────────
@@ -76,16 +105,28 @@ public class ReportService
 
     // ── Category Totals ───────────────────────────────────────────────────
 
-    public async Task<CategoryReportResult> GetByCategory(int? year = null)
+    public async Task<CategoryReportResult> GetByCategory(int? year = null, int? month = null)
     {
         var y = year ?? await _settings.GetOutputYear();
         var previousYear = y - 1;
 
-        var currentExpenses = await GetExpenses(y);
+        var currentExpenses = month.HasValue
+            ? await GetExpenses(y, month.Value)
+            : await GetExpenses(y);
         var previousExpenses = await GetExpenses(previousYear);
 
-        // Trailing 12-month window is the full selected year
-        var trailingExpenses = currentExpenses;
+        // Trailing 12-month window: full year when no month, rolling 12 months when month selected
+        List<Transaction> trailingExpenses;
+        if (month.HasValue)
+        {
+            var trailingStart = new DateTime(y - 1, month.Value, 1).AddMonths(1);
+            var trailingEnd = new DateTime(y, month.Value, 1).AddMonths(1).AddDays(-1);
+            trailingExpenses = await GetExpensesInRange(trailingStart, trailingEnd);
+        }
+        else
+        {
+            trailingExpenses = currentExpenses;
+        }
 
         var grandTotal = currentExpenses.Sum(t => t.Amount);
         var previousGrandTotal = previousExpenses.Sum(t => t.Amount);
@@ -234,7 +275,7 @@ public class ReportService
 
     // ── Top Merchants ─────────────────────────────────────────────────────
 
-    public async Task<MerchantReportResult> GetTopMerchants(int topN = 10, int? year = null)
+    public async Task<MerchantReportResult> GetTopMerchants(int topN = 10, int? year = null, int? month = null)
     {
         var y = year ?? await _settings.GetOutputYear();
         var previousYear = y - 1;
@@ -243,15 +284,25 @@ public class ReportService
         if (topN > 100) topN = 100;
 
         var excluded = await GetExcludedCategories();
-        var currentExpenses = excluded.Count == 0
-            ? await _db.Transactions
-                .Where(t => t.Date.Year == y && t.Amount > 0)
-                .Include(t => t.Alias)
-                .ToListAsync()
-            : await _db.Transactions
-                .Where(t => t.Date.Year == y && t.Amount > 0 && !excluded.Contains(t.Category))
-                .Include(t => t.Alias)
-                .ToListAsync();
+        var currentExpenses = month.HasValue
+            ? (excluded.Count == 0
+                ? await _db.Transactions
+                    .Where(t => t.Date.Year == y && t.Date.Month == month.Value && t.Amount > 0)
+                    .Include(t => t.Alias)
+                    .ToListAsync()
+                : await _db.Transactions
+                    .Where(t => t.Date.Year == y && t.Date.Month == month.Value && t.Amount > 0 && !excluded.Contains(t.Category))
+                    .Include(t => t.Alias)
+                    .ToListAsync())
+            : (excluded.Count == 0
+                ? await _db.Transactions
+                    .Where(t => t.Date.Year == y && t.Amount > 0)
+                    .Include(t => t.Alias)
+                    .ToListAsync()
+                : await _db.Transactions
+                    .Where(t => t.Date.Year == y && t.Amount > 0 && !excluded.Contains(t.Category))
+                    .Include(t => t.Alias)
+                    .ToListAsync());
 
         var previousExpenses = excluded.Count == 0
             ? await _db.Transactions
@@ -392,13 +443,13 @@ public class ReportService
 
     // ── Income ────────────────────────────────────────────────────────────
 
-    public async Task<IncomeReportResult> GetIncome(int? year = null)
+    public async Task<IncomeReportResult> GetIncome(int? year = null, int? month = null)
     {
         var y = year ?? await _settings.GetOutputYear();
         var previousYear = y - 1;
 
-        var currentIncome = await GetIncomeTransactions(y);
-        var previousIncome = await GetIncomeTransactions(previousYear);
+        var currentIncome = await GetIncomeTransactions(y, month);
+        var previousIncome = await GetIncomeTransactions(previousYear, null);
 
         var totalIncome = currentIncome.Sum(t => Math.Abs(t.Amount));
         var previousTotalIncome = previousIncome.Sum(t => Math.Abs(t.Amount));
@@ -500,9 +551,9 @@ public class ReportService
             sources);
     }
 
-    public async Task<byte[]> IncomeCsv(int? year = null)
+    public async Task<byte[]> IncomeCsv(int? year = null, int? month = null)
     {
-        var result = await GetIncome(year);
+        var result = await GetIncome(year, month);
         var sb = new StringBuilder("Source,IsMapped,AliasId,RawBusinessId,NormalizedName,PrimaryCategory,Total,PctOfIncome,Transactions,AvgAmount,PreviousTotal,PreviousTransactions,ChangeAmount,ChangePercent\n");
         foreach (var r in result.Sources)
         {
@@ -688,7 +739,7 @@ public class ReportService
 
     // ── Executive Summary ─────────────────────────────────────────────────
 
-    public async Task<ExecutiveSummaryResult> GetExecutiveSummary(int? year = null)
+    public async Task<ExecutiveSummaryResult> GetExecutiveSummary(int? year = null, int? month = null)
     {
         var y = year ?? await _settings.GetOutputYear();
 
@@ -703,11 +754,19 @@ public class ReportService
                 .Include(t => t.Alias)
                 .ToListAsync();
 
-        var latestWithData = transactions
-            .OrderByDescending(t => t.Date.Month)
-            .Select(t => t.Date.Month)
-            .FirstOrDefault();
-        var dashMonth = latestWithData > 0 ? latestWithData : 12;
+        int dashMonth;
+        if (month.HasValue)
+        {
+            dashMonth = month.Value;
+        }
+        else
+        {
+            var latestWithData = transactions
+                .OrderByDescending(t => t.Date.Month)
+                .Select(t => t.Date.Month)
+                .FirstOrDefault();
+            dashMonth = latestWithData > 0 ? latestWithData : 12;
+        }
 
         var prevYear = y;
         var prevMonth = dashMonth - 1;
@@ -942,9 +1001,9 @@ public class ReportService
             accountSummary);
     }
 
-    public async Task<byte[]> ExecutiveSummaryCsv(int? year = null)
+    public async Task<byte[]> ExecutiveSummaryCsv(int? year = null, int? month = null)
     {
-        var result = await GetExecutiveSummary(year);
+        var result = await GetExecutiveSummary(year, month);
         var sb = new StringBuilder();
 
         sb.AppendLine("Section,Metric,Value");
@@ -1048,18 +1107,18 @@ public class ReportService
         return Encoding.UTF8.GetBytes(sb.ToString());
     }
 
-    public async Task<byte[]> CategoryCsv(int? year = null)
+    public async Task<byte[]> CategoryCsv(int? year = null, int? month = null)
     {
-        var result = await GetByCategory(year);
+        var result = await GetByCategory(year, month);
         var sb = new StringBuilder("Category,Total,PctOfSpend,Transactions,TwelveMonthAverage,TwelveMonthTotal,TwelveMonthTransactions,VsTwelveMonthAverageAmount,VsTwelveMonthAveragePercent,PreviousTotal,PreviousTransactions,ChangeAmount,ChangePercent\n");
         foreach (var r in result.Categories)
             sb.AppendLine($"{Esc(r.Category)},{r.Total},{r.PctOfSpend},{r.Count},{r.TwelveMonthAverage},{r.TwelveMonthTotal},{r.TwelveMonthCount},{r.VsTwelveMonthAverageAmount},{r.VsTwelveMonthAveragePercent},{r.PreviousTotal},{r.PreviousCount},{r.ChangeAmount},{r.ChangePercent}");
         return Encoding.UTF8.GetBytes(sb.ToString());
     }
 
-    public async Task<byte[]> MerchantsCsv(int topN = 10, int? year = null)
+    public async Task<byte[]> MerchantsCsv(int topN = 10, int? year = null, int? month = null)
     {
-        var result = await GetTopMerchants(topN, year);
+        var result = await GetTopMerchants(topN, year, month);
         var sb = new StringBuilder("Merchant,IsMapped,AliasId,RawBusinessId,NormalizedName,PrimaryCategory,Total,PctOfSpend,Transactions,AvgPerVisit,PreviousTotal,PreviousTransactions,ChangeAmount,ChangePercent\n");
         foreach (var r in result.Merchants)
             sb.AppendLine($"{Esc(r.Name)},{r.IsMapped},{r.AliasId},{r.RawBusinessId},{Esc(r.NormalizedName)},{Esc(r.PrimaryCategory)},{r.Total},{r.PctOfSpend},{r.Count},{r.AvgPerVisit:F2},{r.PreviousTotal},{r.PreviousCount},{r.ChangeAmount},{r.ChangePercent}");

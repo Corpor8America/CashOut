@@ -24,20 +24,20 @@ public class ReportsController : ControllerBase
 
     [HttpGet("category")]
     public async Task<IActionResult> Category(
-        [FromQuery] int? year, [FromQuery] string? format)
+        [FromQuery] int? year, [FromQuery] int? month, [FromQuery] string? format)
     {
         if (format == "csv")
-            return File(await _reports.CategoryCsv(year), "text/csv", "category.csv");
-        return Ok(await _reports.GetByCategory(year));
+            return File(await _reports.CategoryCsv(year, month), "text/csv", "category.csv");
+        return Ok(await _reports.GetByCategory(year, month));
     }
 
     [HttpGet("income")]
     public async Task<IActionResult> Income(
-        [FromQuery] int? year, [FromQuery] string? format)
+        [FromQuery] int? year, [FromQuery] int? month, [FromQuery] string? format)
     {
         if (format == "csv")
-            return File(await _reports.IncomeCsv(year), "text/csv", "income.csv");
-        return Ok(await _reports.GetIncome(year));
+            return File(await _reports.IncomeCsv(year, month), "text/csv", "income.csv");
+        return Ok(await _reports.GetIncome(year, month));
     }
 
     [HttpGet("pivot")]
@@ -53,11 +53,12 @@ public class ReportsController : ControllerBase
     [HttpGet("merchants")]
     public async Task<IActionResult> Merchants(
         [FromQuery] int topN = 10, [FromQuery] int? year = null,
+        [FromQuery] int? month = null,
         [FromQuery] string? format = null)
     {
         if (format == "csv")
-            return File(await _reports.MerchantsCsv(topN, year), "text/csv", "merchants.csv");
-        return Ok(await _reports.GetTopMerchants(topN, year));
+            return File(await _reports.MerchantsCsv(topN, year, month), "text/csv", "merchants.csv");
+        return Ok(await _reports.GetTopMerchants(topN, year, month));
     }
 
     [HttpGet("largest")]
@@ -72,11 +73,11 @@ public class ReportsController : ControllerBase
 
     [HttpGet("summary")]
     public async Task<IActionResult> Summary(
-        [FromQuery] int? year, [FromQuery] string? format)
+        [FromQuery] int? year, [FromQuery] int? month, [FromQuery] string? format)
     {
         if (format == "csv")
-            return File(await _reports.ExecutiveSummaryCsv(year), "text/csv", "executive-summary.csv");
-        return Ok(await _reports.GetExecutiveSummary(year));
+            return File(await _reports.ExecutiveSummaryCsv(year, month), "text/csv", "executive-summary.csv");
+        return Ok(await _reports.GetExecutiveSummary(year, month));
     }
 
     [HttpGet("cashflow")]

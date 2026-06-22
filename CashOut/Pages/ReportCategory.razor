@@ -5,18 +5,27 @@
              Year="_year"
              AvailableYears="_availableYears"
              OnYearChanged="OnYearChanged"
+             Month="_month"
+             OnMonthChanged="OnMonthChanged"
+             ShowMonthPicker="true"
              Loading="_loading"
              Error="@_error"
-             ExportHref="@($"api/reports/category?year={_year}&format=csv")">
+             ExportHref="@ExportUrl">
 
     @if (_report is null || _report.Categories.Count == 0)
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-            No category spending found for @_year.
+            No category spending found for @(_month.HasValue ? $"{CashOut.Helpers.DateHelper.MonthName(_month.Value)} {_year}" : _year.ToString()).
         </MudAlert>
     }
     else
     {
+        @if (_month.HasValue)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                Showing data for @CashOut.Helpers.DateHelper.MonthName(_month.Value) @_year only. Previous year total reflects full-year context; trailing 12-month average is the rolling window ending with this month.
+            </MudText>
+        }
         <div class="report-summary-grid">
             <MudPaper Class="metric-panel pa-4" Elevation="1">
                 <MudText Typo="Typo.body2" Color="Color.Secondary">Total Spend</MudText>
@@ -58,8 +67,18 @@
                 <MudTh><MudTableSortLabel SortBy="new Func<CategoryReportRow, object>(r => r.Category)">Category</MudTableSortLabel></MudTh>
                 <MudTh Style="text-align:right"><MudTableSortLabel InitialDirection="SortDirection.Descending" SortBy="new Func<CategoryReportRow, object>(r => r.Total)">Total</MudTableSortLabel></MudTh>
                 <MudTh Style="text-align:right">% of Spend</MudTh>
-                <MudTh Style="text-align:right">12-Month Avg</MudTh>
-                <MudTh Style="text-align:right">Vs 12-Month Avg</MudTh>
+                <MudTh Style="text-align:right">
+                    12-Mo Trailing Spend
+                    <MudTooltip Text="Average monthly spend for this category over the trailing 12-month window. When no month is selected, this is the full year / 12. When a month is selected, it uses the rolling 12 months ending with that month.">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="ml-1" Style="vertical-align:middle; opacity:0.6" />
+                    </MudTooltip>
+                </MudTh>
+                <MudTh Style="text-align:right">
+                    Vs Trailing Avg
+                    <MudTooltip Text="How this category's current monthly average compares to the trailing 12-month average. Positive = spending above the trailing norm. Negative = spending below.">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="ml-1" Style="vertical-align:middle; opacity:0.6" />
+                    </MudTooltip>
+                </MudTh>
                 <MudTh Style="text-align:right">Transactions</MudTh>
                 <MudTh Style="text-align:right">@_report.PreviousYear</MudTh>
                 <MudTh Style="text-align:right">Change</MudTh>
@@ -68,8 +87,8 @@
                 <MudTd DataLabel="Category">@context.Category</MudTd>
                 <MudTd DataLabel="Total" Style="text-align:right">@context.Total.ToString("C")</MudTd>
                 <MudTd DataLabel="%" Style="text-align:right">@context.PctOfSpend.ToString("F1")%</MudTd>
-                <MudTd DataLabel="12-Mo Avg" Style="text-align:right">@context.TwelveMonthAverage.ToString("C")</MudTd>
-                <MudTd DataLabel="Vs Avg" Style="text-align:right" Class="@VsAverageColorClass(context.VsTwelveMonthAverageAmount)">
+                <MudTd DataLabel="12-Mo Trailing Spend" Style="text-align:right">@context.TwelveMonthAverage.ToString("C")</MudTd>
+                <MudTd DataLabel="Vs Trailing Avg" Style="text-align:right" Class="@VsAverageColorClass(context.VsTwelveMonthAverageAmount)">
                     @(context.VsTwelveMonthAverageAmount.ToString("C"))
                     (@context.VsTwelveMonthAveragePercent.ToString("F1")%)
                 </MudTd>
@@ -167,6 +186,7 @@
 
 @code {
     private int _year = DateTime.Now.Year;
+    private int? _month;
     private List<int> _availableYears = new() { DateTime.Now.Year };
     private bool _loading;
     private string? _error;
@@ -199,8 +219,20 @@
     private async Task OnYearChanged(int year)
     {
         _year = year;
+        _month = null;
         await LoadReport();
     }
+
+    private async Task OnMonthChanged(int? month)
+    {
+        _month = month;
+        await LoadReport();
+    }
+
+    private string ExportUrl =>
+        _month.HasValue
+            ? $"api/reports/category?year={_year}&month={_month}&format=csv"
+            : $"api/reports/category?year={_year}&format=csv";
 
     private async Task LoadReport()
     {
@@ -208,8 +240,10 @@
         _error = null;
         try
         {
-            _report = await Http.GetFromJsonAsync<CategoryReportResult>(
-                $"api/reports/category?year={_year}");
+            var url = _month.HasValue
+                ? $"api/reports/category?year={_year}&month={_month}"
+                : $"api/reports/category?year={_year}";
+            _report = await Http.GetFromJsonAsync<CategoryReportResult>(url);
             _selectedCategory = _report?.Categories.FirstOrDefault();
         }
         catch (Exception ex)

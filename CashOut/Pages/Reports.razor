@@ -5,9 +5,12 @@
              Year="_year"
              AvailableYears="_availableYears"
              OnYearChanged="OnYearChanged"
+             Month="_month"
+             OnMonthChanged="OnMonthChanged"
+             ShowMonthPicker="true"
              Loading="_loading"
              Error="@_error"
-             ExportHref="@($"api/reports/summary?year={_year}&format=csv")">
+             ExportHref="@ExportUrl">
     @if (_summary is null)
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
@@ -354,6 +357,7 @@
 
 @code {
     private int _year = DateTime.Now.Year;
+    private int? _month;
     private List<int> _availableYears = new() { DateTime.Now.Year };
     private bool _loading;
     private string? _error;
@@ -385,8 +389,20 @@
     private async Task OnYearChanged(int year)
     {
         _year = year;
+        _month = null;
         await LoadSummary();
     }
+
+    private async Task OnMonthChanged(int? month)
+    {
+        _month = month;
+        await LoadSummary();
+    }
+
+    private string ExportUrl =>
+        _month.HasValue
+            ? $"api/reports/summary?year={_year}&month={_month}&format=csv"
+            : $"api/reports/summary?year={_year}&format=csv";
 
     private async Task LoadSummary()
     {
@@ -394,8 +410,10 @@
         _error = null;
         try
         {
-            _summary = await Http.GetFromJsonAsync<ExecutiveSummaryResult>(
-                $"api/reports/summary?year={_year}");
+            var url = _month.HasValue
+                ? $"api/reports/summary?year={_year}&month={_month}"
+                : $"api/reports/summary?year={_year}";
+            _summary = await Http.GetFromJsonAsync<ExecutiveSummaryResult>(url);
         }
         catch (Exception ex)
         {

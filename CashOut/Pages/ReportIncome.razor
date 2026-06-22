@@ -5,17 +5,26 @@
              Year="_year"
              AvailableYears="_availableYears"
              OnYearChanged="OnYearChanged"
+             Month="_month"
+             OnMonthChanged="OnMonthChanged"
+             ShowMonthPicker="true"
              Loading="_loading"
              Error="@_error"
-             ExportHref="@($"api/reports/income?year={_year}&format=csv")">
+             ExportHref="@ExportUrl">
     @if (_report is null || _report.Sources.Count == 0)
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-            No income found for @_year.
+            No income found for @(_month.HasValue ? $"{CashOut.Helpers.DateHelper.MonthName(_month.Value)} {_year}" : _year.ToString()).
         </MudAlert>
     }
     else
     {
+        @if (_month.HasValue)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                Showing data for @CashOut.Helpers.DateHelper.MonthName(_month.Value) @_year only. Previous year total reflects full-year context.
+            </MudText>
+        }
         <div class="report-summary-grid">
             <div class="metric-panel">
                 <div class="metric-label">Total Income</div>
@@ -218,6 +227,7 @@
 
 @code {
     private int _year = DateTime.Now.Year;
+    private int? _month;
     private List<int> _availableYears = new() { DateTime.Now.Year };
     private bool _loading;
     private string? _error;
@@ -250,8 +260,20 @@
     private async Task OnYearChanged(int year)
     {
         _year = year;
+        _month = null;
         await LoadReport();
     }
+
+    private async Task OnMonthChanged(int? month)
+    {
+        _month = month;
+        await LoadReport();
+    }
+
+    private string ExportUrl =>
+        _month.HasValue
+            ? $"api/reports/income?year={_year}&month={_month}&format=csv"
+            : $"api/reports/income?year={_year}&format=csv";
 
     private async Task LoadReport()
     {
@@ -259,8 +281,10 @@
         _error = null;
         try
         {
-            _report = await Http.GetFromJsonAsync<IncomeReportResult>(
-                $"api/reports/income?year={_year}");
+            var url = _month.HasValue
+                ? $"api/reports/income?year={_year}&month={_month}"
+                : $"api/reports/income?year={_year}";
+            _report = await Http.GetFromJsonAsync<IncomeReportResult>(url);
             _selectedSource = _report?.Sources.FirstOrDefault();
         }
         catch (Exception ex)

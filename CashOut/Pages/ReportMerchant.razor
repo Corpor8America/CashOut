@@ -5,9 +5,12 @@
              Year="_year"
              AvailableYears="_availableYears"
              OnYearChanged="OnYearChanged"
+             Month="_month"
+             OnMonthChanged="OnMonthChanged"
+             ShowMonthPicker="true"
              Loading="_loading"
              Error="@_error"
-             ExportHref="@($"api/reports/merchants?year={_year}&topN={_topN}&format=csv")">
+             ExportHref="@ExportUrl">
 
     <MudPaper Class="pa-4 mb-4" Elevation="0">
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3">
@@ -30,11 +33,17 @@
     @if (_report is null || _report.Merchants.Count == 0)
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-            No merchant spending found for @_year.
+            No merchant spending found for @(_month.HasValue ? $"{CashOut.Helpers.DateHelper.MonthName(_month.Value)} {_year}" : _year.ToString()).
         </MudAlert>
     }
     else
     {
+        @if (_month.HasValue)
+        {
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                Showing data for @CashOut.Helpers.DateHelper.MonthName(_month.Value) @_year only. Previous year total reflects full-year context.
+            </MudText>
+        }
         <div class="report-summary-grid">
             <MudPaper Class="metric-panel pa-4" Elevation="1">
                 <MudText Typo="Typo.body2" Color="Color.Secondary">Total Spend</MudText>
@@ -206,6 +215,7 @@
 
 @code {
     private int _year = DateTime.Now.Year;
+    private int? _month;
     private int _topN = 10;
     private List<int> _availableYears = new() { DateTime.Now.Year };
     private bool _loading;
@@ -239,8 +249,20 @@
     private async Task OnYearChanged(int year)
     {
         _year = year;
+        _month = null;
         await LoadReport();
     }
+
+    private async Task OnMonthChanged(int? month)
+    {
+        _month = month;
+        await LoadReport();
+    }
+
+    private string ExportUrl =>
+        _month.HasValue
+            ? $"api/reports/merchants?year={_year}&topN={_topN}&month={_month}&format=csv"
+            : $"api/reports/merchants?year={_year}&topN={_topN}&format=csv";
 
     private async Task LoadReport()
     {
@@ -250,8 +272,10 @@
         {
             var topN = Math.Clamp(_topN, 1, 100);
             _topN = topN;
-            _report = await Http.GetFromJsonAsync<MerchantReportResult>(
-                $"api/reports/merchants?year={_year}&topN={topN}");
+            var url = _month.HasValue
+                ? $"api/reports/merchants?year={_year}&topN={topN}&month={_month}"
+                : $"api/reports/merchants?year={_year}&topN={topN}";
+            _report = await Http.GetFromJsonAsync<MerchantReportResult>(url);
             _selectedMerchant = _report?.Merchants.FirstOrDefault();
         }
         catch (Exception ex)
