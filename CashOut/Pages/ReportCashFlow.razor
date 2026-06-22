@@ -5,6 +5,9 @@
              Year="_year"
              AvailableYears="_availableYears"
              OnYearChanged="OnYearChanged"
+             Month="_month"
+             OnMonthChanged="OnMonthCashFlowChanged"
+             ShowMonthPicker="true"
              Loading="_loading"
              Error="@_error"
              ExportHref="@($"api/reports/cashflow?year={_year}&format=csv")">
@@ -65,7 +68,12 @@
                 <MudTh Class="right-align">Income</MudTh>
                 <MudTh Class="right-align">Expenses</MudTh>
                 <MudTh Class="right-align">Net</MudTh>
-                <MudTh Class="right-align">Rolling Avg</MudTh>
+                <MudTh Class="right-align">
+                    3-Mo Trailing Net
+                    <MudTooltip Text="Trailing 3-month average of net cash flow (Income − Expenses) for this row and up to two prior months.">
+                        <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Small" Class="ml-1" Style="vertical-align:middle; opacity:0.6" />
+                    </MudTooltip>
+                </MudTh>
                 <MudTh Class="right-align">Prev Year Net</MudTh>
                 <MudTh Class="right-align">Change</MudTh>
                 <MudTh Class="right-align">Txns</MudTh>
@@ -75,7 +83,7 @@
                 <MudTd DataLabel="Income" Class="right-align income-value">@month.Income.ToString("C")</MudTd>
                 <MudTd DataLabel="Expenses" Class="right-align expense-value">@month.Expenses.ToString("C")</MudTd>
                 <MudTd DataLabel="Net" Class="@NetAlignClass(month.Net)">@month.Net.ToString("C")</MudTd>
-                <MudTd DataLabel="Rolling Avg" Class="right-align">@month.RollingAverageNet.ToString("C")</MudTd>
+                <MudTd DataLabel="3-Mo Trailing Net" Class="right-align">@month.RollingAverageNet.ToString("C")</MudTd>
                 <MudTd DataLabel="Prev Year Net" Class="right-align">@month.PreviousYearNet.ToString("C")</MudTd>
                 <MudTd DataLabel="Change" Class="@ChangeAlignClass(month.ChangeAmount)">
                     @(month.ChangeAmount >= 0 ? "+" : "")@month.ChangeAmount.ToString("C")
@@ -202,6 +210,7 @@
 
 @code {
     private int _year = DateTime.Now.Year;
+    private int? _month;
     private List<int> _availableYears = new() { DateTime.Now.Year };
     private bool _loading;
     private string? _error;
@@ -234,7 +243,23 @@
     private async Task OnYearChanged(int year)
     {
         _year = year;
+        _month = null;
         await LoadReport();
+    }
+
+    private void OnMonthCashFlowChanged(int? month)
+    {
+        _month = month;
+        if (month.HasValue && _report != null)
+        {
+            _selectedMonth = _report.Months.FirstOrDefault(m => m.Month.EndsWith($"-{month.Value:D2}"));
+        }
+        else if (!month.HasValue && _report != null)
+        {
+            _selectedMonth = _report.Months
+                .LastOrDefault(m => m.TransactionCount > 0)
+                ?? _report.Months.FirstOrDefault();
+        }
     }
 
     private async Task LoadReport()

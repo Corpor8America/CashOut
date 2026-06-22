@@ -1293,4 +1293,185 @@ public class ReportServiceTests
         Assert.IsFalse(result.Categories.Contains("FOOD"));
         Assert.AreEqual("TRAVEL", result.Categories.Single());
     }
+
+    // ── Month Filter ──────────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetByCategory_MonthFilter_ReturnsOnlyThatMonthsTransactions()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 15, 100m, category: "FOOD"),
+            MakeTxn("t2", 2025, 2, 10, 50m, category: "FOOD"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetByCategory_MonthFilter_ReturnsOnlyThatMonthsTransactions), txns);
+
+        var result = await svc.GetByCategory(2025, 1);
+
+        Assert.AreEqual(100m, result.TotalSpend);
+        var food = result.Categories.Single(c => c.Category == "FOOD");
+        Assert.AreEqual(1, food.Transactions.Count);
+        Assert.AreEqual("t1", food.Transactions[0].TransactionId);
+    }
+
+    [TestMethod]
+    public async Task GetByCategory_MonthFilter_PreviousYearTotalStillUsesFullYear()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 15, 100m, category: "FOOD"),
+            MakeTxn("t2", 2025, 1, 20, 50m, category: "FOOD"),
+            MakeTxn("t3", 2024, 7, 1, 200m, category: "FOOD"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetByCategory_MonthFilter_PreviousYearTotalStillUsesFullYear), txns);
+
+        var result = await svc.GetByCategory(2025, 1);
+
+        var food = result.Categories.Single(c => c.Category == "FOOD");
+        Assert.AreEqual(200m, food.PreviousTotal);
+    }
+
+    [TestMethod]
+    public async Task GetByCategory_MonthFilter_TrailingAverageUsesRolling12Months()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 1, 120m, category: "FOOD"),
+            MakeTxn("t2", 2025, 2, 1, 60m, category: "FOOD"),
+            MakeTxn("t3", 2024, 2, 1, 120m, category: "FOOD"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetByCategory_MonthFilter_TrailingAverageUsesRolling12Months), txns);
+
+        var result = await svc.GetByCategory(2025, 1);
+
+        var food = result.Categories.Single(c => c.Category == "FOOD");
+        // Trailing 12 months: Feb 2024 - Jan 2025 -> includes t3 (120) + t1 (120) = 240 / 12 = 20
+        Assert.AreEqual(240m, food.TwelveMonthTotal);
+        Assert.AreEqual(20m, food.TwelveMonthAverage);
+    }
+
+    [TestMethod]
+    public async Task GetByCategory_MonthFilter_NoDataInMonth_ReturnsEmpty()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 3, 1, 100m, category: "FOOD"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetByCategory_MonthFilter_NoDataInMonth_ReturnsEmpty), txns);
+
+        var result = await svc.GetByCategory(2025, 1);
+
+        Assert.AreEqual(0m, result.TotalSpend);
+        Assert.AreEqual(0, result.Categories.Count);
+    }
+
+    [TestMethod]
+    public async Task GetTopMerchants_MonthFilter_ReturnsOnlyThatMonthsMerchants()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 15, 100m, name: "Store A"),
+            MakeTxn("t2", 2025, 2, 10, 50m, name: "Store B"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetTopMerchants_MonthFilter_ReturnsOnlyThatMonthsMerchants), txns);
+
+        var result = await svc.GetTopMerchants(10, 2025, 1);
+
+        Assert.AreEqual(1, result.Merchants.Count);
+        Assert.AreEqual("Store A", result.Merchants[0].Name);
+    }
+
+    [TestMethod]
+    public async Task GetTopMerchants_MonthFilter_PreviousYearTotalStillUsesFullYear()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 15, 100m, name: "Store A"),
+            MakeTxn("t2", 2025, 2, 10, 50m, name: "Store A"),
+            MakeTxn("t3", 2024, 6, 1, 200m, name: "Store A"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetTopMerchants_MonthFilter_PreviousYearTotalStillUsesFullYear), txns);
+
+        var result = await svc.GetTopMerchants(10, 2025, 1);
+
+        var store = result.Merchants.Single(m => m.MerchantKey == "name:Store A");
+        Assert.AreEqual(200m, store.PreviousTotal);
+    }
+
+    [TestMethod]
+    public async Task GetIncome_MonthFilter_ReturnsOnlyThatMonthsSources()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 15, -1000m, name: "Employer"),
+            MakeTxn("t2", 2025, 3, 10, -500m, name: "Employer"),
+        };
+        foreach (var t in txns) t.NormalizedName = "employer";
+        var (_, svc) = await BuildAsync(
+            nameof(GetIncome_MonthFilter_ReturnsOnlyThatMonthsSources), txns);
+
+        var result = await svc.GetIncome(2025, 1);
+
+        Assert.AreEqual(1000m, result.TotalIncome);
+        Assert.AreEqual(1, result.Sources[0].Count);
+    }
+
+    [TestMethod]
+    public async Task GetIncome_MonthFilter_PreviousYearTotalStillUsesFullYear()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 1, 15, -1000m, name: "Employer"),
+            MakeTxn("t2", 2025, 2, 10, -500m, name: "Employer"),
+            MakeTxn("t3", 2024, 6, 1, -300m, name: "Employer"),
+        };
+        foreach (var t in txns) t.NormalizedName = "employer";
+        var (_, svc) = await BuildAsync(
+            nameof(GetIncome_MonthFilter_PreviousYearTotalStillUsesFullYear), txns);
+
+        var result = await svc.GetIncome(2025, 1);
+
+        var source = result.Sources.Single(s => s.SourceKey == "raw:employer");
+        Assert.AreEqual(300m, source.PreviousTotal);
+    }
+
+    [TestMethod]
+    public async Task GetExecutiveSummary_MonthParameter_OverridesAutoDetect()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 3, 15, 100m),
+            MakeTxn("t2", 2025, 6, 1, 50m),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetExecutiveSummary_MonthParameter_OverridesAutoDetect), txns);
+
+        var result = await svc.GetExecutiveSummary(2025, 3);
+
+        Assert.AreEqual(3, result.Month);
+        Assert.AreEqual("2025-03", result.MonthKey);
+    }
+
+    [TestMethod]
+    public async Task GetExecutiveSummary_MonthParameter_TopCategoriesReflectThatMonth()
+    {
+        var txns = new[]
+        {
+            MakeTxn("t1", 2025, 3, 15, 100m, category: "FOOD"),
+            MakeTxn("t2", 2025, 6, 1, 200m, category: "TRAVEL"),
+        };
+        var (_, svc) = await BuildAsync(
+            nameof(GetExecutiveSummary_MonthParameter_TopCategoriesReflectThatMonth), txns);
+
+        var result = await svc.GetExecutiveSummary(2025, 3);
+
+        Assert.AreEqual(1, result.TopCategories.Count);
+        Assert.AreEqual("FOOD", result.TopCategories[0].Category);
+    }
 }

@@ -16,6 +16,25 @@
                 <MudSelectItem Value="@y">@y</MudSelectItem>
             }
         </MudSelect>
+        @if (ShowMonthPicker)
+        {
+            <MudSelect T="int?" Label="Month" Value="Month" ValueChanged="OnMonthChanged"
+                       Dense="true" Margin="Margin.Dense" Style="width:130px" Clearable="true">
+                <MudSelectItem T="int?" Value="@((int?)null)">All months</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)1)">January</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)2)">February</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)3)">March</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)4)">April</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)5)">May</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)6)">June</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)7)">July</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)8)">August</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)9)">September</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)10)">October</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)11)">November</MudSelectItem>
+                <MudSelectItem T="int?" Value="@((int?)12)">December</MudSelectItem>
+            </MudSelect>
+        }
         @if (!string.IsNullOrEmpty(ExportHref))
         {
             <MudSpacer />
@@ -58,4 +77,7 @@ else
     [Parameter] public string? Error { get; set; }
     [Parameter] public string? ExportHref { get; set; }
     [Parameter] public bool IsStub { get; set; }
+    [Parameter] public int? Month { get; set; }
+    [Parameter] public EventCallback<int?> OnMonthChanged { get; set; }
+    [Parameter] public bool ShowMonthPicker { get; set; }
 }
