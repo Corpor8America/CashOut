@@ -194,9 +194,17 @@ public class PlaidService
                 $"[PlaidService] RemoveItem: Plaid revocation failed (will still delete locally): {ex.Message}");
         }
 
-        IQueryable<LinkedAccount> toRemove = string.IsNullOrEmpty(itemId)
-            ? _db.LinkedAccounts.Where(a => a.AccessToken == encryptedAccessToken)
-            : _db.LinkedAccounts.Where(a => a.ItemId == itemId);
+        IQueryable<LinkedAccount> toRemove;
+        if (!string.IsNullOrEmpty(itemId))
+        {
+            toRemove = _db.LinkedAccounts.Where(a => a.ItemId == itemId);
+        }
+        else
+        {
+            Console.Error.WriteLine(
+                "[PlaidService] RemoveItem: ItemId is empty — cannot reliably identify accounts by encrypted token.");
+            toRemove = _db.LinkedAccounts.Where(a => false);
+        }
 
         _db.LinkedAccounts.RemoveRange(toRemove);
         await _db.SaveChangesAsync();

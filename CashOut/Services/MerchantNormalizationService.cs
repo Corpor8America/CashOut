@@ -35,6 +35,7 @@ public class MerchantNormalizationService
 
         var patterns = await _db.AliasPatterns
             .Include(p => p.Alias)
+            .AsNoTracking()
             .OrderBy(p => p.AliasId)
             .ThenBy(p => p.Id)
             .ToListAsync();
@@ -183,16 +184,12 @@ public class MerchantNormalizationService
         {
             AliasName = aliasName.Trim(),
             Category = category,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
         _db.BusinessAliases.Add(alias);
         await _db.SaveChangesAsync();
-
-        // A new alias has no patterns yet so RetroactivelyMap will match nothing,
-        // but we run it here so callers don't have to remember to do it. The real
-        // matching happens after the first AddPattern call.
-        var matched = await RetroactivelyMap();
-        return (alias, matched);
+        return (alias, 0);
     }
 
     public async Task UpdateAliasName(int aliasId, string aliasName)
@@ -204,6 +201,7 @@ public class MerchantNormalizationService
         var alias = await _db.BusinessAliases.FindAsync(aliasId)
             ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
         alias.AliasName = trimmed;
+        alias.UpdatedAt = DateTime.UtcNow;
 
         // Propagate new name to all matched transactions
         var transactions = await _db.Transactions
@@ -223,6 +221,7 @@ public class MerchantNormalizationService
         var alias = await _db.BusinessAliases.FindAsync(aliasId)
             ?? throw new KeyNotFoundException($"Alias {aliasId} not found.");
         alias.Category = category;
+        alias.UpdatedAt = DateTime.UtcNow;
 
         // Propagate new effective category to all matched transactions
         var effectiveCategory = EffectiveCategory(alias);
@@ -285,7 +284,7 @@ public class MerchantNormalizationService
         // Find RawBusiness entities mapped to this alias and unmap them
         var rawBusinessMapsToUnmap = await _db.RawBusinessAliasMaps
             .Where(m => m.AliasId == aliasId)
-            .Include(m => m.RawBusiness) // Include RawBusiness to update IsMapped flag
+            .Include(m => m.RawBusiness)
             .ToListAsync();
 
         foreach (var map in rawBusinessMapsToUnmap)
@@ -305,20 +304,16 @@ public class MerchantNormalizationService
             .ToListAsync();
 
         _db.BusinessAliases.Remove(alias);
-        await _db.SaveChangesAsync(); // Save changes for RawBusiness and RawBusinessAliasMaps
 
         foreach (var txn in affected)
         {
             txn.AliasId = null;
             txn.Alias = null;
-            // IMPORTANT: Do NOT set txn.RawBusinessId = null here.
-            // We want to keep the link to the RawBusiness if it exists.
             txn.Name = txn.RawName;
-            txn.UpdatedAt = DateTime.UtcNow; // Update timestamp
+            txn.UpdatedAt = DateTime.UtcNow;
         }
 
         await ReprocessUnaliasedTransactions(affected);
-        await _db.SaveChangesAsync();
         await CleanupRawBusinesses();
         await _db.SaveChangesAsync();
         return affected.Count;

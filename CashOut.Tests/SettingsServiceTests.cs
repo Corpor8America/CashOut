@@ -37,7 +37,7 @@ public class SettingsServiceTests
     }
 
     [TestMethod]
-    public Task GetPlaidEnvironment_DefaultsToSandbox_WhenMissing()
+    public void GetPlaidEnvironment_DefaultsToSandbox_WhenMissing()
     {
         var db = BuildDb(nameof(GetPlaidEnvironment_DefaultsToSandbox_WhenMissing));
         var svc = new SettingsService(db, BuildConfig(new Dictionary<string, string?>() { { "PLAID_ENV", null } }));
@@ -45,7 +45,6 @@ public class SettingsServiceTests
         var env = svc.GetPlaidEnvironment();
 
         Assert.AreEqual("sandbox", env);
-        return Task.CompletedTask;
     }
 
     [TestMethod]
