@@ -754,39 +754,51 @@ public class ReportService
                 .Include(t => t.Alias)
                 .ToListAsync();
 
+        List<Transaction> currentMonthTxns;
+        List<Transaction> prevMonthTxns;
+        string monthLabel;
         int dashMonth;
+
         if (month.HasValue)
         {
             dashMonth = month.Value;
+            var prevYear = y;
+            var prevMonth = dashMonth - 1;
+            if (prevMonth < 1)
+            {
+                prevMonth = 12;
+                prevYear = y - 1;
+            }
+
+            currentMonthTxns = transactions
+                .Where(t => t.Date.Month == dashMonth)
+                .ToList();
+
+            prevMonthTxns = excluded.Count == 0
+                ? await _db.Transactions
+                    .Where(t => t.Date.Year == prevYear && t.Date.Month == prevMonth && t.Amount != 0)
+                    .ToListAsync()
+                : await _db.Transactions
+                    .Where(t => t.Date.Year == prevYear && t.Date.Month == prevMonth && t.Amount != 0 && !excluded.Contains(t.Category))
+                    .ToListAsync();
+
+            monthLabel = MonthLabel(y, dashMonth);
         }
         else
         {
-            var latestWithData = transactions
-                .OrderByDescending(t => t.Date.Month)
-                .Select(t => t.Date.Month)
-                .FirstOrDefault();
-            dashMonth = latestWithData > 0 ? latestWithData : 12;
+            dashMonth = 0;
+            currentMonthTxns = transactions;
+
+            prevMonthTxns = excluded.Count == 0
+                ? await _db.Transactions
+                    .Where(t => t.Date.Year == y - 1 && t.Amount != 0)
+                    .ToListAsync()
+                : await _db.Transactions
+                    .Where(t => t.Date.Year == y - 1 && t.Amount != 0 && !excluded.Contains(t.Category))
+                    .ToListAsync();
+
+            monthLabel = $"{y} Year-to-Date";
         }
-
-        var prevYear = y;
-        var prevMonth = dashMonth - 1;
-        if (prevMonth < 1)
-        {
-            prevMonth = 12;
-            prevYear = y - 1;
-        }
-
-        var currentMonthTxns = transactions
-            .Where(t => t.Date.Month == dashMonth)
-            .ToList();
-
-        var prevMonthTxns = excluded.Count == 0
-            ? await _db.Transactions
-                .Where(t => t.Date.Year == prevYear && t.Date.Month == prevMonth && t.Amount != 0)
-                .ToListAsync()
-            : await _db.Transactions
-                .Where(t => t.Date.Year == prevYear && t.Date.Month == prevMonth && t.Amount != 0 && !excluded.Contains(t.Category))
-                .ToListAsync();
 
         // ── Monthly Overview ───────────────────────────────────────────
 
@@ -994,8 +1006,7 @@ public class ReportService
         return new ExecutiveSummaryResult(
             y, dashMonth,
             MonthKey(y, dashMonth),
-            MonthLabel(y, dashMonth),
-            overview, topCategories, topMerchants,
+            monthLabel, overview, topCategories, topMerchants,
             recurringCandidates,
             new ExecutiveAlertSummary(unmatchedCount, uncategorizedCount, possibleDupes, 0, alertItems),
             accountSummary);
