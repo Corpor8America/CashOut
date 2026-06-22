@@ -1,4 +1,0 @@
-interface:
-  display_name: "CashOut EF Migrations"
-  short_description: "Keep CashOut EF migrations complete and verified."
-  default_prompt: "Use the CashOut EF migration workflow to add or review Entity Framework migrations, including designer files and snapshot verification."
