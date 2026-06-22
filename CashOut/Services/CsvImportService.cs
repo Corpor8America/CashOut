@@ -111,6 +111,31 @@ public class CsvImportService
         var rawByNormalized = await _db.RawBusinesses
             .ToDictionaryAsync(b => b.RawNameNormalized);
 
+        // Gather min/max date boundaries to batch-load potential cross-source duplicates
+        DateOnly? minDate = null;
+        DateOnly? maxDate = null;
+        foreach (var row in dataRows)
+        {
+            var rawDate = GetField(row, dateIdx);
+            if (DateOnly.TryParse(rawDate, out var d))
+            {
+                if (minDate == null || d < minDate) minDate = d;
+                if (maxDate == null || d > maxDate) maxDate = d;
+            }
+        }
+
+        var existingTxns = new List<Transaction>();
+        if (minDate.HasValue && maxDate.HasValue)
+        {
+            var searchStart = minDate.Value.AddDays(-1);
+            var searchEnd = maxDate.Value.AddDays(1);
+
+            existingTxns = await _db.Transactions
+                .Where(t => t.AccountId == accountId && t.Date >= searchStart && t.Date <= searchEnd)
+                .ToListAsync();
+        }
+
+        var importedTxns = new List<Transaction>();
         int imported = 0;
         int skippedDup = 0;
         int skippedCrossSourceDup = 0;
@@ -226,16 +251,21 @@ public class CsvImportService
             var (alias, rawBusiness, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
                 description, categoryRaw, allPatterns, rawByNormalized);
 
-            // ── Cross-source deduplication ────────────────────────────────
+            // ── Cross-source deduplication (In-Memory) ─────────────────────
             var matchDateMin = date.AddDays(-1);
             var matchDateMax = date.AddDays(1);
             var matchAmount = Math.Abs(amount);
 
-            var isCrossSourceDuplicate = await _db.Transactions
-                .AnyAsync(t => t.AccountId == accountId &&
-                               t.Date >= matchDateMin && t.Date <= matchDateMax &&
-                               Math.Abs(t.Amount) == matchAmount &&
-                               t.NormalizedName == normalizedName);
+            var isCrossSourceDuplicate = existingTxns.Any(t =>
+                t.AccountId == accountId &&
+                t.Date >= matchDateMin && t.Date <= matchDateMax &&
+                Math.Abs(t.Amount) == matchAmount &&
+                t.NormalizedName == normalizedName)
+                || importedTxns.Any(t =>
+                t.AccountId == accountId &&
+                t.Date >= matchDateMin && t.Date <= matchDateMax &&
+                Math.Abs(t.Amount) == matchAmount &&
+                t.NormalizedName == normalizedName);
 
             if (isCrossSourceDuplicate)
             {
@@ -270,6 +300,7 @@ public class CsvImportService
             };
 
             _db.Transactions.Add(txn);
+            importedTxns.Add(txn);
             existingDedupKeys.Add(dedupKey);
             imported++;
         }

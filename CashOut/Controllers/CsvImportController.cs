@@ -82,5 +82,5 @@ public class CsvImportController : ControllerBase
     }
 
     private static string EscCsv(string s) =>
-        s.Contains(',') || s.Contains('"') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
+        s.Contains(',') || s.Contains('"') || s.Contains('\n') || s.Contains('\r') ? $"\"{s.Replace("\"", "\"\"")}\"" : s;
 }

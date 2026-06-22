@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("api/normalization")]
@@ -138,10 +139,10 @@ public class BusinessNormalizationController : ControllerBase
     public async Task<IActionResult> ListMappings()
     {
         var maps = await _svc.GetAllAliases();
-        var rawMaps = _db.RawBusinessAliasMaps
+        var rawMaps = await _db.RawBusinessAliasMaps
             .Join(_db.RawBusinesses, m => m.RawBusinessId, b => b.Id,
                 (m, b) => new { m.Id, m.RawBusinessId, b.RawName, b.RawNameNormalized, m.AliasId })
-            .ToList();
+            .ToListAsync();
 
         return Ok(rawMaps.Select(m => new
         {
