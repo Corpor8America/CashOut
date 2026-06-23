@@ -91,8 +91,9 @@ public class ReportsController : ControllerBase
 
     [HttpGet("category-summary")]
     public async Task<IActionResult> CategorySummary(
-        [FromQuery] int year, [FromQuery] int month)
+        [FromQuery] int year, [FromQuery] int month,
+        [FromQuery] string? accountId)
     {
-        return Ok(await _reports.GetCategorySummary(year, month));
+        return Ok(await _reports.GetCategorySummary(year, month, accountId));
     }
 }

@@ -2,6 +2,7 @@
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject ILogger<ManualAccounts> Logger
+@inject NavigationManager Nav
 @implements IDisposable
 
 <MudText Typo="Typo.h4" GutterBottom="true">Manual Accounts</MudText>
@@ -28,7 +29,7 @@ else if (_accounts.Count == 0)
 }
 else
 {
-    <MudTable Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mb-6">
+    <MudTable T="AccountDto" Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mb-6" OnRowClick="HandleRowClick">
         <HeaderContent>
             <MudTh>Name</MudTh>
             <MudTh>Description</MudTh>
@@ -39,7 +40,7 @@ else
             <MudTd DataLabel="Name">@context.Name</MudTd>
             <MudTd DataLabel="Description" Class="text-muted">@(string.IsNullOrEmpty(context.Description) ? "—" : context.Description)</MudTd>
             <MudTd DataLabel="Created" Class="text-muted">@context.CreatedAt.ToString("MMM d, yyyy")</MudTd>
-            <MudTd>
+            <MudTd @onclick:stopPropagation="true">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" 
                                Href="@($"/csv-import/{context.Id}")" StartIcon="@Icons.Material.Filled.Upload">
@@ -225,4 +226,10 @@ else
     }
 
     private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
+
+    private void HandleRowClick(TableRowClickEventArgs<AccountDto> args)
+    {
+        if (args.Item is null) return;
+        Nav.NavigateTo($"/transactions?accountId={args.Item.Id}&accountName={Uri.EscapeDataString(args.Item.Name)}");
+    }
 }
