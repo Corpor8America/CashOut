@@ -256,16 +256,14 @@ public class CsvImportService
             var matchDateMax = date.AddDays(1);
             var matchAmount = Math.Abs(amount);
 
-            var isCrossSourceDuplicate = existingTxns.Any(t =>
+            bool IsCrossSourceMatch(Transaction t) =>
                 t.AccountId == accountId &&
                 t.Date >= matchDateMin && t.Date <= matchDateMax &&
                 Math.Abs(t.Amount) == matchAmount &&
-                t.NormalizedName == normalizedName)
-                || importedTxns.Any(t =>
-                t.AccountId == accountId &&
-                t.Date >= matchDateMin && t.Date <= matchDateMax &&
-                Math.Abs(t.Amount) == matchAmount &&
-                t.NormalizedName == normalizedName);
+                (t.NormalizedName == normalizedName || (alias != null && t.AliasId == alias.Id));
+
+            var isCrossSourceDuplicate = existingTxns.Any(IsCrossSourceMatch)
+                || importedTxns.Any(IsCrossSourceMatch);
 
             if (isCrossSourceDuplicate)
             {

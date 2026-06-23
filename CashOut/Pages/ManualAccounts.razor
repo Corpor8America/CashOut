@@ -1,5 +1,8 @@
 @page "/manual-accounts"
 @inject HttpClient Http
+@inject IJSRuntime JS
+@inject ILogger<ManualAccounts> Logger
+@implements IDisposable
 
 <MudText Typo="Typo.h4" GutterBottom="true">Manual Accounts</MudText>
 <MudText Typo="Typo.body1" Class="text-muted mb-4">
@@ -42,6 +45,10 @@ else
                                Href="@($"/csv-import/{context.Id}")" StartIcon="@Icons.Material.Filled.Upload">
                         Import CSV
                     </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
+                               OnClick="() => StartLinkFlow(context.Id)" Disabled="@_linking" StartIcon="@Icons.Material.Filled.Link">
+                        Link Plaid
+                    </MudButton>
                     
                     @if (_confirmDeleteId == context.Id)
                     {
@@ -78,10 +85,13 @@ else
     private List<AccountDto> _accounts = new();
     private bool _loading = true;
     private bool _adding;
+    private bool _linking;
+    private Guid? _linkingAccountId;
     private string _newName = "";
     private string _newDescription = "";
     private Guid? _confirmDeleteId;
     private string? _error, _message;
+    private DotNetObjectReference<ManualAccounts>? _dotNetRef;
 
     protected override async Task OnInitializedAsync() => await LoadAccounts();
 
@@ -129,6 +139,89 @@ else
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _confirmDeleteId = null; }
+    }
+
+    private async Task StartLinkFlow(Guid accountId)
+    {
+        _linking = true;
+        _linkingAccountId = accountId;
+        _error = null; _message = null;
+        StateHasChanged();
+
+        try
+        {
+            var resp = await Http.PostAsync("api/plaid/link-token", null);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var body = await resp.Content.ReadAsStringAsync();
+                throw new Exception($"HTTP {(int)resp.StatusCode}: {body}");
+            }
+
+            var json = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+            var linkToken = json?["link_token"] ?? throw new Exception("link_token missing from response");
+
+            _dotNetRef?.Dispose();
+            _dotNetRef = DotNetObjectReference.Create(this);
+
+            await JS.InvokeVoidAsync("cashoutPlaid.open", linkToken, _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "ManualAccounts: StartLinkFlow failed");
+            _error = $"Could not start Plaid Link: {ex.Message}";
+            _linking = false;
+            _linkingAccountId = null;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnPlaidSuccess(string publicToken)
+    {
+        try
+        {
+            var resp = await Http.PostAsJsonAsync("api/plaid/exchange",
+                new { PublicToken = publicToken, ManualAccountId = _linkingAccountId });
+            resp.EnsureSuccessStatusCode();
+            _message = "Account successfully linked to Plaid!";
+            await LoadAccounts();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "ManualAccounts: OnPlaidSuccess exchange failed");
+            _error = $"Account linking failed: {ex.Message}";
+        }
+        finally
+        {
+            _linking = false;
+            _linkingAccountId = null;
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public Task OnPlaidExit()
+    {
+        _linking = false;
+        _linkingAccountId = null;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnPlaidError(string message)
+    {
+        _error = message;
+        _linking = false;
+        _linkingAccountId = null;
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _dotNetRef?.Dispose();
+        _dotNetRef = null;
     }
 
     private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
