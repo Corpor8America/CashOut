@@ -63,4 +63,41 @@ public class SettingsController : ControllerBase
                     "Set PLAID_ENV to configure the Plaid environment (sandbox/development/production)."
         });
     }
+
+    /// <summary>
+    /// Finds and removes orphaned transactions and CSV mapping profiles whose
+    /// AccountId does not match any LinkedAccount (by either Plaid account_id or
+    /// PK) or ManualAccount. Returns counts of what was removed.
+    /// </summary>
+    [HttpPost("cleanup")]
+    public async Task<IActionResult> CleanupOrphans()
+    {
+        var linked = await _db.LinkedAccounts.ToListAsync();
+        var manual = await _db.ManualAccounts.ToListAsync();
+
+        var validIds = new HashSet<string>();
+        foreach (var la in linked)
+        {
+            validIds.Add(la.AccountId);
+            validIds.Add(la.Id.ToString());
+        }
+        foreach (var ma in manual)
+            validIds.Add(ma.Id.ToString());
+
+        var orphanTxns = await _db.Transactions
+            .Where(t => !validIds.Contains(t.AccountId))
+            .ToListAsync();
+        var orphanProfiles = await _db.CsvMappingProfiles
+            .Where(p => !validIds.Contains(p.AccountId))
+            .ToListAsync();
+
+        var txnCount = orphanTxns.Count;
+        var profileCount = orphanProfiles.Count;
+
+        _db.Transactions.RemoveRange(orphanTxns);
+        _db.CsvMappingProfiles.RemoveRange(orphanProfiles);
+        await _db.SaveChangesAsync();
+
+        return Ok(new { transactionsRemoved = txnCount, profilesRemoved = profileCount });
+    }
 }

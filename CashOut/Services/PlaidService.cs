@@ -197,12 +197,17 @@ public class PlaidService
         if (!string.IsNullOrEmpty(itemId))
         {
             var accountsToRemove = await _db.LinkedAccounts.Where(a => a.ItemId == itemId).ToListAsync();
-            var accountIds = accountsToRemove.Select(a => a.AccountId).ToList();
+            var plaidAccountIds = accountsToRemove.Select(a => a.AccountId).ToHashSet();
+            var linkedAccountGuids = accountsToRemove.Select(a => a.Id.ToString()).ToHashSet();
 
-            var txnsToRemove = await _db.Transactions.Where(t => accountIds.Contains(t.AccountId)).ToListAsync();
+            var txnsToRemove = await _db.Transactions
+                .Where(t => plaidAccountIds.Contains(t.AccountId) || linkedAccountGuids.Contains(t.AccountId))
+                .ToListAsync();
             _db.Transactions.RemoveRange(txnsToRemove);
 
-            var profilesToRemove = await _db.CsvMappingProfiles.Where(p => accountIds.Contains(p.AccountId)).ToListAsync();
+            var profilesToRemove = await _db.CsvMappingProfiles
+                .Where(p => plaidAccountIds.Contains(p.AccountId) || linkedAccountGuids.Contains(p.AccountId))
+                .ToListAsync();
             _db.CsvMappingProfiles.RemoveRange(profilesToRemove);
 
             _db.LinkedAccounts.RemoveRange(accountsToRemove);
