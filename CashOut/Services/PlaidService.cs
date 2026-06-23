@@ -194,19 +194,53 @@ public class PlaidService
                 $"[PlaidService] RemoveItem: Plaid revocation failed (will still delete locally): {ex.Message}");
         }
 
-        IQueryable<LinkedAccount> toRemove;
         if (!string.IsNullOrEmpty(itemId))
         {
-            toRemove = _db.LinkedAccounts.Where(a => a.ItemId == itemId);
+            var accountsToRemove = await _db.LinkedAccounts.Where(a => a.ItemId == itemId).ToListAsync();
+            var accountIds = accountsToRemove.Select(a => a.AccountId).ToList();
+
+            var txnsToRemove = await _db.Transactions.Where(t => accountIds.Contains(t.AccountId)).ToListAsync();
+            _db.Transactions.RemoveRange(txnsToRemove);
+
+            var profilesToRemove = await _db.CsvMappingProfiles.Where(p => accountIds.Contains(p.AccountId)).ToListAsync();
+            _db.CsvMappingProfiles.RemoveRange(profilesToRemove);
+
+            _db.LinkedAccounts.RemoveRange(accountsToRemove);
         }
         else
         {
             Console.Error.WriteLine(
                 "[PlaidService] RemoveItem: ItemId is empty — cannot reliably identify accounts by encrypted token.");
-            toRemove = _db.LinkedAccounts.Where(a => false);
+        }
+        await _db.SaveChangesAsync();
+    }
+
+    public async Task MergeManualAccount(Guid manualAccountId, string targetLinkedAccountId)
+    {
+        var manualIdStr = manualAccountId.ToString();
+
+        // 1. Update transactions
+        var txns = await _db.Transactions.Where(t => t.AccountId == manualIdStr).ToListAsync();
+        foreach (var t in txns)
+        {
+            t.AccountId = targetLinkedAccountId;
+            t.UpdatedAt = DateTime.UtcNow;
         }
 
-        _db.LinkedAccounts.RemoveRange(toRemove);
+        // 2. Update CSV mapping profiles
+        var profiles = await _db.CsvMappingProfiles.Where(p => p.AccountId == manualIdStr).ToListAsync();
+        foreach (var p in profiles)
+        {
+            p.AccountId = targetLinkedAccountId;
+        }
+
+        // 3. Delete Manual Account
+        var manualAcc = await _db.ManualAccounts.FindAsync(manualAccountId);
+        if (manualAcc != null)
+        {
+            _db.ManualAccounts.Remove(manualAcc);
+        }
+
         await _db.SaveChangesAsync();
     }
 

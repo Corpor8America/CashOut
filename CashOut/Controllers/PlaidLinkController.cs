@@ -25,6 +25,12 @@ public class PlaidLinkController : ControllerBase
 
         var accounts = await _plaid.ExchangeAndPersist(req.PublicToken);
 
+        if (req.ManualAccountId.HasValue && accounts.Count > 0)
+        {
+            var targetLinkedAccount = accounts.First();
+            await _plaid.MergeManualAccount(req.ManualAccountId.Value, targetLinkedAccount.AccountId);
+        }
+
         return Ok(accounts.Select(a => new
         {
             a.Id,
@@ -35,5 +41,5 @@ public class PlaidLinkController : ControllerBase
         }));
     }
 
-    public record ExchangeRequest(string PublicToken);
+    public record ExchangeRequest(string PublicToken, Guid? ManualAccountId);
 }

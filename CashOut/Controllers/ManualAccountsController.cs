@@ -43,9 +43,13 @@ public class ManualAccountsController : ControllerBase
         var account = await _db.ManualAccounts.FindAsync(id);
         if (account == null) return NotFound();
 
-        // Also remove transactions belonging to this account
-        var txns = _db.Transactions.Where(t => t.AccountId == id.ToString());
+        var accountIdStr = id.ToString();
+        var txns = await _db.Transactions.Where(t => t.AccountId == accountIdStr).ToListAsync();
         _db.Transactions.RemoveRange(txns);
+
+        var profiles = await _db.CsvMappingProfiles.Where(p => p.AccountId == accountIdStr).ToListAsync();
+        _db.CsvMappingProfiles.RemoveRange(profiles);
+
         _db.ManualAccounts.Remove(account);
         await _db.SaveChangesAsync();
         return NoContent();

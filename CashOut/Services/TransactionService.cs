@@ -117,7 +117,7 @@ public class TransactionService
 
         if (incoming.Count > 0)
         {
-            // Batch-load existing transactions to avoid N+1
+            // Batch-load existing Plaid transactions by TransactionId to detect upserts
             var incomingIds = incoming.Select(t => t.TransactionId).ToHashSet();
             var existingEntities = await _db.Transactions
                 .Where(t => incomingIds.Contains(t.TransactionId))
@@ -136,6 +136,22 @@ public class TransactionService
                 .Where(b => rawNames.Contains(b.RawNameNormalized))
                 .ToDictionaryAsync(b => b.RawNameNormalized);
 
+            // ── Cross-source dedup: load existing transactions in the date range ──
+            // This prevents Plaid from inserting duplicates of CSV-imported transactions
+            // that share the same alias/normalized name, date (±1 day), and amount.
+            var incomingDates = incoming.Select(t => t.Date).ToList();
+            var minDate = incomingDates.Min().AddDays(-1);
+            var maxDate = incomingDates.Max().AddDays(1);
+
+            var incomingAccountIds = incoming.Select(t => t.AccountId).ToHashSet();
+            var existingTxnsForDedup = await _db.Transactions
+                .Where(t => incomingAccountIds.Contains(t.AccountId)
+                            && t.Date >= minDate && t.Date <= maxDate)
+                .ToListAsync();
+
+            // Track newly added transactions within this batch for intra-batch dedup
+            var addedTxns = new List<Transaction>();
+
             foreach (var txn in incoming)
             {
                 var (alias, rawBusiness, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
@@ -147,6 +163,26 @@ public class TransactionService
 
                 if (!existingEntities.TryGetValue(txn.TransactionId, out var existing))
                 {
+                    // ── Cross-source dedup check ─────────────────────────────
+                    // Skip this Plaid transaction if a CSV transaction (or another
+                    // already-added Plaid transaction) matches on normalized name (or alias),
+                    // date (±1 day), and absolute amount.
+                    var matchDateMin = txn.Date.AddDays(-1);
+                    var matchDateMax = txn.Date.AddDays(1);
+                    var matchAmount = Math.Abs(txn.Amount);
+
+                    bool IsCrossSourceMatch(Transaction t) =>
+                        t.AccountId == txn.AccountId &&
+                        t.Date >= matchDateMin && t.Date <= matchDateMax &&
+                        Math.Abs(t.Amount) == matchAmount &&
+                        (t.NormalizedName == normalizedName || (alias != null && t.AliasId == alias.Id));
+
+                    if (existingTxnsForDedup.Any(IsCrossSourceMatch)
+                        || addedTxns.Any(IsCrossSourceMatch))
+                    {
+                        continue;
+                    }
+
                     txn.AliasId = alias?.Id;
                     txn.Alias = alias;
                     txn.RawBusinessId = rawBusiness?.Id == 0 ? null : rawBusiness?.Id;
@@ -158,6 +194,7 @@ public class TransactionService
                     txn.CreatedAt = DateTime.UtcNow;
                     txn.UpdatedAt = DateTime.UtcNow;
                     _db.Transactions.Add(txn);
+                    addedTxns.Add(txn);
                     added++;
                 }
                 else
@@ -262,4 +299,5 @@ public class TransactionService
         s.Contains(',') || s.Contains('"') || s.Contains('\n')
             ? $"\"{s.Replace("\"", "\"\"")}\""
             : s;
+
 }

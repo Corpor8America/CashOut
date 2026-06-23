@@ -361,6 +361,7 @@ public class MerchantNormalizationService
 
         await _db.SaveChangesAsync();
         await CleanupRawBusinesses();
+        await DeduplicateCrossSource();
         await _db.SaveChangesAsync();
     }
 
@@ -391,6 +392,7 @@ public class MerchantNormalizationService
         var count = await ReprocessUnaliasedTransactions(candidates);
         await _db.SaveChangesAsync();
         await CleanupRawBusinesses();
+        await DeduplicateCrossSource();
         await _db.SaveChangesAsync();
         return count;
     }
@@ -472,6 +474,55 @@ public class MerchantNormalizationService
             .ToListAsync();
         _db.RawBusinessAliasMaps.RemoveRange(maps);
         _db.RawBusinesses.RemoveRange(emptyRawBusinesses);
+    }
+
+    // ── Deduplication ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Sweeps the database for CSV transactions that duplicate Plaid transactions.
+    /// This resolves duplicates that surface retroactively when two differently-named
+    /// raw merchants are later mapped to the same Alias.
+    /// Prefers keeping the Plaid transaction and deletes the CSV transaction.
+    /// </summary>
+    public async Task<int> DeduplicateCrossSource()
+    {
+        // Load all transactions
+        var allTxns = await _db.Transactions.ToListAsync();
+        var toRemove = new List<Transaction>();
+
+        // Group by AccountId
+        var byAccount = allTxns.GroupBy(t => t.AccountId);
+
+        foreach (var accountGroup in byAccount)
+        {
+            var plaidTxns = accountGroup.Where(t => t.Source == TransactionSource.Plaid).ToList();
+            var csvTxns = accountGroup.Where(t => t.Source == TransactionSource.CSV).ToList();
+
+            foreach (var csv in csvTxns)
+            {
+                var matchDateMin = csv.Date.AddDays(-1);
+                var matchDateMax = csv.Date.AddDays(1);
+                var matchAmount = Math.Abs(csv.Amount);
+
+                var isDup = plaidTxns.Any(p =>
+                    p.Date >= matchDateMin && p.Date <= matchDateMax &&
+                    Math.Abs(p.Amount) == matchAmount &&
+                    (p.NormalizedName == csv.NormalizedName || 
+                    (p.AliasId != null && p.AliasId == csv.AliasId)));
+
+                if (isDup)
+                {
+                    toRemove.Add(csv);
+                }
+            }
+        }
+
+        if (toRemove.Count > 0)
+        {
+            _db.Transactions.RemoveRange(toRemove);
+        }
+
+        return toRemove.Count;
     }
 }
 
