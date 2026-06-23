@@ -111,6 +111,61 @@ else
             </div>
         }
     </MudPaper>
+
+    <MudPaper Elevation="1" Class="pa-6 mt-6" MaxWidth="600px">
+        <MudText Typo="Typo.h6" GutterBottom="true">Data Cleanup</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+            Find and remove transactions and CSV mapping profiles that reference
+            deleted accounts. Use this after removing linked or manual accounts
+            that had backfilled CSV data.
+        </MudText>
+
+        @if (!_cleanupConfirming)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Warning"
+                       OnClick="@StartCleanup" Disabled="@_cleaning"
+                       StartIcon="@Icons.Material.Filled.CleaningServices">
+                @if (_cleaning)
+                {
+                    <span>Cleaning...</span>
+                }
+                else
+                {
+                    <span>Find &amp; Remove Orphans</span>
+                }
+            </MudButton>
+        }
+        else
+        {
+            <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-4">
+                This will permanently delete orphaned data. Are you sure?
+            </MudAlert>
+            <MudStack Row="true" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Error"
+                           OnClick="@ConfirmCleanup">
+                    Yes, clean up
+                </MudButton>
+                <MudButton Variant="Variant.Outlined"
+                           OnClick="@CancelCleanup">
+                    Cancel
+                </MudButton>
+            </MudStack>
+        }
+
+        @if (_cleaning)
+        {
+            <MudProgressLinear Color="Color.Warning" Indeterminate="true" Class="my-4" />
+        }
+
+        @if (_cleanupResult != null)
+        {
+            <MudAlert Severity="@(_cleanupResult.TransactionsRemoved > 0 || _cleanupResult.ProfilesRemoved > 0 ? Severity.Success : Severity.Info)"
+                      Variant="Variant.Outlined" Class="mt-4" Dense="true">
+                Removed @_cleanupResult.TransactionsRemoved transaction(s)
+                and @_cleanupResult.ProfilesRemoved CSV mapping profile(s).
+            </MudAlert>
+        }
+    </MudPaper>
 }
 
 <style>
@@ -134,6 +189,10 @@ else
     private bool _saving;
     private bool _saveSuccess;
     private bool _hasChanges => !_selectedExcluded.SetEquals(_originalExcluded);
+
+    private bool _cleaning;
+    private bool _cleanupConfirming;
+    private CleanupResult? _cleanupResult;
 
     protected override async Task OnInitializedAsync()
     {
@@ -195,4 +254,40 @@ else
             _saving = false;
         }
     }
+
+    private void StartCleanup()
+    {
+        _cleanupResult = null;
+        _error = null;
+        _cleanupConfirming = true;
+    }
+
+    private void CancelCleanup()
+    {
+        _cleanupConfirming = false;
+    }
+
+    private async Task ConfirmCleanup()
+    {
+        _cleanupConfirming = false;
+        _cleaning = true;
+        _cleanupResult = null;
+        _error = null;
+        try
+        {
+            var resp = await Http.PostAsync("api/settings/cleanup", null);
+            resp.EnsureSuccessStatusCode();
+            _cleanupResult = await resp.Content.ReadFromJsonAsync<CleanupResult>();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _cleaning = false;
+        }
+    }
+
+    private record CleanupResult(int TransactionsRemoved, int ProfilesRemoved);
 }
