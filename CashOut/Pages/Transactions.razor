@@ -5,6 +5,22 @@
 
 <MudText Typo="Typo.h4" GutterBottom="true">Transactions</MudText>
 
+@if (_filterAccountName != null)
+{
+    <MudPaper Elevation="1" Class="mb-4 pa-4">
+        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+            <MudText Typo="Typo.body1">
+                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-2" />
+                Showing transactions for <strong>@_filterAccountName</strong>
+            </MudText>
+            <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="ClearAccountFilter"
+                       StartIcon="@Icons.Material.Filled.Close">
+                Show all
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
 @if (_error != null)
 {
     <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
@@ -244,12 +260,20 @@
     private bool _loading, _summaryLoading;
     private string? _error, _message;
 
+    // Account filter
+    private string? _filterAccountId;
+    private string? _filterAccountName;
+
     // Inline category edit
     private string? _editingId;
     private string _editValue = "";
 
     protected override async Task OnInitializedAsync()
     {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        _filterAccountId = System.Web.HttpUtility.ParseQueryString(uri.Query)["accountId"];
+        _filterAccountName = System.Web.HttpUtility.ParseQueryString(uri.Query)["accountName"];
+
         _activeMonthTabIndex = _filterMonth - 1;
         await LoadYears();
         await LoadTransactions();
@@ -328,6 +352,16 @@
         await LoadTransactions();
     }
 
+    private async Task ClearAccountFilter()
+    {
+        _filterAccountId = null;
+        _filterAccountName = null;
+        _selectedCategories.Clear();
+        _pendingCategories.Clear();
+        await LoadTransactions();
+        await LoadSummary();
+    }
+
     // ── Data loading ──────────────────────────────────────────────────────
 
     private async Task LoadTransactions()
@@ -336,6 +370,9 @@
         try
         {
             var url = $"api/transactions?year={_filterYear}&month={_filterMonth}";
+
+            if (!string.IsNullOrEmpty(_filterAccountId))
+                url += $"&accountId={Uri.EscapeDataString(_filterAccountId)}";
 
             // Pass each selected category as a repeated query param;
             // if none selected, no category filter is applied
@@ -356,8 +393,10 @@
         _summaryLoading = true;
         try
         {
-            _categorySummary = await Http.GetFromJsonAsync<List<CategorySummaryDto>>(
-                $"api/reports/category-summary?year={_filterYear}&month={_filterMonth}") ?? new();
+            var url = $"api/reports/category-summary?year={_filterYear}&month={_filterMonth}";
+            if (!string.IsNullOrEmpty(_filterAccountId))
+                url += $"&accountId={Uri.EscapeDataString(_filterAccountId)}";
+            _categorySummary = await Http.GetFromJsonAsync<List<CategorySummaryDto>>(url) ?? new();
         }
         catch { /* ignored */ }
         finally { _summaryLoading = false; }
@@ -367,8 +406,10 @@
     {
         try
         {
-            var all = await Http.GetFromJsonAsync<List<TransactionDto>>(
-                $"api/transactions?year={_filterYear}") ?? new();
+            var url = $"api/transactions?year={_filterYear}";
+            if (!string.IsNullOrEmpty(_filterAccountId))
+                url += $"&accountId={Uri.EscapeDataString(_filterAccountId)}";
+            var all = await Http.GetFromJsonAsync<List<TransactionDto>>(url) ?? new();
             _categories = all
                 .Select(t => t.Category)
                 .Where(c => !string.IsNullOrEmpty(c))

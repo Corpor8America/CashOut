@@ -1072,7 +1072,7 @@ public class ReportService
             .ToList();
     }
 
-    public async Task<List<CategorySummaryRow>> GetCategorySummary(int year, int month)
+    public async Task<List<CategorySummaryRow>> GetCategorySummary(int year, int month, string? accountId = null)
     {
         var targetDate = new DateOnly(year, month, 1);
         var startDate = targetDate.AddMonths(-11);
@@ -1081,8 +1081,13 @@ public class ReportService
         var excluded = await GetExcludedCategories();
 
         // Perform aggregation in the database for the 12-month period
-        var stats = await _db.Transactions
-            .Where(t => t.Date >= startDate && t.Date <= endDate && !excluded.Contains(t.Category))
+        var query = _db.Transactions
+            .Where(t => t.Date >= startDate && t.Date <= endDate && !excluded.Contains(t.Category));
+
+        if (!string.IsNullOrEmpty(accountId))
+            query = query.Where(t => t.AccountId == accountId);
+
+        var stats = await query
             .GroupBy(t => string.IsNullOrEmpty(t.Category) ? "(uncategorized)" : t.Category)
             .Select(g => new
             {

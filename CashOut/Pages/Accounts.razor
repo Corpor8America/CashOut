@@ -3,6 +3,7 @@
 @inject HttpClient Http
 @inject IJSRuntime JS
 @inject ILogger<Accounts> Logger
+@inject NavigationManager Nav
 @implements IDisposable
 
 <MudText Typo="Typo.h4" GutterBottom="true">Linked Accounts</MudText>
@@ -22,7 +23,7 @@ else if (_accounts.Count == 0)
 }
 else
 {
-    <MudTable Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mb-4">
+    <MudTable T="AccountDto" Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mb-4" OnRowClick="HandleRowClick">
         <HeaderContent>
             <MudTh>Institution</MudTh>
             <MudTh>Name</MudTh>
@@ -35,7 +36,7 @@ else
             <MudTd DataLabel="Name">@context.Name</MudTd>
             <MudTd DataLabel="Account #">••••@context.Mask</MudTd>
             <MudTd DataLabel="Type">@context.Subtype</MudTd>
-            <MudTd>
+            <MudTd @onclick:stopPropagation="true">
                 @if (_confirmRemoveId == context.Id)
                 {
                     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
@@ -292,8 +293,14 @@ else
         _dotNetRef = null;
     }
 
-    private record AccountDto(Guid Id, string Name, string Mask,
+    private record AccountDto(Guid Id, string AccountId, string Name, string Mask,
         string Subtype, string Institution);
+
+    private void HandleRowClick(TableRowClickEventArgs<AccountDto> args)
+    {
+        if (args.Item is null) return;
+        Nav.NavigateTo($"/transactions?accountId={args.Item.AccountId}&accountName={Uri.EscapeDataString(args.Item.Name)}");
+    }
 
     private record SyncResult(int Added, int Removed);
 }
