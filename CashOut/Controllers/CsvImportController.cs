@@ -46,9 +46,11 @@ public class CsvImportController : ControllerBase
         return Ok(preview);
     }
 
-    /// <summary>Imports a CSV file using the account's current mapping profile.</summary>
-    [HttpPost("{accountId}/import")]
-    public async Task<IActionResult> Import(string accountId, [FromForm] IFormFile file)
+    /// <summary>Scans a CSV for duplicates without importing anything.</summary>
+    [HttpPost("{accountId}/scan")]
+    public async Task<IActionResult> Scan(
+        string accountId,
+        [FromForm] IFormFile file)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { error = "No file uploaded." });
@@ -62,7 +64,44 @@ public class CsvImportController : ControllerBase
 
         try
         {
-            var result = await _csv.Import(accountId, content, profile);
+            var result = await _csv.ScanForDuplicates(accountId, content, profile);
+            return Ok(result);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Imports a CSV file using the account's current mapping profile.</summary>
+    [HttpPost("{accountId}/import")]
+    public async Task<IActionResult> Import(
+        string accountId,
+        [FromForm] IFormFile file,
+        [FromForm] string? forceImportRows = null)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "No file uploaded." });
+
+        var profile = await _csv.GetCurrentProfile(accountId);
+        if (profile == null)
+            return BadRequest(new { error = "No mapping profile found for this account. Please map columns first." });
+
+        using var reader = new System.IO.StreamReader(file.OpenReadStream());
+        var content = await reader.ReadToEndAsync();
+
+        HashSet<int>? forceRows = null;
+        if (!string.IsNullOrEmpty(forceImportRows))
+        {
+            forceRows = forceImportRows
+                .Split(',', StringSplitOptions.RemoveEmptyEntries)
+                .Select(int.Parse)
+                .ToHashSet();
+        }
+
+        try
+        {
+            var result = await _csv.Import(accountId, content, profile, forceRows);
             return Ok(result);
         }
         catch (InvalidOperationException ex)
