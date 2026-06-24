@@ -218,12 +218,99 @@
         </MudGrid>
 
         <MudStack Row="true" Class="mt-6" Spacing="2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunImport"
-                       Disabled="@(_importing || _preview.Headers.Length == 0)" StartIcon="@Icons.Material.Filled.Check">
-                @(_importing ? "Importing…" : "Import CSV")
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunScan"
+                       Disabled="@(_scanning || _preview.Headers.Length == 0)" StartIcon="@Icons.Material.Filled.Search">
+                @(_scanning ? "Scanning…" : "Scan for Duplicates")
             </MudButton>
             <MudButton Variant="Variant.Outlined" OnClick="() => _step = Step.Upload"
                        StartIcon="@Icons.Material.Filled.ArrowBack">Back</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@if (_step == Step.Review && _scanResult != null)
+{
+    <MudPaper Class="pa-6" Elevation="1">
+        <MudText Typo="Typo.h6" GutterBottom="true">Step 3: Review Duplicates</MudText>
+
+        <MudSimpleTable Class="mb-4" Style="max-width:500px">
+            <tbody>
+                <tr>
+                    <td>New rows (will be imported)</td>
+                    <td style="text-align:right"><strong>@_scanResult.NewCount</strong></td>
+                </tr>
+                <tr>
+                    <td>Duplicates skipped (internal)</td>
+                    <td style="text-align:right">@_scanResult.InternalDuplicateCount</td>
+                </tr>
+                <tr>
+                    <td>Duplicates skipped (cross-source)</td>
+                    <td style="text-align:right">@_scanResult.CrossSourceDuplicateCount</td>
+                </tr>
+            </tbody>
+        </MudSimpleTable>
+
+        <MudText Typo="Typo.body2" Class="mb-2">
+            Rows flagged as duplicates will be skipped by default. Toggle "Import anyway" to force-import a duplicate row.
+        </MudText>
+
+        <MudTable Items="@_scanResult.Rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0"
+                  Height="400px" FixedHeader="true" Class="mb-4">
+            <HeaderContent>
+                <MudTh>#</MudTh>
+                <MudTh>Data</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Matches</MudTh>
+                <MudTh Style="text-align:center">Import anyway</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="#">@context.RowNumber</MudTd>
+                <MudTd DataLabel="Data" Class="text-muted" Style="font-size:0.8em">@context.RawData</MudTd>
+                <MudTd DataLabel="Status">
+                    @if (context.DuplicateType == "New")
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">New</MudChip>
+                    }
+                    else if (context.DuplicateType == "InternalDuplicate")
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">Internal Dup</MudChip>
+                    }
+                    else if (context.DuplicateType == "CrossSourceDuplicate")
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">Cross-Source Dup</MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Error">Invalid</MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Matches">
+                    @if (context.MatchedTransaction != null)
+                    {
+                        <span style="font-size:0.8em">
+                            @context.MatchedTransaction.Date — @context.MatchedTransaction.Name — @context.MatchedTransaction.Amount.ToString("C")
+                        </span>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Import anyway" Style="text-align:center">
+                    @if (context.DuplicateType is "InternalDuplicate" or "CrossSourceDuplicate")
+                    {
+                        <MudCheckBox T="bool"
+                                     Value="@_forceImportRows.Contains(context.RowNumber)"
+                                     ValueChanged="@((bool val) => ToggleForceImport(context.RowNumber, val))"
+                                     Size="Size.Small" />
+                    }
+                </MudTd>
+            </RowTemplate>
+        </MudTable>
+
+        <MudStack Row="true" Spacing="2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="RunImport"
+                       Disabled="@(_importing)" StartIcon="@Icons.Material.Filled.Check">
+                @(_importing ? "Importing…" : $"Import ({_scanResult.NewCount + _forceImportRows.Count} rows)")
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="() => _step = Step.Map"
+                       StartIcon="@Icons.Material.Filled.ArrowBack">Back to Mapping</MudButton>
         </MudStack>
     </MudPaper>
 }
@@ -318,7 +405,7 @@
 @code {
     [Parameter] public string AccountId { get; set; } = "";
 
-    enum Step { Upload, Map, Result }
+    enum Step { Upload, Map, Review, Result }
     Step _step = Step.Upload;
 
     private CsvPreview? _preview;
@@ -327,7 +414,10 @@
     private ImportResult? _result;
     private List<string> _missingColumns = new();
 
-    private bool _uploading, _importing, _previewLoading;
+    private DuplicateScanResult? _scanResult;
+    private HashSet<int> _forceImportRows = new();
+
+    private bool _uploading, _importing, _previewLoading, _scanning;
     private bool _isDragOver;
     private string? _csvContent;
     private string? _selectedFileName;
@@ -444,6 +534,55 @@
         finally { _previewLoading = false; StateHasChanged(); }
     }
 
+    // ── Scan ───────────────────────────────────────────────────────────────
+
+    private async Task RunScan()
+    {
+        if (_csvContent == null) return;
+        _scanning = true; _error = null;
+
+        if (_amountType == "single")
+        {
+            _mapping.CreditColumn = null;
+            _mapping.DebitColumn = null;
+        }
+        else
+        {
+            _mapping.AmountColumn = null;
+        }
+
+        try
+        {
+            await Http.PostAsJsonAsync($"api/csv-import/{AccountId}/profile", _mapping);
+
+            using var form = new MultipartFormDataContent();
+            form.Add(new StreamContent(new System.IO.MemoryStream(
+                System.Text.Encoding.UTF8.GetBytes(_csvContent))), "file", "import.csv");
+
+            var resp = await Http.PostAsync($"api/csv-import/{AccountId}/scan", form);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+                _error = err?["error"] ?? "Scan failed.";
+                return;
+            }
+
+            _scanResult = await resp.Content.ReadFromJsonAsync<DuplicateScanResult>();
+            _forceImportRows.Clear();
+            _step = Step.Review;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _scanning = false; }
+    }
+
+    private void ToggleForceImport(int rowNumber, bool value)
+    {
+        if (value)
+            _forceImportRows.Add(rowNumber);
+        else
+            _forceImportRows.Remove(rowNumber);
+    }
+
     // ── Import ────────────────────────────────────────────────────────────
 
     private async Task RunImport()
@@ -472,6 +611,11 @@
             form.Add(new StreamContent(new System.IO.MemoryStream(
                 System.Text.Encoding.UTF8.GetBytes(_csvContent))), "file", "import.csv");
 
+            if (_forceImportRows.Count > 0)
+            {
+                form.Add(new StringContent(string.Join(",", _forceImportRows)), "forceImportRows");
+            }
+
             var resp = await Http.PostAsync($"api/csv-import/{AccountId}/import", form);
             if (!resp.IsSuccessStatusCode)
             {
@@ -494,6 +638,8 @@
         _step = Step.Upload;
         _preview = null;
         _result = null;
+        _scanResult = null;
+        _forceImportRows.Clear();
         _csvContent = null;
         _selectedFileName = null;
         _error = null;
@@ -506,4 +652,7 @@
     private record CsvPreview(string[] Headers, string[][] Rows);
     private record SkippedRow(int RowNumber, string RawData, string Reason);
     private record ImportResult(int Imported, int SkippedDuplicates, int SkippedCrossSourceDuplicates, List<SkippedRow> SkippedRows);
+    private record ExistingTransactionInfo(string TransactionId, DateOnly Date, string Name, decimal Amount);
+    private record ScannedRow(int RowNumber, string RawData, string DuplicateType, ExistingTransactionInfo? MatchedTransaction);
+    private record DuplicateScanResult(List<ScannedRow> Rows, int NewCount, int InternalDuplicateCount, int CrossSourceDuplicateCount);
 }

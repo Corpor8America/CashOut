@@ -71,7 +71,8 @@ public class CsvImportService
     // ── Import ────────────────────────────────────────────────────────────
 
     public async Task<ImportResult> Import(
-        string accountId, string csvContent, CsvMappingProfile profile)
+        string accountId, string csvContent, CsvMappingProfile profile,
+        HashSet<int>? forceImportRows = null)
     {
         var rows = ParseCsv(csvContent);
         rows = ApplyRowTrimming(rows, profile.SkipRowsFromTop, profile.SkipRowsFromBottom);
@@ -148,7 +149,9 @@ public class CsvImportService
 
             var dedupKey = BuildDedupKey(row, dateIdx, descIdx, creditIdx, debitIdx, amountIdx, categoryIdx);
 
-            if (existingDedupKeys.Contains(dedupKey))
+            bool forceImport = forceImportRows != null && forceImportRows.Contains(rawRowNum);
+
+            if (!forceImport && existingDedupKeys.Contains(dedupKey))
             {
                 skippedDup++;
                 continue;
@@ -265,7 +268,7 @@ public class CsvImportService
             var isCrossSourceDuplicate = existingTxns.Any(IsCrossSourceMatch)
                 || importedTxns.Any(IsCrossSourceMatch);
 
-            if (isCrossSourceDuplicate)
+            if (!forceImport && isCrossSourceDuplicate)
             {
                 skippedCrossSourceDup++;
                 continue;
@@ -305,6 +308,193 @@ public class CsvImportService
 
         await _db.SaveChangesAsync();
         return new ImportResult(imported, skippedDup, skippedCrossSourceDup, skippedRows);
+    }
+
+    // ── Duplicate Scan ────────────────────────────────────────────────────
+
+    public async Task<DuplicateScanResult> ScanForDuplicates(
+        string accountId, string csvContent, CsvMappingProfile profile)
+    {
+        var rows = ParseCsv(csvContent);
+        rows = ApplyRowTrimming(rows, profile.SkipRowsFromTop, profile.SkipRowsFromBottom);
+
+        if (rows.Count <= 1)
+            return new DuplicateScanResult(new List<ScannedRow>(), 0, 0, 0);
+
+        var headers = rows[0].Select(h => h.ToLowerInvariant()).ToList();
+        var dataRows = rows.Skip(1).ToList();
+
+        var headerArr = rows[0];
+        var missing = ValidateProfile(profile, headerArr);
+        if (missing != null)
+            throw new InvalidOperationException(
+                $"CSV mapping is invalid — missing columns: {string.Join(", ", missing)}. Please remap.");
+
+        int ColIdx(string? colName) => string.IsNullOrEmpty(colName) ? -1
+            : headers.IndexOf(colName.ToLowerInvariant());
+
+        var dateIdx = ColIdx(profile.DateColumn);
+        var descIdx = ColIdx(profile.DescriptionColumn);
+        var creditIdx = ColIdx(profile.CreditColumn);
+        var debitIdx = ColIdx(profile.DebitColumn);
+        var amountIdx = ColIdx(profile.AmountColumn);
+        var categoryIdx = ColIdx(profile.CategoryColumn);
+
+        var existingDedupTransactions = await _db.Transactions
+            .Where(t => t.AccountId == accountId && t.DedupKey != null)
+            .ToDictionaryAsync(t => t.DedupKey!);
+
+        var existingDedupKeys = existingDedupTransactions.Keys.ToHashSet();
+
+        var allPatterns = await _db.AliasPatterns
+            .Include(p => p.Alias)
+            .ToListAsync();
+
+        var rawByNormalized = await _db.RawBusinesses
+            .ToDictionaryAsync(b => b.RawNameNormalized);
+
+        DateOnly? minDate = null;
+        DateOnly? maxDate = null;
+        foreach (var row in dataRows)
+        {
+            var rawDate = GetField(row, dateIdx);
+            if (DateOnly.TryParse(rawDate, out var d))
+            {
+                if (minDate == null || d < minDate) minDate = d;
+                if (maxDate == null || d > maxDate) maxDate = d;
+            }
+        }
+
+        var existingTxns = new List<Transaction>();
+        if (minDate.HasValue && maxDate.HasValue)
+        {
+            var searchStart = minDate.Value.AddDays(-1);
+            var searchEnd = maxDate.Value.AddDays(1);
+
+            existingTxns = await _db.Transactions
+                .Where(t => t.AccountId == accountId && t.Date >= searchStart && t.Date <= searchEnd)
+                .ToListAsync();
+        }
+
+        var scannedRows = new List<ScannedRow>();
+        int newCount = 0;
+        int internalDupCount = 0;
+        int crossSourceDupCount = 0;
+        var importedTxns = new List<Transaction>();
+
+        for (int rowNum = 0; rowNum < dataRows.Count; rowNum++)
+        {
+            var row = dataRows[rowNum];
+            var rawRowNum = rowNum + 2;
+
+            var dedupKey = BuildDedupKey(row, dateIdx, descIdx, creditIdx, debitIdx, amountIdx, categoryIdx);
+
+            if (existingDedupKeys.Contains(dedupKey))
+            {
+                internalDupCount++;
+                var matched = existingDedupTransactions[dedupKey];
+                var info = new ExistingTransactionInfo(
+                    matched.TransactionId, matched.Date, matched.Name, matched.Amount);
+                scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "InternalDuplicate", info));
+                continue;
+            }
+
+            var rawDate = GetField(row, dateIdx);
+            if (!DateOnly.TryParse(rawDate, out var date))
+            {
+                scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "Invalid", null));
+                continue;
+            }
+
+            decimal? credit;
+            decimal? debit;
+            decimal amount;
+
+            if (amountIdx >= 0)
+            {
+                var rawAmt = GetField(row, amountIdx);
+                if (!TryParseAmount(rawAmt, out var parsed) || parsed == 0)
+                {
+                    scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "Invalid", null));
+                    continue;
+                }
+                (credit, debit, amount) = Transaction.NormalizeSingleAmount(parsed);
+            }
+            else
+            {
+                var rawCredit = GetField(row, creditIdx);
+                var rawDebit = GetField(row, debitIdx);
+                bool hasCredit = !string.IsNullOrWhiteSpace(rawCredit);
+                bool hasDebit = !string.IsNullOrWhiteSpace(rawDebit);
+
+                if ((!hasCredit && !hasDebit) || (hasCredit && hasDebit))
+                {
+                    scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "Invalid", null));
+                    continue;
+                }
+
+                decimal? parsedCredit = null;
+                decimal? parsedDebit = null;
+                if (hasCredit && TryParseAmount(rawCredit, out var c)) parsedCredit = c;
+                if (hasDebit && TryParseAmount(rawDebit, out var d)) parsedDebit = d;
+
+                (credit, debit, amount) = Transaction.NormalizeSplitColumns(parsedCredit, parsedDebit);
+                if (credit == null && debit == null)
+                {
+                    scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "Invalid", null));
+                    continue;
+                }
+            }
+
+            var description = GetField(row, descIdx);
+            if (string.IsNullOrWhiteSpace(description))
+            {
+                scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "Invalid", null));
+                continue;
+            }
+
+            var categoryRaw = GetField(row, categoryIdx);
+            var (alias, rawBusiness, normalizedName, _) = await _normalization.ResolveBulk(
+                description, categoryRaw, allPatterns, rawByNormalized);
+
+            var matchDateMin = date.AddDays(-1);
+            var matchDateMax = date.AddDays(1);
+            var matchAmount = Math.Abs(amount);
+
+            bool IsCrossSourceMatch(Transaction t) =>
+                t.AccountId == accountId &&
+                t.Date >= matchDateMin && t.Date <= matchDateMax &&
+                Math.Abs(t.Amount) == matchAmount &&
+                (t.NormalizedName == normalizedName || (alias != null && t.AliasId == alias.Id));
+
+            var matchedTxn = existingTxns.FirstOrDefault(IsCrossSourceMatch)
+                ?? importedTxns.FirstOrDefault(IsCrossSourceMatch);
+
+            if (matchedTxn != null)
+            {
+                crossSourceDupCount++;
+                var info = new ExistingTransactionInfo(
+                    matchedTxn.TransactionId, matchedTxn.Date, matchedTxn.Name, matchedTxn.Amount);
+                scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "CrossSourceDuplicate", info));
+            }
+            else
+            {
+                newCount++;
+                scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "New", null));
+
+                // Track this as imported so later rows in the batch can match against it
+                importedTxns.Add(new Transaction
+                {
+                    AccountId = accountId,
+                    Date = date,
+                    Amount = amount,
+                    NormalizedName = normalizedName,
+                    AliasId = alias?.Id
+                });
+            }
+        }
+
+        return new DuplicateScanResult(scannedRows, newCount, internalDupCount, crossSourceDupCount);
     }
 
     // ── Row Trimming ──────────────────────────────────────────────────────
@@ -417,3 +607,7 @@ public record ImportResult(int Imported, int SkippedDuplicates, int SkippedCross
 {
     public int TotalSkipped => SkippedDuplicates + SkippedCrossSourceDuplicates + SkippedRows.Count;
 }
+
+public record ExistingTransactionInfo(string TransactionId, DateOnly Date, string Name, decimal Amount);
+public record ScannedRow(int RowNumber, string RawData, string DuplicateType, ExistingTransactionInfo? MatchedTransaction);
+public record DuplicateScanResult(List<ScannedRow> Rows, int NewCount, int InternalDuplicateCount, int CrossSourceDuplicateCount);
