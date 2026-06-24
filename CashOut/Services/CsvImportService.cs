@@ -340,10 +340,11 @@ public class CsvImportService
         var amountIdx = ColIdx(profile.AmountColumn);
         var categoryIdx = ColIdx(profile.CategoryColumn);
 
-        var existingDedupKeys = await _db.Transactions
+        var existingDedupTransactions = await _db.Transactions
             .Where(t => t.AccountId == accountId && t.DedupKey != null)
-            .Select(t => t.DedupKey!)
-            .ToHashSetAsync();
+            .ToDictionaryAsync(t => t.DedupKey!);
+
+        var existingDedupKeys = existingDedupTransactions.Keys.ToHashSet();
 
         var allPatterns = await _db.AliasPatterns
             .Include(p => p.Alias)
@@ -391,7 +392,10 @@ public class CsvImportService
             if (existingDedupKeys.Contains(dedupKey))
             {
                 internalDupCount++;
-                scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "InternalDuplicate", null));
+                var matched = existingDedupTransactions[dedupKey];
+                var info = new ExistingTransactionInfo(
+                    matched.TransactionId, matched.Date, matched.Name, matched.Amount);
+                scannedRows.Add(new ScannedRow(rawRowNum, TruncateRow(row), "InternalDuplicate", info));
                 continue;
             }
 
