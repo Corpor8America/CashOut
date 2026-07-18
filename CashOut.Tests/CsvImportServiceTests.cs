@@ -18,13 +18,33 @@ public class CsvImportServiceTests
         new(db, new MerchantNormalizationService(db));
 
     [TestMethod]
-    public async Task Import_SkipsCrossSourceDuplicates()
+    public async Task Import_NewRows_InsertsAll()
     {
-        var db = BuildDb(nameof(Import_SkipsCrossSourceDuplicates));
+        var db = BuildDb(nameof(Import_NewRows_InsertsAll));
         var svc = BuildSvc(db);
         var accountId = "test-acc";
 
-        // Pre-populate an existing transaction
+        var csv = "Date,Description,Amount\n2026-06-01,Test Merchant,10.00\n2026-06-02,Another Store,25.50";
+        var profile = new CsvMappingProfile { DateColumn = "Date", DescriptionColumn = "Description", AmountColumn = "Amount" };
+
+        var result = await svc.Import(accountId, csv, profile);
+
+        Assert.AreEqual(2, result.Imported);
+        Assert.AreEqual(0, result.SkippedAlreadyPresent);
+        Assert.AreEqual(0, result.SkippedRows.Count);
+
+        var count = await db.Transactions.CountAsync(t => t.AccountId == accountId);
+        Assert.AreEqual(2, count);
+    }
+
+    [TestMethod]
+    public async Task Import_ExistingRows_SkipsAlreadyPresent()
+    {
+        var db = BuildDb(nameof(Import_ExistingRows_SkipsAlreadyPresent));
+        var svc = BuildSvc(db);
+        var accountId = "test-acc";
+
+        // Pre-populate with matching transaction (same date, amount, normalizedName)
         db.Transactions.Add(new Transaction
         {
             AccountId = accountId,
@@ -34,46 +54,28 @@ public class CsvImportServiceTests
         });
         await db.SaveChangesAsync();
 
-        // CSV content that should match the existing transaction
-        // Normalized "Test Merchant" -> "TEST MERCHANT"
         var csv = "Date,Description,Amount\n2026-06-01,Test Merchant,10.00";
         var profile = new CsvMappingProfile { DateColumn = "Date", DescriptionColumn = "Description", AmountColumn = "Amount" };
 
         var result = await svc.Import(accountId, csv, profile);
 
         Assert.AreEqual(0, result.Imported);
-        Assert.AreEqual(1, result.SkippedCrossSourceDuplicates);
+        Assert.AreEqual(1, result.SkippedAlreadyPresent);
+        Assert.AreEqual(0, result.SkippedRows.Count);
+
+        // Verify no new transactions were created
+        var count = await db.Transactions.CountAsync(t => t.AccountId == accountId);
+        Assert.AreEqual(1, count);
     }
 
     [TestMethod]
-    public async Task ScanForDuplicates_IdentifiesInternalDuplicates()
+    public async Task Import_PartialOverlap_InsertsOnlyNew()
     {
-        var db = BuildDb(nameof(ScanForDuplicates_IdentifiesInternalDuplicates));
+        var db = BuildDb(nameof(Import_PartialOverlap_InsertsOnlyNew));
         var svc = BuildSvc(db);
         var accountId = "test-acc";
 
-        var csv = "Date,Description,Amount\n2026-06-01,Test Merchant,10.00";
-        var profile = new CsvMappingProfile { DateColumn = "Date", DescriptionColumn = "Description", AmountColumn = "Amount" };
-
-        // Import once to create the dedup key
-        var first = await svc.Import(accountId, csv, profile);
-        Assert.AreEqual(1, first.Imported);
-
-        // Scan should flag it as internal duplicate
-        var scan = await svc.ScanForDuplicates(accountId, csv, profile);
-
-        Assert.AreEqual(1, scan.InternalDuplicateCount);
-        Assert.AreEqual(0, scan.NewCount);
-        Assert.AreEqual("InternalDuplicate", scan.Rows[0].DuplicateType);
-    }
-
-    [TestMethod]
-    public async Task ScanForDuplicates_IdentifiesCrossSourceDuplicates()
-    {
-        var db = BuildDb(nameof(ScanForDuplicates_IdentifiesCrossSourceDuplicates));
-        var svc = BuildSvc(db);
-        var accountId = "test-acc";
-
+        // Pre-populate with one transaction
         db.Transactions.Add(new Transaction
         {
             AccountId = accountId,
@@ -83,37 +85,36 @@ public class CsvImportServiceTests
         });
         await db.SaveChangesAsync();
 
-        var csv = "Date,Description,Amount\n2026-06-01,Test Merchant,10.00";
+        // CSV has the existing row + a new one
+        var csv = "Date,Description,Amount\n2026-06-01,Test Merchant,10.00\n2026-06-02,New Shop,5.00";
         var profile = new CsvMappingProfile { DateColumn = "Date", DescriptionColumn = "Description", AmountColumn = "Amount" };
 
-        var scan = await svc.ScanForDuplicates(accountId, csv, profile);
+        var result = await svc.Import(accountId, csv, profile);
 
-        Assert.AreEqual(1, scan.CrossSourceDuplicateCount);
-        Assert.AreEqual(0, scan.NewCount);
-        Assert.AreEqual("CrossSourceDuplicate", scan.Rows[0].DuplicateType);
-        Assert.IsNotNull(scan.Rows[0].MatchedTransaction);
+        Assert.AreEqual(1, result.Imported);
+        Assert.AreEqual(1, result.SkippedAlreadyPresent);
+
+        var count = await db.Transactions.CountAsync(t => t.AccountId == accountId);
+        Assert.AreEqual(2, count);
     }
 
     [TestMethod]
-    public async Task Import_ForceImportRows_OverridesDedup()
+    public async Task Import_DuplicateRowsInSameCsv_BothInserted()
     {
-        var db = BuildDb(nameof(Import_ForceImportRows_OverridesDedup));
+        var db = BuildDb(nameof(Import_DuplicateRowsInSameCsv_BothInserted));
         var svc = BuildSvc(db);
         var accountId = "test-acc";
 
-        // Import once to create the dedup key
-        var csv = "Date,Description,Amount\n2026-06-01,Test Merchant,10.00";
+        // Two identical rows in the same CSV
+        var csv = "Date,Description,Amount\n2026-06-01,Test Merchant,10.00\n2026-06-01,Test Merchant,10.00";
         var profile = new CsvMappingProfile { DateColumn = "Date", DescriptionColumn = "Description", AmountColumn = "Amount" };
-        await svc.Import(accountId, csv, profile);
 
-        // Force-import row 2 (the data row) despite the duplicate
-        var forceRows = new HashSet<int> { 2 };
-        var result = await svc.Import(accountId, csv, profile, forceRows);
+        var result = await svc.Import(accountId, csv, profile);
 
-        Assert.AreEqual(1, result.Imported);
-        Assert.AreEqual(0, result.SkippedDuplicates);
+        // Both rows should be inserted — no intra-batch dedup
+        Assert.AreEqual(2, result.Imported);
+        Assert.AreEqual(0, result.SkippedAlreadyPresent);
 
-        // Verify both transactions exist
         var count = await db.Transactions.CountAsync(t => t.AccountId == accountId);
         Assert.AreEqual(2, count);
     }

@@ -49,7 +49,6 @@ public class AppDbContext : DbContext
             e.Property(x => x.Credit).IsRequired(false);
             e.Property(x => x.Debit).IsRequired(false);
             e.Property(x => x.Amount).IsRequired();
-            e.Property(x => x.DedupKey).IsRequired(false);
             e.Property(x => x.RawName).IsRequired().HasDefaultValue("");
             e.Property(x => x.NormalizedName).IsRequired().HasDefaultValue("");
             e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");

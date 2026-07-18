@@ -54,13 +54,6 @@ public class Transaction
     public int? RawBusinessId { get; set; }
     public RawBusiness? RawBusiness { get; set; }
 
-    // ── CSV deduplication ─────────────────────────────────────────────────
-    /// <summary>
-    /// SHA-256 hash of raw CSV column values for the mapped columns (first 16 hex chars).
-    /// Used to prevent duplicate imports. Null for Plaid transactions.
-    /// </summary>
-    public string? DedupKey { get; set; }
-
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
