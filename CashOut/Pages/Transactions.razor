@@ -201,6 +201,7 @@
             <HeaderContent>
                 <MudTh>Date</MudTh>
                 <MudTh>Merchant</MudTh>
+                <MudTh>Account</MudTh>
                 <MudTh>Category</MudTh>
                 <MudTh Style="text-align:right">Amount</MudTh>
             </HeaderContent>
@@ -211,6 +212,7 @@
                 }
                 <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
                 <MudTd DataLabel="Merchant">@context.Name</MudTd>
+                <MudTd DataLabel="Account">@context.AccountName</MudTd>
                 <MudTd DataLabel="Category">
                     @if (_editingId == context.TransactionId)
                     {
@@ -477,6 +479,7 @@
     private record TransactionDto(
         string TransactionId,
         string AccountId,
+        string AccountName,
         DateOnly Date,
         string Name,
         decimal? Credit,

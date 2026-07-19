@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 [ApiController]
 [Route("api/transactions")]
@@ -6,11 +7,13 @@ public class TransactionsController : ControllerBase
 {
     private readonly TransactionService _txns;
     private readonly SettingsService _settings;
+    private readonly AppDbContext _db;
 
-    public TransactionsController(TransactionService txns, SettingsService settings)
+    public TransactionsController(TransactionService txns, SettingsService settings, AppDbContext db)
     {
         _txns = txns;
         _settings = settings;
+        _db = db;
     }
 
     [HttpGet]
@@ -18,10 +21,31 @@ public class TransactionsController : ControllerBase
         [FromQuery] int? year,
         [FromQuery] int? month,
         [FromQuery] string? accountId,
-        [FromQuery] List<string>? category)   // ← now accepts multiple values
+        [FromQuery] List<string>? category)
     {
         var results = await _txns.Query(year, month, accountId, category);
-        return Ok(results);
+
+        var linkedNames = await _db.LinkedAccounts
+            .ToDictionaryAsync(a => a.AccountId, a => a.Name);
+        var manualNames = await _db.ManualAccounts
+            .ToDictionaryAsync(a => a.Id.ToString(), a => a.Name);
+
+        var response = results.Select(t => new
+        {
+            t.TransactionId,
+            t.AccountId,
+            AccountName = linkedNames.GetValueOrDefault(t.AccountId)
+                          ?? manualNames.GetValueOrDefault(t.AccountId)
+                          ?? t.AccountId,
+            t.Date,
+            t.Name,
+            t.Credit,
+            t.Debit,
+            t.Amount,
+            t.Category
+        });
+
+        return Ok(response);
     }
 
     [HttpPost("sync")]
