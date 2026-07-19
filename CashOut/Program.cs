@@ -66,11 +66,25 @@ builder.Services.AddScoped<HttpClient>(sp =>
 
 var app = builder.Build();
 
-// ── Auto-migrate on startup ───────────────────────────────────────────────
-using (var scope = app.Services.CreateScope())
+// ── Auto-migrate on startup (with retry for Docker DNS race) ─────────────
 {
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
+    var maxRetries = 10;
+    for (var attempt = 1; attempt <= maxRetries; attempt++)
+    {
+        try
+        {
+            using var scope = app.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Database.Migrate();
+            break;
+        }
+        catch (Exception ex) when (attempt < maxRetries)
+        {
+            var delay = TimeSpan.FromSeconds(Math.Min(attempt * 2, 10));
+            Console.WriteLine($"Migration attempt {attempt}/{maxRetries} failed ({ex.GetType().Name}). Retrying in {delay.TotalSeconds}s...");
+            Thread.Sleep(delay);
+        }
+    }
 }
 
 app.UseStaticFiles();
