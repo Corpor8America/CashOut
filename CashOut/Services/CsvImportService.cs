@@ -131,7 +131,7 @@ public class CsvImportService
         foreach (var d in distinctDates)
         {
             var txnsForDate = await _db.Transactions
-                .Where(t => t.AccountId == accountId && t.Date == d)
+                .Where(t => t.AccountId == resolvedAccountId && t.Date == d)
                 .ToListAsync();
             foreach (var t in txnsForDate)
                 existingTuples.Add((t.Date, t.Amount, t.NormalizedName));
@@ -255,7 +255,7 @@ public class CsvImportService
             var txn = new Transaction
             {
                 TransactionId = $"csv-{Guid.NewGuid()}",
-                AccountId = accountId,
+                AccountId = resolvedAccountId,
                 Source = TransactionSource.CSV,
                 Date = date,
                 Name = displayName,
