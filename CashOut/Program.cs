@@ -45,6 +45,7 @@ builder.Services.AddHttpClient<PlaidService>(client =>
 
 builder.Services.AddScoped<MerchantNormalizationService>();
 builder.Services.AddScoped<CsvImportService>();
+builder.Services.AddScoped<PdfImportService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddMudServices();

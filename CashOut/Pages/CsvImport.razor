@@ -25,7 +25,7 @@
     <MudPaper Class="pa-6" Elevation="1">
         <MudText Typo="Typo.h6" GutterBottom="true">Step 1: Upload CSV</MudText>
         <MudText Typo="Typo.body2" Class="mb-6">
-            Upload a CSV file from your bank. You'll map the columns next.
+            Upload a CSV or PDF statement from your bank. You'll map the columns next.
         </MudText>
 
         @* ── Drop zone ── *@
@@ -36,13 +36,13 @@
                      Style="font-size:3rem; color: var(--mud-palette-primary); opacity:0.7; margin-bottom:8px" />
 
             <MudText Typo="Typo.h6" Style="margin-bottom:4px">
-                @(_isDragOver ? "Drop to upload" : "Drag & drop your CSV here")
+                @(_isDragOver ? "Drop to upload" : "Drag & drop your CSV or PDF here")
             </MudText>
             <MudText Typo="Typo.body2" Color="Color.Secondary" Style="margin-bottom:16px">
                 or click to browse
             </MudText>
 
-            <InputFile id="csvFileInput" OnChange="OnFileSelected" accept=".csv" hidden />
+            <InputFile id="csvFileInput" OnChange="OnFileSelected" accept=".csv,.pdf" hidden />
             <MudButton HtmlTag="label" Variant="Variant.Outlined" Color="Color.Primary" for="csvFileInput"
                        StartIcon="@Icons.Material.Filled.FolderOpen">
                 Browse file
@@ -371,10 +371,42 @@
         _uploading = true; _error = null;
         try
         {
-            using var reader = new System.IO.StreamReader(stream);
-            _csvContent = await reader.ReadToEndAsync();
+            if (fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                using var ms = new System.IO.MemoryStream();
+                await stream.CopyToAsync(ms);
+                var bytes = ms.ToArray();
 
-            await RefreshPreview();
+                using var form = new MultipartFormDataContent();
+                form.Add(new ByteArrayContent(bytes), "file", fileName);
+
+                var resp = await Http.PostAsync($"api/csv-import/{AccountId}/pdf-preview", form);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
+                    _error = err?["error"] ?? "PDF parsing failed.";
+                    return;
+                }
+
+                var result = await resp.Content.ReadFromJsonAsync<PdfPreviewResult>();
+                _csvContent = result!.CsvContent;
+                _preview = result.Preview;
+
+                _mapping.DateColumn = "Date";
+                _mapping.DescriptionColumn = "Description";
+                _mapping.AmountColumn = "Amount";
+                _amountType = "single";
+                _mapping.SkipRowsFromTop = 0;
+                _mapping.SkipRowsFromBottom = 0;
+            }
+            else
+            {
+                using var reader = new System.IO.StreamReader(stream);
+                _csvContent = await reader.ReadToEndAsync();
+
+                await RefreshPreview();
+            }
+
             _step = Step.Map;
         }
         catch (Exception ex) { _error = ex.Message; }
@@ -495,6 +527,7 @@
 
     // Local mirror of server types for JSON deserialization
     private record CsvPreview(string[] Headers, string[][] Rows);
+    private record PdfPreviewResult(string CsvContent, CsvPreview Preview);
     private record SkippedRow(int RowNumber, string RawData, string Reason);
     private record ImportResult(int Imported, int SkippedAlreadyPresent, List<SkippedRow> SkippedRows);
 }

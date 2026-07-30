@@ -5,8 +5,13 @@ using Microsoft.AspNetCore.Mvc;
 public class CsvImportController : ControllerBase
 {
     private readonly CsvImportService _csv;
+    private readonly PdfImportService _pdf;
 
-    public CsvImportController(CsvImportService csv) => _csv = csv;
+    public CsvImportController(CsvImportService csv, PdfImportService pdf)
+    {
+        _csv = csv;
+        _pdf = pdf;
+    }
 
     /// <summary>Returns the current mapping profile for an account (if any).</summary>
     [HttpGet("{accountId}/profile")]
@@ -44,6 +49,38 @@ public class CsvImportController : ControllerBase
         var content = await reader.ReadToEndAsync();
         var preview = _csv.Preview(content, skipTop, skipBottom);
         return Ok(preview);
+    }
+
+    /// <summary>
+    /// Parses a PDF file and returns the extracted CSV content + preview.
+    /// Uses PdfPig to extract text and heuristics to detect transactions.
+    /// </summary>
+    [HttpPost("{accountId}/pdf-preview")]
+    public async Task<IActionResult> PdfPreview(
+        string accountId,
+        [FromForm] IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "No file uploaded." });
+
+        try
+        {
+            using var ms = new System.IO.MemoryStream();
+            await file.CopyToAsync(ms);
+            var pdfBytes = ms.ToArray();
+
+            var csvContent = _pdf.ExtractCsv(pdfBytes);
+
+            if (string.IsNullOrWhiteSpace(csvContent.Replace("Date,Description,Amount", "").Trim()))
+                return BadRequest(new { error = "No transactions could be extracted from this PDF. The file may be a scanned image or use an unsupported format." });
+
+            var preview = _csv.Preview(csvContent);
+            return Ok(new { csvContent, preview });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     /// <summary>Imports a CSV file using the account's current mapping profile.</summary>
