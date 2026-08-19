@@ -48,6 +48,7 @@ builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<PdfImportService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<AccountReportService>();
 builder.Services.AddMudServices();
 
 // ── HttpClient for Blazor pages calling local API endpoints ───────────────

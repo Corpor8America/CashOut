@@ -299,7 +299,7 @@ else
     private void HandleRowClick(TableRowClickEventArgs<AccountDto> args)
     {
         if (args.Item is null) return;
-        Nav.NavigateTo($"/transactions?accountId={args.Item.AccountId}&accountName={Uri.EscapeDataString(args.Item.Name)}");
+        Nav.NavigateTo($"/accounts/{Uri.EscapeDataString(args.Item.AccountId)}");
     }
 
     private record SyncResult(int Added, int Removed);
