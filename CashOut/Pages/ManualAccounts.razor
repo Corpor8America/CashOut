@@ -230,6 +230,6 @@ else
     private void HandleRowClick(TableRowClickEventArgs<AccountDto> args)
     {
         if (args.Item is null) return;
-        Nav.NavigateTo($"/transactions?accountId={args.Item.Id}&accountName={Uri.EscapeDataString(args.Item.Name)}");
+        Nav.NavigateTo($"/accounts/{args.Item.Id}");
     }
 }
