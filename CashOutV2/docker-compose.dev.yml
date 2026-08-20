@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cashout
+      POSTGRES_USER: cashout
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata_dev:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U cashout" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: ${DB_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  app:
+    build:
+      context: .
+      dockerfile: CashOut/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SANDBOX_SECRET=${PLAID_SANDBOX_SECRET}
+      - PLAID_PRODUCTION_SECRET=${PLAID_PRODUCTION_SECRET}
+      - PLAID_ENV=${PLAID_ENV}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - ConnectionStrings__Default=Host=db;Database=cashout;Username=cashout;Password=${DB_PASSWORD}
+      - ASPNETCORE_ENVIRONMENT=Development
+    ports:
+      - "8080:8080"
+
+volumes:
+  pgdata_dev:
+  pgadmin_data:
