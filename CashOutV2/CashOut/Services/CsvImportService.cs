@@ -24,6 +24,7 @@ public class CsvImportService
             .Where(p => p.AccountId == accountId)
             .MaxAsync(p => (int?)p.Version) ?? 0;
 
+        profile.Id = 0;
         profile.AccountId = accountId;
         profile.Version = maxVersion + 1;
         profile.CreatedAt = DateTime.UtcNow;
@@ -41,7 +42,7 @@ public class CsvImportService
         if (rows.Count == 0) return new CsvPreview(Array.Empty<string>(), Array.Empty<string[]>());
 
         var headers = rows[0];
-        var preview = rows.Skip(1).Take(5).ToArray();
+        var preview = rows.Skip(1).ToArray();
         return new CsvPreview(headers, preview);
     }
 
@@ -90,6 +91,19 @@ public class CsvImportService
         var amountIdx = ColIdx(profile.AmountColumn);
         var categoryIdx = ColIdx(profile.CategoryColumn);
 
+        var csvDates = new HashSet<DateOnly>();
+        foreach (var row in dataRows)
+        {
+            if (DateOnly.TryParse(GetField(row, dateIdx), out var d))
+                csvDates.Add(d);
+        }
+
+        var existingDates = (await _db.Transactions
+            .Where(t => t.AccountId == resolvedAccountId && csvDates.Contains(t.Date))
+            .Select(t => t.Date)
+            .ToListAsync())
+            .ToHashSet();
+
         int imported = 0;
         var skippedRows = new List<SkippedRow>();
 
@@ -102,6 +116,13 @@ public class CsvImportService
             if (!DateOnly.TryParse(rawDate, out var date))
             {
                 skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row), "Date could not be parsed"));
+                continue;
+            }
+
+            if (existingDates.Contains(date))
+            {
+                skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row),
+                    "Transactions for this day were already imported"));
                 continue;
             }
 
@@ -121,6 +142,7 @@ public class CsvImportService
                     skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row), "Amount is zero"));
                     continue;
                 }
+                if (!profile.NegativeIsCredit) parsed = -parsed;
                 (credit, debit) = Transaction.NormalizeSingleAmount(parsed);
             }
             else

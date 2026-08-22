@@ -95,6 +95,92 @@ public class CsvImportServiceTests
         Assert.AreEqual(-1500m, txns[1].Amount);
     }
 
+    // ── Import: day-level dedup ───────────────────────────────────────────
+
+    [TestMethod]
+    public async Task Import_DayAlreadyImported_SkipsAllRowsForThatDay()
+    {
+        await using var db = CreateDb();
+        db.Transactions.Add(TestHelper.MakeTxn("p1", 2025, 3, 1, 5.00m));
+        await db.SaveChangesAsync();
+        var svc = new CsvImportService(db);
+
+        var accountId = "acct-1";
+        var csv = "Date,Description,Amount\n" +
+                  "2025-03-01,Coffee Shop,5.50\n" +
+                  "2025-03-01,Grocery Store,42.00\n" +
+                  "2025-03-02,Rent,1500.00\n";
+
+        var profile = new CsvMappingProfile
+        {
+            DateColumn = "Date",
+            DescriptionColumn = "Description",
+            AmountColumn = "Amount"
+        };
+
+        var result = await svc.Import(accountId, csv, profile);
+
+        Assert.AreEqual(1, result.Imported);
+        Assert.AreEqual(2, result.SkippedRows.Count);
+        Assert.IsTrue(result.SkippedRows.All(r => r.Reason.Contains("already imported")));
+        Assert.AreEqual(2, db.Transactions.Count());
+        Assert.IsTrue(db.Transactions.Any(t => t.Name == "Rent"));
+    }
+
+    [TestMethod]
+    public async Task Import_SameDayDifferentAccount_ImportsNormally()
+    {
+        await using var db = CreateDb();
+        db.Transactions.Add(TestHelper.MakeTxn("p1", 2025, 3, 1, 5.00m, accountId: "acct-2"));
+        await db.SaveChangesAsync();
+        var svc = new CsvImportService(db);
+
+        var accountId = "acct-1";
+        var csv = "Date,Description,Amount\n" +
+                  "2025-03-01,Coffee Shop,5.50\n";
+
+        var profile = new CsvMappingProfile
+        {
+            DateColumn = "Date",
+            DescriptionColumn = "Description",
+            AmountColumn = "Amount"
+        };
+
+        var result = await svc.Import(accountId, csv, profile);
+
+        Assert.AreEqual(1, result.Imported);
+        Assert.AreEqual(0, result.SkippedRows.Count);
+        Assert.AreEqual(2, db.Transactions.Count());
+    }
+
+    [TestMethod]
+    public async Task Import_ReimportSameFile_AllDaysSkipped()
+    {
+        await using var db = CreateDb();
+        var svc = new CsvImportService(db);
+
+        var accountId = "acct-1";
+        var csv = "Date,Description,Amount\n" +
+                  "2025-03-01,Coffee Shop,5.50\n" +
+                  "2025-03-02,Rent,1500.00\n";
+
+        var profile = new CsvMappingProfile
+        {
+            DateColumn = "Date",
+            DescriptionColumn = "Description",
+            AmountColumn = "Amount"
+        };
+
+        var first = await svc.Import(accountId, csv, profile);
+        Assert.AreEqual(2, first.Imported);
+
+        var second = await svc.Import(accountId, csv, profile);
+
+        Assert.AreEqual(0, second.Imported);
+        Assert.AreEqual(2, second.SkippedRows.Count);
+        Assert.AreEqual(2, db.Transactions.Count());
+    }
+
     // ── Import: skip rows ─────────────────────────────────────────────────
 
     [TestMethod]
@@ -278,7 +364,7 @@ public class CsvImportServiceTests
     }
 
     [TestMethod]
-    public void Preview_ReturnsMaxFiveRows()
+    public void Preview_ReturnsAllRows()
     {
         var svc = new CsvImportService(CreateDb());
         var rows = string.Join("\n",
@@ -287,7 +373,7 @@ public class CsvImportServiceTests
 
         var preview = svc.Preview(csv);
 
-        Assert.AreEqual(5, preview.Rows.Length);
+        Assert.AreEqual(10, preview.Rows.Length);
     }
 
     [TestMethod]

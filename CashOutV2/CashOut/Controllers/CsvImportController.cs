@@ -48,7 +48,12 @@ public class CsvImportController : ControllerBase
     [HttpPost("{accountId}/pdf-preview")]
     public async Task<IActionResult> PdfPreview(
         string accountId,
-        [FromForm] IFormFile file)
+        [FromForm] IFormFile file,
+        [FromQuery] string? pages = null,
+        [FromQuery] decimal? dateColEnd = null,
+        [FromQuery] decimal? amountColStart = null,
+        [FromQuery] bool joinCont = true,
+        [FromQuery] string? rowRegex = null)
     {
         if (file == null || file.Length == 0)
             return BadRequest(new { error = "No file uploaded." });
@@ -59,18 +64,81 @@ public class CsvImportController : ControllerBase
             await file.CopyToAsync(ms);
             var pdfBytes = ms.ToArray();
 
-            var csvContent = _pdf.ExtractCsv(pdfBytes);
+            int[]? pageList = ParsePages(pages);
+
+            var (rawText, csvContent, skippedLines) = _pdf.ExtractCsvDebug(
+                pageList, pdfBytes, dateColEnd, amountColStart, joinCont, rowRegex);
 
             if (string.IsNullOrWhiteSpace(csvContent.Replace("Date,Description,Amount", "").Trim()))
                 return BadRequest(new { error = "No transactions could be extracted from this PDF. The file may be a scanned image or use an unsupported format." });
 
             var preview = _csv.Preview(csvContent);
-            return Ok(new { csvContent, preview });
+            return Ok(new { csvContent, preview, debug = new { rawText, skippedLines } });
         }
-        catch (InvalidOperationException ex)
+        catch (ArgumentException ex)
         {
             return BadRequest(new { error = ex.Message });
         }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = "Failed to extract transactions from PDF: " + ex.Message });
+        }
+    }
+
+    [HttpPost("pdf-debug")]
+    public async Task<IActionResult> PdfDebug(
+        [FromForm] IFormFile file,
+        [FromQuery] string? pages = null,
+        [FromQuery] decimal? dateColEnd = null,
+        [FromQuery] decimal? amountColStart = null,
+        [FromQuery] bool joinCont = true,
+        [FromQuery] string? rowRegex = null)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "No file uploaded." });
+
+        try
+        {
+            using var ms = new System.IO.MemoryStream();
+            await file.CopyToAsync(ms);
+            var pdfBytes = ms.ToArray();
+
+            int[]? pageList = ParsePages(pages);
+
+            var (rawText, csvContent, skippedLines) = _pdf.ExtractCsvDebug(
+                pageList, pdfBytes, dateColEnd, amountColStart, joinCont, rowRegex);
+            return Ok(new { rawText, csvContent, skippedLines });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { error = "Failed to extract from PDF: " + ex.Message });
+        }
+    }
+
+    private static int[]? ParsePages(string? pages)
+    {
+        if (string.IsNullOrWhiteSpace(pages)) return null;
+
+        var result = new List<int>();
+        foreach (var part in pages.Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var seg = part.Trim();
+            var dash = seg.IndexOf('-');
+            if (dash > 0 && int.TryParse(seg[..dash].Trim(), out var start) && int.TryParse(seg[(dash + 1)..].Trim(), out var end))
+            {
+                for (var n = start; n <= end; n++) result.Add(n);
+            }
+            else if (int.TryParse(seg, out var n))
+            {
+                result.Add(n);
+            }
+        }
+
+        return result.Count > 0 ? result.ToArray() : null;
     }
 
     [HttpPost("{accountId}/import")]
@@ -85,17 +153,29 @@ public class CsvImportController : ControllerBase
         if (profile == null)
             return BadRequest(new { error = "No mapping profile found for this account. Please map columns first." });
 
-        using var reader = new System.IO.StreamReader(file.OpenReadStream());
-        var content = await reader.ReadToEndAsync();
-
         try
         {
+            using var ms = new System.IO.MemoryStream();
+            await file.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            string content;
+            if (file.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var (_, csvContent, _) = _pdf.ExtractCsvDebug(pdfPages: null, bytes);
+                content = csvContent;
+            }
+            else
+            {
+                content = System.Text.Encoding.UTF8.GetString(bytes).TrimStart('\uFEFF');
+            }
+
             var result = await _csv.Import(accountId, content, profile);
             return Ok(result);
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
-            return BadRequest(new { error = ex.Message });
+            return BadRequest(new { error = "Import failed: " + ex.Message });
         }
     }
 

@@ -13,6 +13,12 @@ public class CsvMappingProfile
     public string? DebitColumn { get; set; }
     public string? AmountColumn { get; set; }
     public string? CategoryColumn { get; set; }
+    public string? PdfPages { get; set; }
+    public string? PdfRowRegex { get; set; }
+    public decimal? PdfDateColumnEnd { get; set; }
+    public decimal? PdfAmountColumnStart { get; set; }
+    public bool PdfJoinContinuationRows { get; set; } = true;
+    public bool NegativeIsCredit { get; set; } = true;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
