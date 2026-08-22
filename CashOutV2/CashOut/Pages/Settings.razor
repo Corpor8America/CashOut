@@ -19,17 +19,6 @@ else
         <MudSimpleTable Elevation="0">
             <tbody>
                 <tr>
-                    <td><strong>Active Year</strong></td>
-                    <td>
-                        <MudStack Row="true" AlignItems="AlignItems.Center">
-                            <MudText>@_outputYear</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                (from most recent transaction)
-                            </MudText>
-                        </MudStack>
-                    </td>
-                </tr>
-                <tr>
                     <td><strong>Version</strong></td>
                     <td><MudText Typo="Typo.body2" Style="font-family:monospace">@_version</MudText></td>
                 </tr>
@@ -79,7 +68,6 @@ else
 }
 
 @code {
-    private int _outputYear = DateTime.Now.Year;
     private string _version = "—";
     private bool _loading = true;
     private string? _error;
@@ -92,9 +80,6 @@ else
     {
         try
         {
-            var settings = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/settings") ?? new();
-            if (settings.TryGetValue("output_year", out var y) && int.TryParse(y, out var yi)) _outputYear = yi;
-
             var versionResp = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/version");
             if (versionResp?.TryGetValue("version", out var v) == true) _version = v;
         }

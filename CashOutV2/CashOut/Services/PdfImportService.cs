@@ -138,7 +138,10 @@ public partial class PdfImportService
         List<(int CellIdx, DateOnly? Exact, int Month, int Day)?> dates,
         int baseYear)
     {
-        var yearlessMonths = dates.Where(d => d != null).Select(d => d.Value.Month).ToHashSet();
+        var yearlessMonths = dates
+            .Where(d => d.HasValue)
+            .Select(d => d!.Value.Month)
+            .ToHashSet();
         int? janYear = null;
         if (yearlessMonths.Contains(12) && yearlessMonths.Contains(1))
             janYear = Math.Max(baseYear, DateTime.UtcNow.Year);

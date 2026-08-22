@@ -14,10 +14,6 @@ public class SettingsController : ControllerBase
         _db = db;
     }
 
-    [HttpGet]
-    public async Task<IActionResult> GetAll() =>
-        Ok(await _settings.GetAll());
-
     [HttpGet("years")]
     public async Task<IActionResult> AvailableYears() =>
         Ok(await _settings.GetAvailableYears());

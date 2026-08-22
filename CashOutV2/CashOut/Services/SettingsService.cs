@@ -34,13 +34,4 @@ public class SettingsService
     {
         return Task.FromResult(new List<string>());
     }
-
-    public async Task<Dictionary<string, string>> GetAll()
-    {
-        var outputYear = await GetOutputYear();
-        return new Dictionary<string, string>
-        {
-            ["output_year"] = outputYear.ToString()
-        };
-    }
 }
