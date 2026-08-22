@@ -40,8 +40,8 @@ One fetch per year: `GET api/transactions?year={year}` (+ `&accountId=` when pre
 
 **1. Browse (search box empty)** — one `MudTable` grouped by month:
 
-- `GroupBy` → transaction month; `Expandable = true`; `IsInitiallyExpanded = false`.
-- Groups start collapsed, giving a year-at-a-glance list of month headers. Click to expand a month.
+- `GroupBy` → transaction month; `Expandable = true`; `IsInitiallyExpanded = true`.
+- All months render expanded on load — scrolling shows the whole year. Months can be collapsed individually to hide noise.
 - `GroupHeaderTemplate` renders: month name, transaction count, outflow and inflow totals (right-aligned):
 
   ```
@@ -62,9 +62,9 @@ One fetch per year: `GET api/transactions?year={year}` (+ `&accountId=` when pre
 - Case-insensitive substring match on `Name` (`Contains(..., OrdinalIgnoreCase)`).
 - Composes with the category filter (AND).
 
-### Initial expansion trade-off
+### Initial state
 
-All groups start collapsed (uniform initial-state limitation above). This is accepted: the month headers themselves act as a useful summary. Revisit only if users find the extra click annoying.
+All groups start expanded (MudBlazor's `IsInitiallyExpanded` is uniform across groups, so "current month only" isn't natively possible — all-expanded is the chosen behavior). Collapse is available per month for trimming the view.
 
 ---
 
@@ -120,9 +120,5 @@ No controller, service, or migration changes.
 - **Single grouped table over 12 expansion panels** — consistent column widths across months; less markup; built-in collapse behavior.
 - **Flat results while searching** — uniform-only initial group expansion in MudBlazor makes selective auto-expand impractical; flat match list is better UX regardless.
 - **Category filter goes client-side** — data for the year is already loaded; filtering feels instant. Server param kept for compatibility.
-- **Search scope: Name only** — matches the original request.
-
-## Open Questions
-
-- Extend search to Account and Category columns too? Cheap to add client-side (`Name || AccountName || Category`).
-- Prefer groups expanded by default (`IsInitiallyExpanded = true`) once real data volume confirms rendering cost is acceptable?
+- **Search scope: Name only** — matches the original request; not extended to Account/Category.
+- **Groups expanded by default** — the page opens as a scrollable full-year view; collapse is opt-out per month.
