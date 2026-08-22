@@ -1,25 +1,10 @@
 @page "/transactions"
 @using System.Globalization
+@using Microsoft.AspNetCore.WebUtilities
 @inject HttpClient Http
 @inject NavigationManager Nav
 
 <MudText Typo="Typo.h4" GutterBottom="true">Transactions</MudText>
-
-@if (_filterAccountName != null)
-{
-    <MudPaper Elevation="1" Class="mb-4 pa-4">
-        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-            <MudText Typo="Typo.body1">
-                <MudIcon Icon="@Icons.Material.Filled.AccountBalance" Class="mr-2" />
-                Showing transactions for <strong>@_filterAccountName</strong>
-            </MudText>
-            <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="ClearAccountFilter"
-                       StartIcon="@Icons.Material.Filled.Close">
-                Show all
-            </MudButton>
-        </MudStack>
-    </MudPaper>
-}
 
 @if (_error != null)
 {
@@ -27,7 +12,7 @@
 }
 
 <MudPaper Elevation="1" Class="mb-4">
-    <MudStack Row="true" AlignItems="AlignItems.Center" Class="px-4 pt-3 pb-0">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="px-4 py-3">
         <MudSelect T="int" Label="Year" Value="_filterYear" ValueChanged="OnYearChangedInternal" Dense="true"
                    Margin="Margin.Dense" Style="width:90px; flex-shrink:0" Variant="Variant.Outlined">
             @foreach (var y in _availableYears)
@@ -36,14 +21,19 @@
             }
         </MudSelect>
 
-        <MudTabs Elevation="0" Rounded="false" Color="Color.Primary" ActivePanelIndex="@_activeMonthTabIndex"
-                 Class="flex-grow-1" Style="min-width:0" ActivePanelIndexChanged="OnActiveMonthChanged">
-            @for (int m = 1; m <= 12; m++)
+        <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" Immediate="true" Clearable="true"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Small"
+                      Label="Search transactions..." Margin="Margin.Dense"
+                      Variant="Variant.Outlined" Class="flex-grow-1 my-1" Style="min-width:180px" />
+
+        <MudSelect T="string" Label="Account" Value="_accountSelection" ValueChanged="OnAccountSelectionChanged"
+                   Dense="true" Margin="Margin.Dense" Style="width:190px; flex-shrink:0" Variant="Variant.Outlined">
+            <MudSelectItem Value="@string.Empty">All accounts</MudSelectItem>
+            @foreach (var account in _accounts)
             {
-                var monthIndex = m;
-                <MudTabPanel Text="@CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m)" />
+                <MudSelectItem Value="@account.Id.ToString()">@account.Name</MudSelectItem>
             }
-        </MudTabs>
+        </MudSelect>
 
         <div style="position: relative;">
             <MudTooltip Text="Filter by category">
@@ -93,15 +83,27 @@
 }
 else if (_transactions.Count == 0)
 {
-    <MudText Color="Color.Secondary" Class="mt-4">No transactions found for this month/filter.</MudText>
+    <MudText Color="Color.Secondary" Class="mt-4">No transactions found for this year/filter.</MudText>
 }
-else
+else if (_visible.Count == 0)
 {
-    <MudTable Items="@_transactions" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mt-2">
+    <MudText Color="Color.Secondary" Class="mt-4">
+        @if (IsSearching)
+        {
+            @($"No transactions match '{_search}'.")
+        }
+        else
+        {
+            @("No transactions match the current filters.")
+        }
+    </MudText>
+}
+else if (IsSearching)
+{
+    <MudTable Items="@_visible" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mt-2">
         <HeaderContent>
             <MudTh>Date</MudTh>
             <MudTh>Name</MudTh>
-            <MudTh>Account</MudTh>
             <MudTh>Category</MudTh>
             <MudTh Style="text-align:right">Amount</MudTh>
         </HeaderContent>
@@ -112,7 +114,6 @@ else
             }
             <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
             <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Account">@context.AccountName</MudTd>
             <MudTd DataLabel="Category">
                 @(string.IsNullOrEmpty(context.Category) ? "(uncategorized)" : context.Category)
             </MudTd>
@@ -125,39 +126,104 @@ else
     </MudTable>
 
     <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
-        Showing @_transactions.Count transaction(s) for @CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(_filterMonth) @_filterYear
+        @_visible.Count match(es) for '@_search' in @_filterYear
+    </MudText>
+}
+else
+{
+    <MudTable Items="@_visible" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mt-2"
+              GroupBy="@(new TableGroupDefinition<TransactionDto>(t => t.Date.Month) { Expandable = true, IsInitiallyExpanded = true })">
+        <HeaderContent>
+            <MudTh>Date</MudTh>
+            <MudTh>Name</MudTh>
+            @if (ShowAccountColumn)
+            {
+                <MudTh>Account</MudTh>
+            }
+            <MudTh>Category</MudTh>
+            <MudTh Style="text-align:right">Amount</MudTh>
+        </HeaderContent>
+        <GroupHeaderTemplate>
+            @{
+                var monthIndex = (int)context.Key!;
+                var monthTxns = context.Items.ToList();
+                var outflow = monthTxns.Sum(t => t.Debit ?? 0);
+                var inflow = monthTxns.Sum(t => t.Credit ?? 0);
+                var middleSpan = ShowAccountColumn ? 2 : 1;
+            }
+            <MudTd colspan="2">
+                <strong>@CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(monthIndex)</strong>
+            </MudTd>
+            <MudTd colspan="@middleSpan" Style="color:var(--mud-palette-text-secondary)">
+                @monthTxns.Count transaction(s)
+            </MudTd>
+            <MudTd Style="text-align:right; white-space:nowrap">
+                <span style="color:var(--mud-palette-error); font-weight:bold">@outflow.ToString("C") out</span>
+                <span style="margin-left:12px"></span>
+                <span style="color:var(--mud-palette-success); font-weight:bold">@inflow.ToString("C") in</span>
+            </MudTd>
+        </GroupHeaderTemplate>
+        <RowTemplate>
+            @{
+                var isCredit = context.Credit.HasValue;
+                var displayAmount = isCredit ? context.Credit!.Value : (context.Debit ?? 0);
+            }
+            <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            @if (ShowAccountColumn)
+            {
+                <MudTd DataLabel="Account">@context.AccountName</MudTd>
+            }
+            <MudTd DataLabel="Category">
+                @(string.IsNullOrEmpty(context.Category) ? "(uncategorized)" : context.Category)
+            </MudTd>
+            <MudTd DataLabel="Amount" Style="text-align:right">
+                <MudText Color="@(isCredit ? Color.Success : Color.Error)" Style="font-weight:bold">
+                    @displayAmount.ToString("C")
+                </MudText>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+
+    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
+        Showing @_visible.Count transaction(s) for @_filterYear
     </MudText>
 }
 
 @code {
     private List<TransactionDto> _transactions = new();
+    private List<TransactionDto> _visible = new();
     private List<string> _categories = new();
     private List<string> _allCategories = new();
     private List<int> _availableYears = new() { DateTime.Now.Year };
+    private List<AccountDto> _accounts = new();
     private bool _loading = true;
     private string? _error;
 
     private int _filterYear = DateTime.Now.Year;
-    private int _filterMonth = DateTime.Now.Month;
-    private int _activeMonthTabIndex;
     private string? _filterAccountId;
-    private string? _filterAccountName;
+    private string _accountSelection = "";
+    private string _search = "";
 
     private bool _categoryPopoverOpen;
     private HashSet<string> _selectedCategories = new();
     private HashSet<string> _pendingCategories = new();
 
+    private bool IsSearching => !string.IsNullOrWhiteSpace(_search);
+    private bool ShowAccountColumn => string.IsNullOrEmpty(_filterAccountId);
+
     protected override async Task OnInitializedAsync()
     {
         await LoadYears();
         await LoadCategories();
+        await LoadAccounts();
 
         var uri = new Uri(Nav.Uri);
-        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        var query = QueryHelpers.ParseQuery(uri.Query);
         if (query.TryGetValue("accountId", out var accountId))
         {
-            _filterAccountId = accountId;
-            await ResolveAccountName();
+            _filterAccountId = accountId.ToString();
+            _accountSelection = _filterAccountId;
         }
 
         await LoadTransactions();
@@ -187,37 +253,40 @@ else
         catch { }
     }
 
-    private async Task ResolveAccountName()
+    private async Task LoadAccounts()
     {
-        if (string.IsNullOrEmpty(_filterAccountId)) return;
-        try
-        {
-            var accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new();
-            var match = accounts.FirstOrDefault(a => a.Id.ToString() == _filterAccountId);
-            if (match != null) _filterAccountName = match.Name;
-        }
+        try { _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new(); }
         catch { }
-    }
-
-    private void ClearAccountFilter()
-    {
-        _filterAccountId = null;
-        _filterAccountName = null;
-        Nav.NavigateTo("/transactions");
-        _ = LoadTransactions();
     }
 
     private async Task OnYearChangedInternal(int year)
     {
         _filterYear = year;
+        _search = "";
         await LoadTransactions();
     }
 
-    private async Task OnActiveMonthChanged(int index)
+    private void OnSearchChanged(string? value)
     {
-        _activeMonthTabIndex = index;
-        _filterMonth = index + 1;
+        _search = value ?? "";
+        RecomputeVisible();
+    }
+
+    private async Task OnAccountSelectionChanged(string accountId)
+    {
+        _accountSelection = accountId ?? "";
+        _filterAccountId = string.IsNullOrEmpty(_accountSelection) ? null : _accountSelection;
+
+        SyncAccountQuery();
         await LoadTransactions();
+    }
+
+    private void SyncAccountQuery()
+    {
+        var url = string.IsNullOrEmpty(_filterAccountId)
+            ? "/transactions"
+            : $"/transactions?accountId={Uri.EscapeDataString(_filterAccountId)}";
+        Nav.NavigateTo(url, new NavigationOptions { ReplaceHistoryEntry = true });
     }
 
     private async Task LoadTransactions()
@@ -226,19 +295,28 @@ else
         _error = null;
         try
         {
-            var url = $"api/transactions?year={_filterYear}&month={_filterMonth}";
+            var url = $"api/transactions?year={_filterYear}";
             if (!string.IsNullOrEmpty(_filterAccountId))
                 url += $"&accountId={Uri.EscapeDataString(_filterAccountId)}";
-            if (_selectedCategories.Count > 0)
-            {
-                foreach (var cat in _selectedCategories)
-                    url += $"&category={Uri.EscapeDataString(cat)}";
-            }
 
             _transactions = await Http.GetFromJsonAsync<List<TransactionDto>>(url) ?? new();
+            RecomputeVisible();
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
+    }
+
+    private void RecomputeVisible()
+    {
+        IEnumerable<TransactionDto> query = _transactions;
+
+        if (_selectedCategories.Count > 0)
+            query = query.Where(t => _selectedCategories.Contains(t.Category));
+
+        if (IsSearching)
+            query = query.Where(t => t.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
+
+        _visible = query.ToList();
     }
 
     private void ToggleCategoryFilter()
@@ -253,19 +331,19 @@ else
         else _pendingCategories.Remove(category);
     }
 
-    private async Task ApplyCategoryFilter()
+    private void ApplyCategoryFilter()
     {
         _selectedCategories = new HashSet<string>(_pendingCategories);
         _categoryPopoverOpen = false;
-        await LoadTransactions();
+        RecomputeVisible();
     }
 
-    private async Task ClearCategoryFilter()
+    private void ClearCategoryFilter()
     {
         _selectedCategories.Clear();
         _pendingCategories.Clear();
         _categoryPopoverOpen = false;
-        await LoadTransactions();
+        RecomputeVisible();
     }
 
     private record TransactionDto(

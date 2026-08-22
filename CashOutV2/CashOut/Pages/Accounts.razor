@@ -50,7 +50,7 @@ else
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Name">
-                <MudLink Href="@($"/accounts/{context.Id}")">@context.Name</MudLink>
+                <MudLink Href="@($"/transactions?accountId={context.Id}")">@context.Name</MudLink>
             </MudTd>
             <MudTd DataLabel="Description">@context.Description</MudTd>
             <MudTd DataLabel="Created">@context.CreatedAt.ToString("MMM d, yyyy")</MudTd>
