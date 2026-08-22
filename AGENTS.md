@@ -94,7 +94,7 @@ docker-compose -f docker-compose.dev.yml up -d --build
 - **Controller routes:** kebab-case (`api/csv-import`, `api/normalization`)
 - **Records:** Used for DTOs and request types
 - **Enums:** Stored as strings in DB via `HasConversion<string>()`
-- **Auth/Security:** No auth on API. Plaid tokens encrypted with AES-256-GCM. Debug controller gated to Development environment only.
+- **Auth/Security:** No auth on API. Manual CSV-import accounts only (no Plaid/bank linking).
 
 ---
 
@@ -102,7 +102,7 @@ docker-compose -f docker-compose.dev.yml up -d --build
 
 - **Stack:** ASP.NET Core 9.0 Blazor Server + MudBlazor + PostgreSQL (Npgsql)
 - **Pattern:** Controllers → Services → EF Core DbContext (thin controllers, logic in services)
-- **DI:** Services registered as Scoped, `EncryptionService` as Singleton, `PlaidService` via `AddHttpClient<PlaidService>` (typed HTTP client)
+- **DI:** Services registered as Scoped
 - **Data:** All entity config via Fluent API in `AppDbContext.OnModelCreating` (no data annotations)
 - **Auto-migration:** Runs on startup (`db.Database.Migrate()`)
 - **Sign convention:** Positive Amount = expense/outflow, Negative Amount = income/inflow

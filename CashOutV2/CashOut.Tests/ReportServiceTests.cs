@@ -362,22 +362,23 @@ public class ReportServiceTests
     [TestMethod]
     public async Task GetCategoryDetail_IncludesAccountNames()
     {
-        var manualId = Guid.NewGuid();
+        var acctAId = Guid.NewGuid();
+        var acctBId = Guid.NewGuid();
         var db = CreateDb(nameof(GetCategoryDetail_IncludesAccountNames));
         db.Transactions.AddRange(
-            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food", accountId: "acct-A"),
-            TestHelper.MakeTxn("t2", 2025, 1, 2, 50m, category: "Food", accountId: manualId.ToString())
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food", accountId: acctAId.ToString()),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 50m, category: "Food", accountId: acctBId.ToString())
         );
-        db.LinkedAccounts.Add(new LinkedAccount { AccountId = "acct-A", Name = "Chase Checking", AccessToken = "", ItemId = "", Mask = "", Subtype = "", Institution = "" });
-        db.ManualAccounts.Add(new ManualAccount { Id = manualId, Name = "Cash Wallet" });
+        db.Accounts.Add(new Account { Id = acctAId, Name = "Chase Checking" });
+        db.Accounts.Add(new Account { Id = acctBId, Name = "Cash Wallet" });
         await db.SaveChangesAsync();
         var svc = new ReportService(db, TestHelper.BuildSettings(db));
 
         var result = await svc.GetCategoryDetail(fromYear: 2025, fromMonth: 1, toYear: 2025, toMonth: 12);
 
         var food = result.Categories.Single(c => c.Category == "Food");
-        Assert.AreEqual("Chase Checking", food.Transactions.Single(t => t.AccountId == "acct-A").AccountName);
-        Assert.AreEqual("Cash Wallet", food.Transactions.Single(t => t.AccountId == manualId.ToString()).AccountName);
+        Assert.AreEqual("Chase Checking", food.Transactions.Single(t => t.AccountId == acctAId.ToString()).AccountName);
+        Assert.AreEqual("Cash Wallet", food.Transactions.Single(t => t.AccountId == acctBId.ToString()).AccountName);
     }
 
     [TestMethod]

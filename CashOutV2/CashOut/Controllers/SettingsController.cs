@@ -41,17 +41,11 @@ public class SettingsController : ControllerBase
     [HttpPost("cleanup")]
     public async Task<IActionResult> CleanupOrphans()
     {
-        var linked = await _db.LinkedAccounts.ToListAsync();
-        var manual = await _db.ManualAccounts.ToListAsync();
+        var accounts = await _db.Accounts.ToListAsync();
 
         var validIds = new HashSet<string>();
-        foreach (var la in linked)
-        {
-            validIds.Add(la.AccountId);
-            validIds.Add(la.Id.ToString());
-        }
-        foreach (var ma in manual)
-            validIds.Add(ma.Id.ToString());
+        foreach (var a in accounts)
+            validIds.Add(a.Id.ToString());
 
         var orphanTxns = await _db.Transactions
             .Where(t => !validIds.Contains(t.AccountId))

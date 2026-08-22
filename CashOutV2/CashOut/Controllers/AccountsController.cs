@@ -6,46 +6,54 @@ using Microsoft.EntityFrameworkCore;
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly PlaidService _plaid;
 
-    public AccountsController(AppDbContext db, PlaidService plaid)
-    {
-        _db = db;
-        _plaid = plaid;
-    }
+    public AccountsController(AppDbContext db) => _db = db;
 
     [HttpGet]
     public async Task<IActionResult> List()
     {
-        var linked = await _db.LinkedAccounts
-            .ToDictionaryAsync(a => a.AccountId, a => a.Name);
-
-        var manual = await _db.ManualAccounts
-            .ToDictionaryAsync(a => a.Id.ToString(), a => a.Name);
-
-        var accounts = await _db.Transactions
-            .Select(t => t.AccountId)
-            .Distinct()
-            .OrderBy(id => id)
-            .Select(id => new
-            {
-                Id = id,
-                Name = linked.ContainsKey(id) ? linked[id]
-                     : manual.ContainsKey(id) ? manual[id]
-                     : $"Account {id.Substring(0, 8)}"
-            })
+        var accounts = await _db.Accounts
+            .OrderBy(a => a.Name)
             .ToListAsync();
-
         return Ok(accounts);
     }
 
-    [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> Remove(Guid id)
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateAccountRequest req)
     {
-        var account = await _db.LinkedAccounts.FindAsync(id);
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest(new { error = "Name is required." });
+
+        var account = new Account
+        {
+            Id = Guid.NewGuid(),
+            Name = req.Name.Trim(),
+            Description = req.Description?.Trim() ?? "",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.Accounts.Add(account);
+        await _db.SaveChangesAsync();
+        return Ok(account);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var account = await _db.Accounts.FindAsync(id);
         if (account == null) return NotFound();
 
-        await _plaid.RemoveItem(account.AccessToken, account.ItemId);
+        var accountIdStr = id.ToString();
+        var txns = await _db.Transactions.Where(t => t.AccountId == accountIdStr).ToListAsync();
+        _db.Transactions.RemoveRange(txns);
+
+        var profiles = await _db.CsvMappingProfiles.Where(p => p.AccountId == accountIdStr).ToListAsync();
+        _db.CsvMappingProfiles.RemoveRange(profiles);
+
+        _db.Accounts.Remove(account);
+        await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    public record CreateAccountRequest(string Name, string? Description);
 }

@@ -1,177 +1,117 @@
 @page "/accounts"
 @inject HttpClient Http
-@inject NavigationManager Nav
-@inject IJSRuntime JS
 
-<MudText Typo="Typo.h4" GutterBottom="true">Linked Accounts</MudText>
+<MudText Typo="Typo.h4" GutterBottom="true">Accounts</MudText>
+
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+           OnClick="ShowCreateForm" Class="mb-4">
+    Create Account
+</MudButton>
+
+@if (_showForm)
+{
+    <MudPaper Elevation="1" Class="pa-4 mb-4" MaxWidth="400px">
+        <MudTextField T="string" @bind-Value="_newName" Label="Account Name" Required="true" />
+        <MudTextField T="string" @bind-Value="_newDescription" Label="Description (optional)" />
+        <MudStack Row="true" Spacing="2" Class="mt-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAccount">Save</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="CancelCreate">Cancel</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="my-2">@_message</MudAlert>
+}
+@if (!string.IsNullOrEmpty(_error))
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-2">@_error</MudAlert>
+}
 
 @if (_loading)
 {
     <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
 }
+else if (_accounts.Count == 0)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        No accounts yet. Create one to import CSV transactions.
+    </MudAlert>
+}
 else
 {
-    <MudStack Row="true" Class="mb-4">
-        <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                   StartIcon="@Icons.Material.Filled.Link" OnClick="OpenPlaidLink">
-            Link Account
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Sync"
-                   OnClick="SyncAll" Disabled="@_syncing">
-            @(_syncing ? "Syncing..." : "Sync All")
-        </MudButton>
-        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
-                   OnClick="FetchAll" Disabled="@_fetching">
-            @(_fetching ? "Fetching..." : "Fetch All")
-        </MudButton>
-    </MudStack>
-
-    @if (!string.IsNullOrEmpty(_message))
-    {
-        <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="my-2">@_message</MudAlert>
-    }
-    @if (!string.IsNullOrEmpty(_error))
-    {
-        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-2">@_error</MudAlert>
-    }
-
-    @if (_accounts.Count == 0)
-    {
-        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-            No linked accounts yet. Click "Link Account" to connect via Plaid.
-        </MudAlert>
-    }
-    else
-    {
-        <MudTable Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true">
-            <HeaderContent>
-                <MudTh>Institution</MudTh>
-                <MudTh>Name</MudTh>
-                <MudTh>Mask</MudTh>
-                <MudTh>Type</MudTh>
-                <MudTh>Added</MudTh>
-                <MudTh></MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="Institution">@context.Institution</MudTd>
-                <MudTd DataLabel="Name">
-                    <MudLink Href="@($"/accounts/{context.AccountId}")">@context.Name</MudLink>
-                </MudTd>
-                <MudTd DataLabel="Mask">...@context.Mask</MudTd>
-                <MudTd DataLabel="Type">@context.Subtype</MudTd>
-                <MudTd DataLabel="Added">@context.CreatedAt.ToString("MMM d, yyyy")</MudTd>
-                <MudTd>
+    <MudTable Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true">
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh>Created</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">
+                <MudLink Href="@($"/accounts/{context.Id}")">@context.Name</MudLink>
+            </MudTd>
+            <MudTd DataLabel="Description">@context.Description</MudTd>
+            <MudTd DataLabel="Created">@context.CreatedAt.ToString("MMM d, yyyy")</MudTd>
+            <MudTd>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Href="@($"/csv-import/{context.Id}")">
+                        Import CSV
+                    </MudButton>
                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
-                                   OnClick="() => RemoveAccount(context)" />
-                </MudTd>
-            </RowTemplate>
-        </MudTable>
-    }
+                                   OnClick="() => DeleteAccount(context)" />
+                </MudStack>
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
 }
 
 @code {
     private List<AccountDto> _accounts = new();
     private bool _loading = true;
-    private bool _syncing;
-    private bool _fetching;
+    private bool _showForm;
+    private string _newName = "";
+    private string _newDescription = "";
     private string? _message;
     private string? _error;
 
-    protected override async Task OnInitializedAsync()
-    {
-        await LoadAccounts();
-    }
+    protected override async Task OnInitializedAsync() => await LoadAccounts();
 
     private async Task LoadAccounts()
     {
         _loading = true;
-        try
-        {
-            _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new();
-        }
+        try { _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new(); }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
     }
 
-    private async Task OpenPlaidLink()
+    private void ShowCreateForm() { _showForm = true; _newName = ""; _newDescription = ""; }
+    private void CancelCreate() { _showForm = false; }
+
+    private async Task CreateAccount()
     {
+        if (string.IsNullOrWhiteSpace(_newName)) return;
         try
         {
-            _error = null;
-            var resp = await Http.PostAsJsonAsync("api/plaid/link-token", new { });
-            var json = await resp.Content.ReadFromJsonAsync<PlaidTokenResponse>();
-            if (json?.LinkToken == null) { _error = "Failed to get link token."; return; }
-
-            await JS.InvokeVoidAsync("cashoutPlaid.open", json.LinkToken, DotNetObjectReference.Create(this));
-        }
-        catch (Exception ex) { _error = ex.Message; }
-    }
-
-    [JSInvokable]
-    public async Task OnPlaidSuccess(string publicToken)
-    {
-        try
-        {
-            _error = null;
-            var resp = await Http.PostAsJsonAsync("api/plaid/exchange", new { PublicToken = publicToken });
-            resp.EnsureSuccessStatusCode();
-            _message = "Account linked successfully!";
+            await Http.PostAsJsonAsync("api/accounts", new { Name = _newName, Description = _newDescription });
+            _showForm = false;
+            _message = "Account created.";
             await LoadAccounts();
         }
         catch (Exception ex) { _error = ex.Message; }
-        StateHasChanged();
     }
 
-    [JSInvokable]
-    public void OnPlaidExit() { }
-
-    [JSInvokable]
-    public void OnPlaidError(string message)
-    {
-        _error = $"Plaid error: {message}";
-        StateHasChanged();
-    }
-
-    private async Task SyncAll()
-    {
-        _syncing = true; _error = null; _message = null;
-        try
-        {
-            var resp = await Http.PostAsJsonAsync("api/transactions/sync", new { });
-            var result = await resp.Content.ReadFromJsonAsync<SyncResult>();
-            _message = $"Sync complete: {result?.Added ?? 0} added, {result?.Removed ?? 0} removed.";
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _syncing = false; }
-    }
-
-    private async Task FetchAll()
-    {
-        _fetching = true; _error = null; _message = null;
-        try
-        {
-            var resp = await Http.PostAsJsonAsync("api/transactions/fetch", new { });
-            var result = await resp.Content.ReadFromJsonAsync<FetchResult>();
-            _message = $"Fetch complete: {result?.Written ?? 0} transactions.";
-        }
-        catch (Exception ex) { _error = ex.Message; }
-        finally { _fetching = false; }
-    }
-
-    private async Task RemoveAccount(AccountDto account)
+    private async Task DeleteAccount(AccountDto account)
     {
         try
         {
-            _error = null;
             await Http.DeleteAsync($"api/accounts/{account.Id}");
-            _message = $"Removed {account.Name}.";
+            _message = $"Deleted {account.Name}.";
             await LoadAccounts();
         }
         catch (Exception ex) { _error = ex.Message; }
     }
 
-    private record AccountDto(Guid Id, string AccountId, string Mask, string Name, string Subtype, string Institution, DateTime CreatedAt);
-    private record PlaidTokenResponse(string LinkToken);
-    private record SyncResult(int Added, int Removed);
-    private record FetchResult(int Written);
+    private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
 }

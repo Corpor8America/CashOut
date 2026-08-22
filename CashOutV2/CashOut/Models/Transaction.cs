@@ -1,10 +1,10 @@
-public enum TransactionSource { Plaid, CSV }
+public enum TransactionSource { CSV }
 
 public class Transaction
 {
     public string TransactionId { get; set; } = "";
     public string AccountId { get; set; } = "";
-    public TransactionSource Source { get; set; } = TransactionSource.Plaid;
+    public TransactionSource Source { get; set; } = TransactionSource.CSV;
     public DateOnly Date { get; set; }
     public string Name { get; set; } = "";
     public string RawName { get; set; } = "";

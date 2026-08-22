@@ -31,13 +31,7 @@ builder.Services.Configure<FormOptions>(o =>
 });
 
 // ── Services ──────────────────────────────────────────────────────────────
-builder.Services.AddSingleton<EncryptionService>();
 builder.Services.AddScoped<SettingsService>();
-
-builder.Services.AddHttpClient<PlaidService>(client =>
-{
-    client.DefaultRequestHeaders.Add("Plaid-Version", "2020-09-14");
-});
 
 builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<PdfImportService>();

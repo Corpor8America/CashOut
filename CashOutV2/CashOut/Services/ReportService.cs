@@ -145,14 +145,11 @@ public class ReportService
 
         var currentTxns = await currentQuery.ToListAsync();
 
-        var accountNames = await _db.LinkedAccounts
-            .ToDictionaryAsync(a => a.AccountId, a => a.Name);
-        var manualNames = await _db.ManualAccounts
+        var accountNames = await _db.Accounts
             .ToDictionaryAsync(a => a.Id.ToString(), a => a.Name);
 
         string ResolveAccountName(string id) =>
             accountNames.TryGetValue(id, out var n) ? n
-            : manualNames.TryGetValue(id, out var m) ? m
             : $"Account {id[..Math.Min(8, id.Length)]}";
 
         var monthsInRange = 0;
@@ -251,14 +248,11 @@ public class ReportService
         var currentTxns = await currentQuery.ToListAsync();
         var previousTxns = await previousQuery.ToListAsync();
 
-        var accountNames = await _db.LinkedAccounts
-            .ToDictionaryAsync(a => a.AccountId, a => a.Name);
-        var manualNames = await _db.ManualAccounts
+        var accountNames = await _db.Accounts
             .ToDictionaryAsync(a => a.Id.ToString(), a => a.Name);
 
         string ResolveAccountName(string id) =>
             accountNames.TryGetValue(id, out var n) ? n
-            : manualNames.TryGetValue(id, out var m) ? m
             : $"Account {id[..Math.Min(8, id.Length)]}";
 
         var currentByKey = currentTxns

@@ -192,13 +192,9 @@ else
         if (string.IsNullOrEmpty(_filterAccountId)) return;
         try
         {
-            var linked = await Http.GetFromJsonAsync<List<LinkedAccountDto>>("api/accounts") ?? new();
-            var match = linked.FirstOrDefault(a => a.AccountId == _filterAccountId || a.Id.ToString() == _filterAccountId);
-            if (match != null) { _filterAccountName = match.Name; return; }
-
-            var manual = await Http.GetFromJsonAsync<List<ManualAccountDto>>("api/manual-accounts") ?? new();
-            var manualMatch = manual.FirstOrDefault(a => a.Id.ToString() == _filterAccountId);
-            if (manualMatch != null) _filterAccountName = manualMatch.Name;
+            var accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new();
+            var match = accounts.FirstOrDefault(a => a.Id.ToString() == _filterAccountId);
+            if (match != null) _filterAccountName = match.Name;
         }
         catch { }
     }
@@ -276,9 +272,5 @@ else
         string TransactionId, string AccountId, string AccountName, DateOnly Date,
         string Name, decimal? Credit, decimal? Debit, decimal Amount, string Category);
 
-    private record LinkedAccountDto(
-        Guid Id, string AccountId, string Mask, string Name, string Subtype,
-        string Institution, DateTime CreatedAt);
-
-    private record ManualAccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
+    private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
 }

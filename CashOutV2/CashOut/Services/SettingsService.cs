@@ -3,27 +3,10 @@ using Microsoft.EntityFrameworkCore;
 public class SettingsService
 {
     private readonly AppDbContext _db;
-    private readonly IConfiguration _config;
 
-    public SettingsService(AppDbContext db, IConfiguration config)
+    public SettingsService(AppDbContext db)
     {
         _db = db;
-        _config = config;
-    }
-
-    public string GetPlaidEnvironment()
-    {
-        var env = _config["PLAID_ENV"]
-            ?? Environment.GetEnvironmentVariable("PLAID_ENV");
-
-        if (!string.IsNullOrWhiteSpace(env))
-        {
-            env = env.Trim().ToLowerInvariant();
-            if (env is "sandbox" or "development" or "production")
-                return env;
-        }
-
-        return "sandbox";
     }
 
     public async Task<int> GetOutputYear()
@@ -57,7 +40,6 @@ public class SettingsService
         var outputYear = await GetOutputYear();
         return new Dictionary<string, string>
         {
-            ["plaid_environment"] = GetPlaidEnvironment(),
             ["output_year"] = outputYear.ToString()
         };
     }

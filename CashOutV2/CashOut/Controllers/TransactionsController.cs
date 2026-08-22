@@ -28,18 +28,14 @@ public class TransactionsController : ControllerBase
     {
         var results = await _txns.Query(year, month, accountId, category);
 
-        var linkedNames = await _db.LinkedAccounts
-            .ToDictionaryAsync(a => a.AccountId, a => a.Name);
-        var manualNames = await _db.ManualAccounts
+        var accountNames = await _db.Accounts
             .ToDictionaryAsync(a => a.Id.ToString(), a => a.Name);
 
         var response = results.Select(t => new
         {
             t.TransactionId,
             t.AccountId,
-            AccountName = linkedNames.GetValueOrDefault(t.AccountId)
-                          ?? manualNames.GetValueOrDefault(t.AccountId)
-                          ?? t.AccountId,
+            AccountName = accountNames.GetValueOrDefault(t.AccountId) ?? t.AccountId,
             t.Date,
             t.Name,
             t.Credit,
@@ -49,20 +45,6 @@ public class TransactionsController : ControllerBase
         });
 
         return Ok(response);
-    }
-
-    [HttpPost("sync")]
-    public async Task<IActionResult> Sync()
-    {
-        var (added, removed) = await _txns.SyncAll();
-        return Ok(new { added, removed });
-    }
-
-    [HttpPost("fetch")]
-    public async Task<IActionResult> Fetch()
-    {
-        var count = await _txns.FetchAll();
-        return Ok(new { written = count });
     }
 
     [HttpGet("export")]

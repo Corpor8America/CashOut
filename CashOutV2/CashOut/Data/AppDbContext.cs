@@ -4,28 +4,15 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
-    public DbSet<LinkedAccount> LinkedAccounts => Set<LinkedAccount>();
+    public DbSet<Account> Accounts => Set<Account>();
     public DbSet<Transaction> Transactions => Set<Transaction>();
-    public DbSet<ManualAccount> ManualAccounts => Set<ManualAccount>();
     public DbSet<CsvMappingProfile> CsvMappingProfiles => Set<CsvMappingProfile>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.Entity<LinkedAccount>(e =>
+        modelBuilder.Entity<Account>(e =>
         {
-            e.ToTable("linked_accounts");
-            e.HasKey(x => x.Id);
-            e.Property(x => x.Id).ValueGeneratedNever();
-            e.Property(x => x.AccountId).IsRequired();
-            e.HasIndex(x => x.AccountId).IsUnique();
-            e.Property(x => x.ItemId).IsRequired().HasDefaultValue("");
-            e.HasIndex(x => x.ItemId);
-            e.Property(x => x.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
-        });
-
-        modelBuilder.Entity<ManualAccount>(e =>
-        {
-            e.ToTable("manual_accounts");
+            e.ToTable("accounts");
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Name).IsRequired();

@@ -21,7 +21,7 @@ public class TransactionServiceTests
             TestHelper.MakeTxn("t3", 2025, 6, 1, 300m));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var results = await svc.Query(year: 2025);
 
         Assert.AreEqual(2, results.Count);
@@ -37,7 +37,7 @@ public class TransactionServiceTests
             TestHelper.MakeTxn("t2", 2025, 2, 10, 200m));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var results = await svc.Query(year: 2025, month: 1);
 
         Assert.AreEqual(1, results.Count);
@@ -53,7 +53,7 @@ public class TransactionServiceTests
             TestHelper.MakeTxn("t2", 2025, 1, 1, 200m, accountId: "acct-B"));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var results = await svc.Query(accountId: "acct-A");
 
         Assert.AreEqual(1, results.Count);
@@ -69,27 +69,11 @@ public class TransactionServiceTests
             TestHelper.MakeTxn("t2", 2025, 1, 1, 200m, category: "Travel"));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var results = await svc.Query(categories: new List<string> { "Food" });
 
         Assert.AreEqual(1, results.Count);
         Assert.AreEqual("Food", results[0].Category);
-    }
-
-    [TestMethod]
-    public async Task Query_FiltersBySource()
-    {
-        await using var db = CreateDb();
-        db.Transactions.AddRange(
-            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, source: TransactionSource.Plaid),
-            TestHelper.MakeTxn("t2", 2025, 1, 1, 200m, source: TransactionSource.CSV));
-        await db.SaveChangesAsync();
-
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
-        var results = await svc.Query(source: TransactionSource.CSV);
-
-        Assert.AreEqual(1, results.Count);
-        Assert.AreEqual(TransactionSource.CSV, results[0].Source);
     }
 
     [TestMethod]
@@ -102,7 +86,7 @@ public class TransactionServiceTests
             TestHelper.MakeTxn("t3", 2025, 1, 1, 300m, accountId: "acct-B", category: "Food"));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var results = await svc.Query(
             year: 2025, accountId: "acct-A",
             categories: new List<string> { "Food" });
@@ -121,7 +105,7 @@ public class TransactionServiceTests
             TestHelper.MakeTxn("t3", 2025, 2, 1, 200m));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var results = await svc.Query(year: 2025);
 
         Assert.AreEqual("2025-03-01", results[0].Date.ToString("yyyy-MM-dd"));
@@ -139,7 +123,7 @@ public class TransactionServiceTests
         db.Transactions.Add(txn);
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var result = await svc.UpdateCategory("t1", "Food");
 
         Assert.IsNotNull(result);
@@ -153,7 +137,7 @@ public class TransactionServiceTests
     public async Task UpdateCategory_ReturnsNullForMissingTransaction()
     {
         await using var db = CreateDb();
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
 
         var result = await svc.UpdateCategory("nonexistent", "Food");
 
@@ -169,7 +153,7 @@ public class TransactionServiceTests
         db.Transactions.Add(TestHelper.MakeTxn("t1", 2025, 1, 1, 100m));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var csv = await svc.ExportCsv(2025);
         var header = System.Text.Encoding.UTF8.GetString(csv).Split('\n')[0];
 
@@ -184,7 +168,7 @@ public class TransactionServiceTests
         db.Transactions.Add(txn);
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var csv = await svc.ExportCsv(2025);
         var text = System.Text.Encoding.UTF8.GetString(csv);
 
@@ -202,7 +186,7 @@ public class TransactionServiceTests
             TestHelper.MakeTxn("t2", 2025, 1, 1, 200m, name: "New"));
         await db.SaveChangesAsync();
 
-        var svc = new TransactionService(db, null!, TestHelper.BuildSettings(db));
+        var svc = new TransactionService(db, TestHelper.BuildSettings(db));
         var csv = await svc.ExportCsv(2025);
         var text = System.Text.Encoding.UTF8.GetString(csv);
 

@@ -59,12 +59,6 @@ public class CsvImportService
         string accountId, string csvContent, CsvMappingProfile profile)
     {
         var resolvedAccountId = accountId;
-        if (Guid.TryParse(accountId, out var guid))
-        {
-            var linked = await _db.LinkedAccounts.FindAsync(guid);
-            if (linked != null)
-                resolvedAccountId = linked.AccountId;
-        }
 
         var rows = ParseCsv(csvContent);
         rows = ApplyRowTrimming(rows, profile.SkipRowsFromTop, profile.SkipRowsFromBottom);
