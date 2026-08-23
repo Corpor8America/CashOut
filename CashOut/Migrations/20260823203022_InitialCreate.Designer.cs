@@ -11,8 +11,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace CashOut.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260820163846_DropAmountColumn")]
-    partial class DropAmountColumn
+    [Migration("20260823203022_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -23,6 +23,29 @@ namespace CashOut.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Account", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("now() at time zone 'utc'");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("accounts", (string)null);
+                });
 
             modelBuilder.Entity("CsvMappingProfile", b =>
                 {
@@ -61,6 +84,24 @@ namespace CashOut.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<bool>("NegativeIsCredit")
+                        .HasColumnType("boolean");
+
+                    b.Property<decimal?>("PdfAmountColumnStart")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("PdfDateColumnEnd")
+                        .HasColumnType("numeric");
+
+                    b.Property<bool>("PdfJoinContinuationRows")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("PdfPages")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PdfRowRegex")
+                        .HasColumnType("text");
+
                     b.Property<int>("SkipRowsFromBottom")
                         .HasColumnType("integer");
 
@@ -78,82 +119,6 @@ namespace CashOut.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("csv_mapping_profiles", (string)null);
-                });
-
-            modelBuilder.Entity("LinkedAccount", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("AccessToken")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("AccountId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("now() at time zone 'utc'");
-
-                    b.Property<string>("Institution")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("ItemId")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text")
-                        .HasDefaultValue("");
-
-                    b.Property<string>("Mask")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Subtype")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("SyncCursor")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AccountId")
-                        .IsUnique();
-
-                    b.HasIndex("ItemId");
-
-                    b.ToTable("linked_accounts", (string)null);
-                });
-
-            modelBuilder.Entity("ManualAccount", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasDefaultValueSql("now() at time zone 'utc'");
-
-                    b.Property<string>("Description")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("manual_accounts", (string)null);
                 });
 
             modelBuilder.Entity("Transaction", b =>
