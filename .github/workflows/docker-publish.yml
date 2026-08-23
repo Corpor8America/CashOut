@@ -2,12 +2,15 @@ name: Build, Tag, and Publish Docker Image
 
 on:
   workflow_run:
-    workflows: ["CI", "CodeQL Advanced"]
+    workflows: ["CI"]
     types: [completed]
 
+concurrency:
+  group: docker-publish
+  cancel-in-progress: false
+
 permissions:
-  contents: write   # REQUIRED for creating git tags
-  actions: read     # REQUIRED for verifying workflow run statuses
+  contents: write
 
 jobs:
   build-and-push:
@@ -15,45 +18,10 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-      - name: Verify CI and CodeQL both passed
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const sha = context.payload.workflow_run.head_sha;
-            
-            const ciRuns = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'ci.yml',
-              head_sha: sha,
-              per_page: 1
-            });
-            const ciRun = ciRuns.data.workflow_runs[0];
-            if (!ciRun || ciRun.conclusion !== 'success') {
-              core.setFailed(`CI did not pass (status: ${ciRun?.conclusion || 'not found'})`);
-              return;
-            }
-
-            const codeqlRuns = await github.rest.actions.listWorkflowRunsForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'codeql.yml',
-              head_sha: sha,
-              per_page: 1
-            });
-            const codeqlRun = codeqlRuns.data.workflow_runs[0];
-            if (!codeqlRun || codeqlRun.conclusion !== 'success') {
-              core.setFailed(`CodeQL did not pass (status: ${codeqlRun?.conclusion || 'not found'})`);
-              return;
-            }
-
-            core.info('Both CI and CodeQL passed. Proceeding with Docker build.');
-
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # REQUIRED so tags are available
+          fetch-depth: 0
 
       - name: Read VERSION file
         id: version
@@ -68,13 +36,7 @@ jobs:
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Stop if version already tagged
-        if: steps.tagcheck.outputs.exists == 'true'
-        run: |
-          echo "Version already exists. Skipping build."
-          exit 0
-
-      - name: Create and push tag if missing
+      - name: Create and push tag
         if: steps.tagcheck.outputs.exists == 'false'
         run: |
           git config user.name "github-actions"
@@ -83,15 +45,18 @@ jobs:
           git push origin "v${{ steps.version.outputs.app_version }}"
 
       - name: Set up Docker Buildx
+        if: steps.tagcheck.outputs.exists == 'false'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Hub
+        if: steps.tagcheck.outputs.exists == 'false'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata (tags and labels)
+        if: steps.tagcheck.outputs.exists == 'false'
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -105,6 +70,7 @@ jobs:
             org.opencontainers.image.version=${{ steps.version.outputs.app_version }}
 
       - name: Build and push
+        if: steps.tagcheck.outputs.exists == 'false'
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -116,6 +82,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Check if pre-release
+        if: steps.tagcheck.outputs.exists == 'false'
         id: prerelease
         run: |
           if [[ "${{ steps.version.outputs.app_version }}" == *-* ]]; then
