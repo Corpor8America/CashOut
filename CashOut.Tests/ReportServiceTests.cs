@@ -1,5 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace CashOut.Tests;
@@ -7,72 +5,39 @@ namespace CashOut.Tests;
 [TestClass]
 public class ReportServiceTests
 {
-    // ── Helpers ───────────────────────────────────────────────────────────
+    private AppDbContext CreateDb([System.Runtime.CompilerServices.CallerMemberName] string name = "") =>
+        TestHelper.CreateInMemoryDb(name);
 
-    private static AppDbContext BuildDb(string dbName)
-    {
-        var opts = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(dbName)
-            .Options;
-        return new AppDbContext(opts);
-    }
-
-    private static IConfiguration BuildConfig(Dictionary<string, string?>? initialData = null)
-    {
-        IEnumerable<KeyValuePair<string, string?>> data =
-        initialData ?? new Dictionary<string, string?>() { { "PLAID_ENV", "production" } };
-
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(data)
-            .Build();
-    }
-
-    private static SettingsService BuildSettings(AppDbContext db) => new(db, BuildConfig());
-
-    private static Transaction MakeTxn(
-        string id, int year, int month, int day,
-        decimal amount, string name = "Merchant", string category = "FOOD_AND_DRINK") =>
-        new()
-        {
-            TransactionId = id,
-            AccountId = "acct-1",
-            Date = new DateOnly(year, month, day),
-            Name = name,
-            Amount = amount,
-            Category = category,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-    private static async Task<(AppDbContext db, ReportService svc)> BuildAsync(
+    private async Task<(AppDbContext db, ReportService svc)> BuildSvc(
         string dbName, IEnumerable<Transaction> transactions)
     {
-        var db = BuildDb(dbName);
+        var db = CreateDb(dbName);
         db.Transactions.AddRange(transactions);
         await db.SaveChangesAsync();
-
-        var svc = new ReportService(db, BuildSettings(db));
+        var svc = new ReportService(db, TestHelper.BuildSettings(db));
         return (db, svc);
     }
 
-    // ── Monthly ───────────────────────────────────────────────────────────
+    // ── GetMonthly ────────────────────────────────────────────────────────
 
     [TestMethod]
     public async Task GetMonthly_GroupsByMonth_AndSumsCorrectly()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 5,  100m),
-            MakeTxn("t2", 2025, 1, 20, 50m),
-            MakeTxn("t3", 2025, 3, 1,  200m),
+            TestHelper.MakeTxn("t1", 2025, 1, 5, 100m),
+            TestHelper.MakeTxn("t2", 2025, 1, 15, 50m),
+            TestHelper.MakeTxn("t3", 2025, 2, 10, 200m),
         };
-        var (_, svc) = await BuildAsync(nameof(GetMonthly_GroupsByMonth_AndSumsCorrectly), txns);
+        var (db, svc) = await BuildSvc(nameof(GetMonthly_GroupsByMonth_AndSumsCorrectly), txns);
 
-        var result = await svc.GetMonthly(2025);
+        var rows = await svc.GetMonthly(2025);
 
-        Assert.AreEqual(2, result.Count);
-        Assert.AreEqual(150m, result.First(r => r.Month == "2025-01").Total);
-        Assert.AreEqual(200m, result.First(r => r.Month == "2025-03").Total);
+        Assert.AreEqual(2, rows.Count);
+        Assert.AreEqual(150m, rows[0].Total);
+        Assert.AreEqual(2, rows[0].Count);
+        Assert.AreEqual(200m, rows[1].Total);
+        Assert.AreEqual(1, rows[1].Count);
     }
 
     [TestMethod]
@@ -80,24 +45,24 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 100m),
-            MakeTxn("t2", 2025, 1, 2, -40m),   // refund
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, -40m),
         };
-        var (_, svc) = await BuildAsync(nameof(GetMonthly_ExcludesNegativeAmounts), txns);
+        var (db, svc) = await BuildSvc(nameof(GetMonthly_ExcludesNegativeAmounts), txns);
 
-        var result = await svc.GetMonthly(2025);
+        var rows = await svc.GetMonthly(2025);
 
-        Assert.AreEqual(1, result.Count);
-        Assert.AreEqual(100m, result[0].Total);
-        Assert.AreEqual(1, result[0].Count);
+        Assert.AreEqual(1, rows.Count);
+        Assert.AreEqual(100m, rows[0].Total);
+        Assert.AreEqual(1, rows[0].Count);
     }
 
     [TestMethod]
     public async Task GetMonthly_ReturnsEmpty_WhenNoTransactions()
     {
-        var (_, svc) = await BuildAsync(nameof(GetMonthly_ReturnsEmpty_WhenNoTransactions), []);
-        var result = await svc.GetMonthly(2025);
-        Assert.AreEqual(0, result.Count);
+        var (db, svc) = await BuildSvc(nameof(GetMonthly_ReturnsEmpty_WhenNoTransactions), []);
+        var rows = await svc.GetMonthly(2025);
+        Assert.AreEqual(0, rows.Count);
     }
 
     [TestMethod]
@@ -105,39 +70,73 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 6, 1, 10m),
-            MakeTxn("t2", 2025, 2, 1, 20m),
-            MakeTxn("t3", 2025, 9, 1, 30m),
+            TestHelper.MakeTxn("t1", 2025, 6, 1, 10m),
+            TestHelper.MakeTxn("t2", 2025, 2, 1, 20m),
+            TestHelper.MakeTxn("t3", 2025, 9, 1, 30m),
         };
-        var (_, svc) = await BuildAsync(nameof(GetMonthly_OrderedChronologically), txns);
+        var (db, svc) = await BuildSvc(nameof(GetMonthly_OrderedChronologically), txns);
 
-        var result = await svc.GetMonthly(2025);
+        var rows = await svc.GetMonthly(2025);
 
-        Assert.AreEqual("2025-02", result[0].Month);
-        Assert.AreEqual("2025-06", result[1].Month);
-        Assert.AreEqual("2025-09", result[2].Month);
+        Assert.AreEqual("2025-02", rows[0].Month);
+        Assert.AreEqual("2025-06", rows[1].Month);
+        Assert.AreEqual("2025-09", rows[2].Month);
     }
 
-    // ── Category ──────────────────────────────────────────────────────────
-
     [TestMethod]
-    public async Task GetByCategory_GroupsAndSums()
+    public async Task GetMonthly_FiltersByYear()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 50m,  category: "FOOD_AND_DRINK"),
-            MakeTxn("t2", 2025, 1, 2, 75m,  category: "FOOD_AND_DRINK"),
-            MakeTxn("t3", 2025, 1, 3, 200m, category: "TRAVEL"),
+            TestHelper.MakeTxn("t1", 2024, 1, 5, -100m),
+            TestHelper.MakeTxn("t2", 2025, 1, 15, 200m),
         };
-        var (_, svc) = await BuildAsync(nameof(GetByCategory_GroupsAndSums), txns);
+        var (db, svc) = await BuildSvc(nameof(GetMonthly_FiltersByYear), txns);
+
+        var rows = await svc.GetMonthly(2025);
+
+        Assert.AreEqual(1, rows.Count);
+        Assert.AreEqual(200m, rows[0].Total);
+    }
+
+    [TestMethod]
+    public async Task GetMonthly_MultipleTransactionsInMonth_SumAll()
+    {
+        var txns = new[]
+        {
+            TestHelper.MakeTxn("t1", 2025, 3, 1, 50m),
+            TestHelper.MakeTxn("t2", 2025, 3, 10, 75m),
+            TestHelper.MakeTxn("t3", 2025, 3, 20, 25m),
+        };
+        var (db, svc) = await BuildSvc(nameof(GetMonthly_MultipleTransactionsInMonth_SumAll), txns);
+
+        var rows = await svc.GetMonthly(2025);
+
+        Assert.AreEqual(1, rows.Count);
+        Assert.AreEqual(150m, rows[0].Total);
+        Assert.AreEqual(3, rows[0].Count);
+    }
+
+    // ── GetByCategory ─────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task GetByCategory_GroupsByCategory_AndSortsDescending()
+    {
+        var txns = new[]
+        {
+            TestHelper.MakeTxn("t1", 2025, 3, 1, 50m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 3, 5, 30m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2025, 3, 10, 100m, category: "Transport"),
+        };
+        var (db, svc) = await BuildSvc(nameof(GetByCategory_GroupsByCategory_AndSortsDescending), txns);
 
         var result = await svc.GetByCategory(2025);
 
         Assert.AreEqual(2, result.Categories.Count);
-        Assert.AreEqual("TRAVEL", result.Categories[0].Category);
-        Assert.AreEqual(200m, result.Categories[0].Total);
-        Assert.AreEqual("FOOD_AND_DRINK", result.Categories[1].Category);
-        Assert.AreEqual(125m, result.Categories[1].Total);
+        Assert.AreEqual("Transport", result.Categories[0].Category);
+        Assert.AreEqual(100m, result.Categories[0].Total);
+        Assert.AreEqual("Food", result.Categories[1].Category);
+        Assert.AreEqual(80m, result.Categories[1].Total);
     }
 
     [TestMethod]
@@ -145,11 +144,11 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 300m, category: "FOOD_AND_DRINK"),
-            MakeTxn("t2", 2025, 1, 2, 100m, category: "TRAVEL"),
-            MakeTxn("t3", 2025, 1, 3, 100m, category: "SHOPPING"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 300m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 100m, category: "Travel"),
+            TestHelper.MakeTxn("t3", 2025, 1, 3, 100m, category: "Shopping"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetByCategory_PctOfSpend_SumsToHundred), txns);
+        var (db, svc) = await BuildSvc(nameof(GetByCategory_PctOfSpend_SumsToHundred), txns);
 
         var result = await svc.GetByCategory(2025);
         var totalPct = result.Categories.Sum(r => r.PctOfSpend);
@@ -162,9 +161,9 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 50m, category: ""),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 50m, category: ""),
         };
-        var (_, svc) = await BuildAsync(nameof(GetByCategory_EmptyCategory_MarkedUncategorized), txns);
+        var (db, svc) = await BuildSvc(nameof(GetByCategory_EmptyCategory_MarkedUncategorized), txns);
 
         var result = await svc.GetByCategory(2025);
 
@@ -177,15 +176,15 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 100m, category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 2, 100m, category: "FOOD"),
-            MakeTxn("t3", 2024, 6, 1, 100m, category: "FOOD"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 100m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2024, 6, 1, 100m, category: "Food"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetByCategory_IncludesPreviousYearComparison), txns);
+        var (db, svc) = await BuildSvc(nameof(GetByCategory_IncludesPreviousYearComparison), txns);
 
         var result = await svc.GetByCategory(2025);
 
-        var food = result.Categories.Single(c => c.Category == "FOOD");
+        var food = result.Categories.Single(c => c.Category == "Food");
         Assert.AreEqual(100m, food.PreviousTotal);
         Assert.AreEqual(100m, food.ChangeAmount);
         Assert.AreEqual(100m, food.ChangePercent);
@@ -196,35 +195,35 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 50m, category: "FOOD"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 50m, category: "Food"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetByCategory_PreviousZero_ReturnsZeroChangePercent), txns);
+        var (db, svc) = await BuildSvc(nameof(GetByCategory_PreviousZero_ReturnsZeroChangePercent), txns);
 
         var result = await svc.GetByCategory(2025);
 
-        var food = result.Categories.Single(c => c.Category == "FOOD");
+        var food = result.Categories.Single(c => c.Category == "Food");
         Assert.AreEqual(0m, food.PreviousTotal);
         Assert.AreEqual(50m, food.ChangeAmount);
         Assert.AreEqual(0m, food.ChangePercent);
     }
 
     [TestMethod]
-    public async Task GetByCategory_IncludesCurrentYearTransactionsForEachCategory()
+    public async Task GetByCategory_IncludesTransactionsForEachCategory()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 100m, category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 2, 50m,  category: "FOOD"),
-            MakeTxn("t3", 2025, 1, 3, 200m, category: "TRAVEL"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 50m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2025, 1, 3, 200m, category: "Travel"),
         };
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_IncludesCurrentYearTransactionsForEachCategory), txns);
+        var (db, svc) = await BuildSvc(
+            nameof(GetByCategory_IncludesTransactionsForEachCategory), txns);
 
         var result = await svc.GetByCategory(2025);
 
-        var food = result.Categories.Single(c => c.Category == "FOOD");
+        var food = result.Categories.Single(c => c.Category == "Food");
         Assert.AreEqual(2, food.Transactions.Count);
-        Assert.IsTrue(food.Transactions.All(t => t.Category == "FOOD"));
+        Assert.IsTrue(food.Transactions.All(t => t.Category == "Food"));
     }
 
     [TestMethod]
@@ -232,459 +231,206 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2024, 6, 1, 100m, category: "TRAVEL"),
-            MakeTxn("t2", 2025, 1, 1, 50m,  category: "FOOD"),
+            TestHelper.MakeTxn("t1", 2024, 6, 1, 100m, category: "Travel"),
+            TestHelper.MakeTxn("t2", 2025, 1, 1, 50m, category: "Food"),
         };
-        var (_, svc) = await BuildAsync(
+        var (db, svc) = await BuildSvc(
             nameof(GetByCategory_DoesNotIncludePreviousOnlyCategories), txns);
 
         var result = await svc.GetByCategory(2025);
 
         Assert.AreEqual(1, result.Categories.Count);
-        Assert.AreEqual("FOOD", result.Categories[0].Category);
+        Assert.AreEqual("Food", result.Categories[0].Category);
     }
 
     [TestMethod]
-    public async Task GetByCategory_TotalsIncludeOnlyExpenses()
+    public async Task GetByCategory_MonthFilter_ReturnsOnlyThatMonthsTransactions()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 100m,  category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 2, -25m,  category: "REFUND"),
+            TestHelper.MakeTxn("t1", 2025, 1, 15, 100m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 2, 10, 50m, category: "Food"),
         };
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_TotalsIncludeOnlyExpenses), txns);
+        var (db, svc) = await BuildSvc(
+            nameof(GetByCategory_MonthFilter_ReturnsOnlyThatMonthsTransactions), txns);
+
+        var result = await svc.GetByCategory(2025, 1);
+
+        Assert.AreEqual(100m, result.GrandTotal);
+        var food = result.Categories.Single(c => c.Category == "Food");
+        Assert.AreEqual(1, food.Transactions.Count);
+        Assert.AreEqual("t1", food.Transactions[0].TransactionId);
+    }
+
+    [TestMethod]
+    public async Task GetByCategory_MonthFilter_PreviousYearTotalStillUsesFullYear()
+    {
+        var txns = new[]
+        {
+            TestHelper.MakeTxn("t1", 2025, 1, 15, 100m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 1, 20, 50m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2024, 7, 1, 200m, category: "Food"),
+        };
+        var (db, svc) = await BuildSvc(
+            nameof(GetByCategory_MonthFilter_PreviousYearTotalStillUsesFullYear), txns);
+
+        var result = await svc.GetByCategory(2025, 1);
+
+        var food = result.Categories.Single(c => c.Category == "Food");
+        Assert.AreEqual(200m, food.PreviousTotal);
+    }
+
+    [TestMethod]
+    public async Task GetByCategory_IncludesYearOverYearTotals()
+    {
+        var txns = new[]
+        {
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2024, 6, 1, 50m, category: "Food"),
+        };
+        var (db, svc) = await BuildSvc(
+            nameof(GetByCategory_IncludesYearOverYearTotals), txns);
 
         var result = await svc.GetByCategory(2025);
 
-        Assert.AreEqual(1, result.Categories.Count);
-        Assert.AreEqual(100m, result.TotalSpend);
+        Assert.AreEqual(100m, result.GrandTotal);
+        Assert.AreEqual(50m, result.PreviousGrandTotal);
+        Assert.AreEqual(50m, result.ChangeAmount);
+        Assert.AreEqual(100m, result.ChangePercent);
     }
 
-    [TestMethod]
-    public async Task GetByCategory_IncludesTwelveMonthRollingAverage()
-    {
-        var txns = Enumerable.Range(1, 12).Select(i =>
-            MakeTxn($"t{i}", 2025, i, 1, 100m, category: "FOOD")).ToArray();
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_IncludesTwelveMonthRollingAverage), txns);
-
-        var result = await svc.GetByCategory(2025);
-
-        var food = result.Categories.Single(c => c.Category == "FOOD");
-        Assert.AreEqual(1200m, food.TwelveMonthTotal);
-        Assert.AreEqual(100m, food.TwelveMonthAverage);
-        Assert.AreEqual(12, food.TwelveMonthCount);
-    }
+    // ── GetCategoryDetail ────────────────────────────────────────────────
 
     [TestMethod]
-    public async Task GetByCategory_ComputesVarianceFromTwelveMonthAverage()
-    {
-        var txns = Enumerable.Range(1, 12).Select(i =>
-            MakeTxn($"t{i}", 2025, i, 1, 200m, category: "FOOD")).ToArray();
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_ComputesVarianceFromTwelveMonthAverage), txns);
-
-        var result = await svc.GetByCategory(2025);
-
-        var food = result.Categories.Single(c => c.Category == "FOOD");
-        // Current monthly average = 2400/12 = 200
-        // TwelveMonthAverage = 2400/12 = 200
-        // vsAmount = 200 - 200 = 0, vsPercent = 0
-        Assert.AreEqual(0m, food.VsTwelveMonthAverageAmount);
-        Assert.AreEqual(0m, food.VsTwelveMonthAveragePercent);
-    }
-
-    // ── Top Merchants ─────────────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task GetTopMerchants_OrderedByTotalDesc_AndRespectsTopN()
+    public async Task GetCategoryDetail_GroupsByCategory_AndSortsDescending()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 10m,  name: "Coffee Shop"),
-            MakeTxn("t2", 2025, 1, 2, 500m, name: "Airline"),
-            MakeTxn("t3", 2025, 1, 3, 80m,  name: "Grocery"),
-            MakeTxn("t4", 2025, 1, 4, 25m,  name: "Pharmacy"),
+            TestHelper.MakeTxn("t1", 2025, 3, 1, 50m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 3, 5, 30m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2025, 3, 10, 100m, category: "Transport"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetTopMerchants_OrderedByTotalDesc_AndRespectsTopN), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCategoryDetail_GroupsByCategory_AndSortsDescending), txns);
 
-        var result = await svc.GetTopMerchants(topN: 2, year: 2025);
+        var result = await svc.GetCategoryDetail(fromYear: 2025, fromMonth: 1, toYear: 2025, toMonth: 12);
 
-        Assert.AreEqual(2, result.Merchants.Count);
-        Assert.AreEqual("Airline", result.Merchants[0].Name);
-        Assert.AreEqual("Grocery", result.Merchants[1].Name);
+        Assert.AreEqual(2, result.Categories.Count);
+        // Signed amounts: Food=-80, Transport=-100; descending: -80 > -100
+        Assert.AreEqual("Food", result.Categories[0].Category);
+        Assert.AreEqual(-80m, result.Categories[0].Total);
+        Assert.AreEqual("Transport", result.Categories[1].Category);
+        Assert.AreEqual(-100m, result.Categories[1].Total);
     }
 
     [TestMethod]
-    public async Task GetTopMerchants_AvgPerVisit_IsCorrect()
+    public async Task GetCategoryDetail_ComputesAvgPerMonth()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 30m, name: "Coffee"),
-            MakeTxn("t2", 2025, 1, 2, 60m, name: "Coffee"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 300m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 2, 1, 300m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2025, 3, 1, 300m, category: "Food"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetTopMerchants_AvgPerVisit_IsCorrect), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCategoryDetail_ComputesAvgPerMonth), txns);
 
-        var result = await svc.GetTopMerchants(year: 2025);
+        var result = await svc.GetCategoryDetail(fromYear: 2025, fromMonth: 1, toYear: 2025, toMonth: 3);
 
-        Assert.AreEqual(1, result.Merchants.Count);
-        Assert.AreEqual(45m, result.Merchants[0].AvgPerVisit);
-        Assert.AreEqual(2, result.Merchants[0].Count);
+        var food = result.Categories.Single(c => c.Category == "Food");
+        Assert.AreEqual(-900m, food.Total);
+        Assert.AreEqual(-300m, food.AvgPerMonth);
+        Assert.AreEqual(300m, result.AvgExpensesPerMonth);
     }
 
     [TestMethod]
-    public async Task GetTopMerchants_GroupsAliasedTransactionsByAlias()
+    public async Task GetCategoryDetail_FiltersByAccountId()
     {
-        var dbName = nameof(GetTopMerchants_GroupsAliasedTransactionsByAlias);
-        var db = BuildDb(dbName);
-        var alias = new BusinessAlias { AliasName = "Amazon" };
-        db.BusinessAliases.Add(alias);
+        var txns = new[]
+        {
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food", accountId: "acct-A"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 50m, category: "Food", accountId: "acct-B"),
+            TestHelper.MakeTxn("t3", 2025, 1, 3, 200m, category: "Travel", accountId: "acct-A"),
+        };
+        var (db, svc) = await BuildSvc(nameof(GetCategoryDetail_FiltersByAccountId), txns);
+
+        var result = await svc.GetCategoryDetail(fromYear: 2025, fromMonth: 1, toYear: 2025, toMonth: 12, accountId: "acct-A");
+
+        Assert.AreEqual(2, result.Categories.Count);
+        Assert.AreEqual(300m, result.TotalExpenses);
+        Assert.AreEqual(2, result.TransactionCount);
+    }
+
+    [TestMethod]
+    public async Task GetCategoryDetail_IncludesAccountNames()
+    {
+        var acctAId = Guid.NewGuid();
+        var acctBId = Guid.NewGuid();
+        var db = CreateDb(nameof(GetCategoryDetail_IncludesAccountNames));
+        db.Transactions.AddRange(
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food", accountId: acctAId.ToString()),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 50m, category: "Food", accountId: acctBId.ToString())
+        );
+        db.Accounts.Add(new Account { Id = acctAId, Name = "Chase Checking" });
+        db.Accounts.Add(new Account { Id = acctBId, Name = "Cash Wallet" });
         await db.SaveChangesAsync();
+        var svc = new ReportService(db, TestHelper.BuildSettings(db));
 
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "Amazon Purchase"),
-            MakeTxn("t2", 2025, 1, 2, 50m,  name: "Amazon Renewal"),
-        };
-        foreach (var t in txns) t.AliasId = alias.Id;
-        db.Transactions.AddRange(txns);
-        await db.SaveChangesAsync();
+        var result = await svc.GetCategoryDetail(fromYear: 2025, fromMonth: 1, toYear: 2025, toMonth: 12);
 
-        var svc = new ReportService(db, BuildSettings(db));
-
-        var result = await svc.GetTopMerchants(year: 2025);
-
-        Assert.AreEqual(1, result.Merchants.Count);
-        Assert.AreEqual("Amazon", result.Merchants[0].Name);
-        Assert.IsTrue(result.Merchants[0].IsMapped);
-        Assert.AreEqual(150m, result.Merchants[0].Total);
-        Assert.AreEqual(2, result.Merchants[0].Count);
+        var food = result.Categories.Single(c => c.Category == "Food");
+        Assert.AreEqual("Chase Checking", food.Transactions.Single(t => t.AccountId == acctAId.ToString()).AccountName);
+        Assert.AreEqual("Cash Wallet", food.Transactions.Single(t => t.AccountId == acctBId.ToString()).AccountName);
     }
 
     [TestMethod]
-    public async Task GetTopMerchants_GroupsUnmappedTransactionsByNormalizedName()
+    public async Task GetCategoryDetail_MonthRange_FiltersCorrectly()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "Whole Foods"),
-            MakeTxn("t2", 2025, 1, 2, 50m,  name: "WF Market"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 2, 1, 200m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2025, 3, 1, 300m, category: "Food"),
+            TestHelper.MakeTxn("t4", 2025, 6, 1, 400m, category: "Food"),
         };
-        foreach (var t in txns) t.NormalizedName = "whole foods";
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_GroupsUnmappedTransactionsByNormalizedName), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCategoryDetail_MonthRange_FiltersCorrectly), txns);
 
-        var result = await svc.GetTopMerchants(year: 2025);
+        var result = await svc.GetCategoryDetail(fromYear: 2025, fromMonth: 1, toYear: 2025, toMonth: 3);
 
-        Assert.AreEqual(1, result.Merchants.Count);
-        Assert.IsFalse(result.Merchants[0].IsMapped);
-        Assert.AreEqual(2, result.Merchants[0].Count);
+        Assert.AreEqual(600m, result.TotalExpenses);
+        Assert.AreEqual(3, result.TransactionCount);
+        var food = result.Categories.Single(c => c.Category == "Food");
+        Assert.AreEqual(3, food.Transactions.Count);
     }
 
     [TestMethod]
-    public async Task GetTopMerchants_IncludesPrimaryCategory()
+    public async Task GetCategoryDetail_IncludesTransactionsPerCategory()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 300m, name: "Costco", category: "GROCERIES"),
-            MakeTxn("t2", 2025, 1, 2, 50m,  name: "Costco", category: "SHOPPING"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, category: "Food"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 50m, category: "Food"),
+            TestHelper.MakeTxn("t3", 2025, 1, 3, 200m, category: "Travel"),
         };
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_IncludesPrimaryCategory), txns);
+        var (db, svc) = await BuildSvc(
+            nameof(GetCategoryDetail_IncludesTransactionsPerCategory), txns);
 
-        var result = await svc.GetTopMerchants(year: 2025);
+        var result = await svc.GetCategoryDetail(fromYear: 2025, fromMonth: 1, toYear: 2025, toMonth: 12);
 
-        Assert.AreEqual("GROCERIES", result.Merchants[0].PrimaryCategory);
+        var food = result.Categories.Single(c => c.Category == "Food");
+        Assert.AreEqual(2, food.Transactions.Count);
+        Assert.IsTrue(food.Transactions.All(t => t.Category == "Food"));
+        Assert.IsTrue(food.Transactions.All(t => !string.IsNullOrEmpty(t.AccountName)));
     }
 
-    [TestMethod]
-    public async Task GetTopMerchants_IncludesPreviousYearComparison()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "Grocery"),
-            MakeTxn("t2", 2025, 1, 2, 100m, name: "Grocery"),
-            MakeTxn("t3", 2024, 6, 1, 100m, name: "Grocery"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_IncludesPreviousYearComparison), txns);
-
-        var result = await svc.GetTopMerchants(year: 2025);
-
-        var g = result.Merchants.Single(m => m.MerchantKey == "name:Grocery");
-        Assert.AreEqual(100m, g.PreviousTotal);
-        Assert.AreEqual(100m, g.ChangeAmount);
-        Assert.AreEqual(100m, g.ChangePercent);
-    }
-
-    [TestMethod]
-    public async Task GetTopMerchants_PreviousZero_ReturnsZeroChangePercent()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 50m, name: "Grocery"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_PreviousZero_ReturnsZeroChangePercent), txns);
-
-        var result = await svc.GetTopMerchants(year: 2025);
-
-        var g = result.Merchants.Single(m => m.MerchantKey == "name:Grocery");
-        Assert.AreEqual(0m, g.PreviousTotal);
-        Assert.AreEqual(50m, g.ChangeAmount);
-        Assert.AreEqual(0m, g.ChangePercent);
-    }
-
-    [TestMethod]
-    public async Task GetTopMerchants_IncludesCurrentYearTransactionsForEachMerchant()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "Costco"),
-            MakeTxn("t2", 2025, 1, 2, 50m,  name: "Costco"),
-            MakeTxn("t3", 2025, 1, 3, 200m, name: "Walmart"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_IncludesCurrentYearTransactionsForEachMerchant), txns);
-
-        var result = await svc.GetTopMerchants(year: 2025);
-
-        var costco = result.Merchants.Single(m => m.MerchantKey == "name:Costco");
-        Assert.AreEqual(2, costco.Transactions.Count);
-    }
-
-    [TestMethod]
-    public async Task GetTopMerchants_TotalsIncludeOnlyExpenses()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "Store"),
-            MakeTxn("t2", 2025, 1, 2, -25m, name: "Refund"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_TotalsIncludeOnlyExpenses), txns);
-
-        var result = await svc.GetTopMerchants(year: 2025);
-
-        Assert.AreEqual(1, result.Merchants.Count);
-        Assert.AreEqual(100m, result.TotalSpend);
-    }
-
-    [TestMethod]
-    public async Task GetTopMerchants_ClampsTopN()
-    {
-        var txns = Enumerable.Range(0, 50).Select(i =>
-            MakeTxn($"t{i}", 2025, (i % 12) + 1, (i % 28) + 1, 10m, name: $"Merchant_{i:D2}")).ToArray();
-        var (_, svc) = await BuildAsync(nameof(GetTopMerchants_ClampsTopN), txns);
-
-        var below = await svc.GetTopMerchants(topN: 0, year: 2025);
-        Assert.AreEqual(10, below.TopN);
-
-        var above = await svc.GetTopMerchants(topN: 500, year: 2025);
-        Assert.AreEqual(100, above.TopN);
-    }
-
-    // ── Largest ───────────────────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task GetLargest_ReturnsTopNByAmountDesc()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 10m),
-            MakeTxn("t2", 2025, 1, 2, 999m),
-            MakeTxn("t3", 2025, 1, 3, 50m),
-            MakeTxn("t4", 2025, 1, 4, 200m),
-        };
-        var (_, svc) = await BuildAsync(nameof(GetLargest_ReturnsTopNByAmountDesc), txns);
-
-        var result = await svc.GetLargest(topN: 2, year: 2025);
-
-        Assert.AreEqual(2, result.Count);
-        Assert.AreEqual(999m, result[0].Amount);
-        Assert.AreEqual(200m, result[1].Amount);
-    }
-
-    // ── Pivot ─────────────────────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task GetPivot_CategoryColumns_DoNotExceedEight()
-    {
-        var txns = Enumerable.Range(1, 10).Select(i =>
-            MakeTxn($"t{i}", 2025, 1, i, i * 10m, category: $"CAT_{i:D2}")).ToArray();
-        var (_, svc) = await BuildAsync(nameof(GetPivot_CategoryColumns_DoNotExceedEight), txns);
-
-        var result = await svc.GetPivot(2025);
-
-        Assert.AreEqual(8, result.Categories.Count);
-        Assert.IsTrue(result.Rows.All(row => row.Values.Count == 8));
-    }
-
-    // ── Income ────────────────────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task GetIncome_GroupsByIncomeSource()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -100m, name: "Employer Payroll"),
-            MakeTxn("t2", 2025, 1, 15, -200m, name: "Employer Payroll"),
-            MakeTxn("t3", 2025, 2, 1, -50m, name: "Freelance Gig"),
-        };
-        foreach (var t in txns) t.NormalizedName = t.Name;
-        var (_, svc) = await BuildAsync(nameof(GetIncome_GroupsByIncomeSource), txns);
-
-        var result = await svc.GetIncome(2025);
-
-        Assert.AreEqual(2, result.Sources.Count);
-        Assert.AreEqual(300m, result.Sources[0].Total);
-        Assert.AreEqual(2, result.Sources[0].Count);
-        Assert.AreEqual(50m, result.Sources[1].Total);
-        Assert.AreEqual(1, result.Sources[1].Count);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_UsesPositiveDisplayTotals()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -100m, name: "Employer"),
-        };
-        var (_, svc) = await BuildAsync(nameof(GetIncome_UsesPositiveDisplayTotals), txns);
-
-        var result = await svc.GetIncome(2025);
-
-        Assert.AreEqual(100m, result.TotalIncome);
-        Assert.AreEqual(100m, result.Sources[0].Total);
-        Assert.AreEqual(-100m, result.Sources[0].Transactions[0].Amount);
-        Assert.AreEqual(100m, result.Sources[0].Transactions[0].DisplayAmount);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_ExcludesExpenses()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -100m, name: "Employer"),
-            MakeTxn("t2", 2025, 1, 2, 50m, name: "Store"),
-        };
-        var (_, svc) = await BuildAsync(nameof(GetIncome_ExcludesExpenses), txns);
-
-        var result = await svc.GetIncome(2025);
-
-        Assert.AreEqual(100m, result.TotalIncome);
-        Assert.AreEqual(1, result.TransactionCount);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_IncludesPreviousYearComparison()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -150m, name: "Employer"),
-            MakeTxn("t2", 2025, 1, 15, -50m, name: "Employer"),
-            MakeTxn("t3", 2024, 6, 1, -100m, name: "Employer"),
-        };
-        foreach (var t in txns) t.NormalizedName = "employer";
-        var (_, svc) = await BuildAsync(nameof(GetIncome_IncludesPreviousYearComparison), txns);
-
-        var result = await svc.GetIncome(2025);
-
-        var source = result.Sources.Single(s => s.SourceKey == "raw:employer");
-        Assert.AreEqual(100m, source.PreviousTotal);
-        Assert.AreEqual(100m, source.ChangeAmount);
-        Assert.AreEqual(100m, source.ChangePercent);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_PreviousZero_ReturnsZeroChangePercent()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -50m, name: "Employer"),
-        };
-        foreach (var t in txns) t.NormalizedName = "employer";
-        var (_, svc) = await BuildAsync(nameof(GetIncome_PreviousZero_ReturnsZeroChangePercent), txns);
-
-        var result = await svc.GetIncome(2025);
-
-        var source = result.Sources.Single(s => s.SourceKey == "raw:employer");
-        Assert.AreEqual(0m, source.PreviousTotal);
-        Assert.AreEqual(50m, source.ChangeAmount);
-        Assert.AreEqual(0m, source.ChangePercent);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_IncludesPrimaryCategory()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -300m, name: "Employer", category: "PAYROLL"),
-            MakeTxn("t2", 2025, 1, 2, -50m, name: "Employer", category: "REFUND"),
-        };
-        foreach (var t in txns) t.NormalizedName = "employer";
-        var (_, svc) = await BuildAsync(nameof(GetIncome_IncludesPrimaryCategory), txns);
-
-        var result = await svc.GetIncome(2025);
-
-        var source = result.Sources.Single(s => s.SourceKey == "raw:employer");
-        Assert.AreEqual("PAYROLL", source.PrimaryCategory);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_GroupsAliasedTransactionsByAlias()
-    {
-        var dbName = nameof(GetIncome_GroupsAliasedTransactionsByAlias);
-        var db = BuildDb(dbName);
-        var alias = new BusinessAlias { AliasName = "Employer Corp" };
-        db.BusinessAliases.Add(alias);
-        await db.SaveChangesAsync();
-
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -200m, name: "Employer Payroll"),
-            MakeTxn("t2", 2025, 1, 15, -300m, name: "Employer Bonus"),
-        };
-        foreach (var t in txns)
-        {
-            t.AliasId = alias.Id;
-            t.NormalizedName = "employer corp";
-        }
-        db.Transactions.AddRange(txns);
-        await db.SaveChangesAsync();
-
-        var svc = new ReportService(db, BuildSettings(db));
-
-        var result = await svc.GetIncome(2025);
-
-        Assert.AreEqual(1, result.Sources.Count);
-        Assert.AreEqual("Employer Corp", result.Sources[0].Name);
-        Assert.IsTrue(result.Sources[0].IsMapped);
-        Assert.AreEqual(500m, result.Sources[0].Total);
-        Assert.AreEqual(2, result.Sources[0].Count);
-    }
-
-    [TestMethod]
-    public async Task IncomeCsv_IncludesExpectedHeaders()
-    {
-        var (_, svc) = await BuildAsync(nameof(IncomeCsv_IncludesExpectedHeaders), []);
-
-        var csv = await svc.IncomeCsv(2025);
-        var header = System.Text.Encoding.UTF8.GetString(csv).Split('\n')[0];
-
-        Assert.IsTrue(header.StartsWith("Source,IsMapped,AliasId"));
-    }
-
-    // ── Cash Flow ─────────────────────────────────────────────────────────
+    // ── GetCashFlow ───────────────────────────────────────────────────────
 
     [TestMethod]
     public async Task GetCashFlow_ReturnsTwelveMonths()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 6, 1, 100m),
+            TestHelper.MakeTxn("t1", 2025, 6, 1, 100m),
         };
-        var (_, svc) = await BuildAsync(nameof(GetCashFlow_ReturnsTwelveMonths), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCashFlow_ReturnsTwelveMonths), txns);
 
         var result = await svc.GetCashFlow(2025);
 
@@ -698,10 +444,10 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
-            MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetCashFlow_ComputesIncomeExpensesAndNet), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCashFlow_ComputesIncomeExpensesAndNet), txns);
 
         var result = await svc.GetCashFlow(2025);
         var jan = result.Months[0];
@@ -716,12 +462,12 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
-            MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
-            MakeTxn("t3", 2025, 2, 1, -500m, name: "Freelance"),
-            MakeTxn("t4", 2025, 2, 2, 200m, name: "Market"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
+            TestHelper.MakeTxn("t3", 2025, 2, 1, -500m, name: "Freelance"),
+            TestHelper.MakeTxn("t4", 2025, 2, 2, 200m, name: "Market"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetCashFlow_YearTotalsMatchMonthlySums), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCashFlow_YearTotalsMatchMonthlySums), txns);
 
         var result = await svc.GetCashFlow(2025);
 
@@ -735,12 +481,12 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
-            MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
-            MakeTxn("t3", 2024, 1, 1, -700m, name: "Payroll"),
-            MakeTxn("t4", 2024, 1, 2, 200m, name: "Store"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
+            TestHelper.MakeTxn("t3", 2024, 1, 1, -700m, name: "Payroll"),
+            TestHelper.MakeTxn("t4", 2024, 1, 2, 200m, name: "Store"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetCashFlow_IncludesPreviousYearComparison), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCashFlow_IncludesPreviousYearComparison), txns);
 
         var result = await svc.GetCashFlow(2025);
         var jan = result.Months[0];
@@ -755,21 +501,17 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, -200m, name: "Payroll"),
-            MakeTxn("t2", 2025, 1, 2, 100m, name: "Store"),
-            MakeTxn("t3", 2024, 1, 1, -100m, name: "Payroll"),
-            MakeTxn("t4", 2024, 1, 2, 200m, name: "Store"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -200m, name: "Payroll"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 100m, name: "Store"),
+            TestHelper.MakeTxn("t3", 2024, 1, 1, -100m, name: "Payroll"),
+            TestHelper.MakeTxn("t4", 2024, 1, 2, 200m, name: "Store"),
         };
-        var (_, svc) = await BuildAsync(
+        var (db, svc) = await BuildSvc(
             nameof(GetCashFlow_PreviousNegativeNet_UsesAbsoluteDenominatorForPercent), txns);
 
         var result = await svc.GetCashFlow(2025);
         var jan = result.Months[0];
 
-        // 2025 net = 200 - 100 = 100
-        // 2024 net = 100 - 200 = -100
-        // changeAmount = 100 - (-100) = 200
-        // changePercent = 200 / abs(-100) * 100 = 200
         Assert.AreEqual(-100m, jan.PreviousYearNet);
         Assert.AreEqual(200m, jan.ChangeAmount);
         Assert.AreEqual(200m, jan.ChangePercent);
@@ -780,25 +522,17 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "Store"),   // net -100 (only expense)
-            MakeTxn("t2", 2025, 2, 1, 200m, name: "Store"),   // net -200
-            MakeTxn("t3", 2025, 3, 1, -600m, name: "Payroll"), // net +600 income-only month
-            MakeTxn("t4", 2025, 4, 1, 600m, name: "Store"),    // expense only (need income too for net)
-            MakeTxn("t5", 2025, 4, 2, -1200m, name: "Payroll"),// income
+            TestHelper.MakeTxn("t1", 2025, 1, 1, 100m, name: "Store"),
+            TestHelper.MakeTxn("t2", 2025, 2, 1, 200m, name: "Store"),
+            TestHelper.MakeTxn("t3", 2025, 3, 1, -600m, name: "Payroll"),
+            TestHelper.MakeTxn("t4", 2025, 4, 1, 600m, name: "Store"),
+            TestHelper.MakeTxn("t5", 2025, 4, 2, -1200m, name: "Payroll"),
         };
-        // Jan: expense 100 → net -100
-        // Feb: expense 200 → net -200
-        // Mar: income 600 → net 600
-        // Apr: expense 600, income 1200 → net 600
-        var (_, svc) = await BuildAsync(
+        var (db, svc) = await BuildSvc(
             nameof(GetCashFlow_ComputesTrailingThreeMonthRollingAverage), txns);
 
         var result = await svc.GetCashFlow(2025);
 
-        // Rolling avg: Jan = -100/1 = -100
-        // Feb = (-100 + -200)/2 = -150
-        // Mar = (-100 + -200 + 600)/3 = 100
-        // Apr = (-200 + 600 + 600)/3 = 333.33
         Assert.AreEqual(-100m, result.Months[0].RollingAverageNet);
         Assert.AreEqual(-150m, result.Months[1].RollingAverageNet);
         Assert.AreEqual(100m, result.Months[2].RollingAverageNet);
@@ -810,10 +544,10 @@ public class ReportServiceTests
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
-            MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
         };
-        var (_, svc) = await BuildAsync(
+        var (db, svc) = await BuildSvc(
             nameof(GetCashFlow_IncludesMonthTransactionsWithDirection), txns);
 
         var result = await svc.GetCashFlow(2025);
@@ -821,17 +555,63 @@ public class ReportServiceTests
 
         Assert.AreEqual(2, jan.Transactions.Count);
 
-        var income = jan.Transactions.Single(t => t.Direction == "Income");
-        Assert.AreEqual(1000m, income.DisplayAmount);
+        var income = jan.Transactions.Single(t => t.Amount > 0);
+        Assert.AreEqual(1000m, income.Amount);
 
-        var expense = jan.Transactions.Single(t => t.Direction == "Expense");
-        Assert.AreEqual(300m, expense.DisplayAmount);
+        var expense = jan.Transactions.Single(t => t.Amount < 0);
+        Assert.AreEqual(-300m, expense.Amount);
+    }
+
+    [TestMethod]
+    public async Task GetCashFlow_BestAndWorstMonthsAreCorrect()
+    {
+        var txns = new[]
+        {
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -500m, name: "Payroll"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 100m, name: "Store"),
+            TestHelper.MakeTxn("t3", 2025, 2, 1, -200m, name: "Payroll"),
+            TestHelper.MakeTxn("t4", 2025, 2, 2, 300m, name: "Store"),
+        };
+        var (db, svc) = await BuildSvc(
+            nameof(GetCashFlow_BestAndWorstMonthsAreCorrect), txns);
+
+        var result = await svc.GetCashFlow(2025);
+
+        // Jan net = 500-100 = 400, Feb net = 200-300 = -100
+        Assert.AreEqual(400m, result.BestMonthNet);
+        Assert.AreEqual("Jan 2025", result.BestMonthLabel);
+        Assert.AreEqual(-100m, result.WorstMonthNet);
+        Assert.AreEqual("Feb 2025", result.WorstMonthLabel);
+    }
+
+    // ── CSV exports ───────────────────────────────────────────────────────
+
+    [TestMethod]
+    public async Task MonthlyCsv_IncludesExpectedHeaders()
+    {
+        var (db, svc) = await BuildSvc(nameof(MonthlyCsv_IncludesExpectedHeaders), []);
+
+        var csv = await svc.MonthlyCsv(2025);
+        var header = System.Text.Encoding.UTF8.GetString(csv).Split('\n')[0];
+
+        Assert.IsTrue(header.StartsWith("Month,Label,Total,Transactions"));
+    }
+
+    [TestMethod]
+    public async Task CategoryCsv_IncludesExpectedHeaders()
+    {
+        var (db, svc) = await BuildSvc(nameof(CategoryCsv_IncludesExpectedHeaders), []);
+
+        var csv = await svc.CategoryCsv(2025);
+        var header = System.Text.Encoding.UTF8.GetString(csv).Split('\n')[0];
+
+        Assert.IsTrue(header.StartsWith("Category,Total,PctOfSpend,Transactions"));
     }
 
     [TestMethod]
     public async Task CashFlowCsv_IncludesExpectedHeaders()
     {
-        var (_, svc) = await BuildAsync(nameof(CashFlowCsv_IncludesExpectedHeaders), []);
+        var (db, svc) = await BuildSvc(nameof(CashFlowCsv_IncludesExpectedHeaders), []);
 
         var csv = await svc.CashFlowCsv(2025);
         var header = System.Text.Encoding.UTF8.GetString(csv).Split('\n')[0];
@@ -839,641 +619,66 @@ public class ReportServiceTests
         Assert.IsTrue(header.StartsWith("Month,Label,Income,Expenses,Net"));
     }
 
-    // ── Executive Summary ─────────────────────────────────────────────────
+    // ── GetCashFlow filtering ─────────────────────────────────────────────
 
     [TestMethod]
-    public async Task GetExecutiveSummary_NoMonth_ReturnsYearToDate()
+    public async Task GetCashFlow_FiltersByAccountId()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 1, 15, 100m),
-            MakeTxn("t2", 2025, 3, 1, 50m),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll", accountId: "acct-A"),
+            TestHelper.MakeTxn("t2", 2025, 1, 2, 300m, name: "Store", accountId: "acct-A"),
+            TestHelper.MakeTxn("t3", 2025, 1, 3, -500m, name: "Freelance", accountId: "acct-B"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_NoMonth_ReturnsYearToDate), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCashFlow_FiltersByAccountId), txns);
 
-        var result = await svc.GetExecutiveSummary(2025);
+        var result = await svc.GetCashFlow(2025, accountId: "acct-A");
+        var jan = result.Months[0];
 
-        Assert.AreEqual(0, result.Month);
-        Assert.AreEqual("2025 Year-to-Date", result.MonthLabel);
-        Assert.AreEqual(150m, result.MonthlyOverview.TotalSpending);
+        Assert.AreEqual(1000m, jan.Income);
+        Assert.AreEqual(300m, jan.Expenses);
+        Assert.AreEqual(700m, jan.Net);
+        Assert.AreEqual(2, result.TransactionCount);
     }
 
     [TestMethod]
-    public async Task GetExecutiveSummary_NoMonthEmptyYear_ReturnsYearToDateWithZeroTotals()
-    {
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_NoMonthEmptyYear_ReturnsYearToDateWithZeroTotals), []);
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        Assert.AreEqual(0, result.Month);
-        Assert.AreEqual(0m, result.MonthlyOverview.TotalSpending);
-        Assert.AreEqual(0m, result.MonthlyOverview.TotalIncome);
-        Assert.AreEqual(0m, result.MonthlyOverview.NetCashFlow);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_WithExplicitMonth_ComputesMonthlyOverview()
+    public async Task GetCashFlow_MonthRange_FiltersMonths()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 3, 1, -1000m, name: "Payroll"),
-            MakeTxn("t2", 2025, 3, 2, 300m, name: "Store"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
+            TestHelper.MakeTxn("t2", 2025, 2, 1, -500m, name: "Freelance"),
+            TestHelper.MakeTxn("t3", 2025, 3, 1, 200m, name: "Store"),
+            TestHelper.MakeTxn("t4", 2025, 6, 1, -800m, name: "Payroll"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_WithExplicitMonth_ComputesMonthlyOverview), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCashFlow_MonthRange_FiltersMonths), txns);
 
-        var result = await svc.GetExecutiveSummary(2025, 3);
+        var result = await svc.GetCashFlow(2025, fromMonth: 1, toMonth: 3);
 
-        Assert.AreEqual(3, result.Month);
-        Assert.AreEqual(300m, result.MonthlyOverview.TotalSpending);
-        Assert.AreEqual(1000m, result.MonthlyOverview.TotalIncome);
-        Assert.AreEqual(700m, result.MonthlyOverview.NetCashFlow);
+        Assert.AreEqual(3, result.Months.Count);
+        Assert.AreEqual("2025-01", result.Months[0].Month);
+        Assert.AreEqual("2025-03", result.Months[2].Month);
+        Assert.AreEqual(1500m, result.TotalIncome);
+        Assert.AreEqual(200m, result.TotalExpenses);
     }
 
     [TestMethod]
-    public async Task GetExecutiveSummary_NoMonth_ComputesYearOverYearComparison()
+    public async Task GetCashFlow_CombinedAccountAndMonthFilter()
     {
         var txns = new[]
         {
-            MakeTxn("t1", 2025, 3, 1, -1200m, name: "Payroll"),
-            MakeTxn("t2", 2025, 3, 2, 500m, name: "Store"),
-            MakeTxn("t3", 2025, 2, 1, -900m, name: "Payroll"),
-            MakeTxn("t4", 2025, 2, 2, 400m, name: "Store"),
+            TestHelper.MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll", accountId: "acct-A"),
+            TestHelper.MakeTxn("t2", 2025, 2, 1, 300m, name: "Store", accountId: "acct-A"),
+            TestHelper.MakeTxn("t3", 2025, 3, 1, -500m, name: "Freelance", accountId: "acct-B"),
+            TestHelper.MakeTxn("t4", 2025, 1, 1, -200m, name: "Side", accountId: "acct-B"),
         };
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_NoMonth_ComputesYearOverYearComparison), txns);
+        var (db, svc) = await BuildSvc(nameof(GetCashFlow_CombinedAccountAndMonthFilter), txns);
 
-        var result = await svc.GetExecutiveSummary(2025);
+        var result = await svc.GetCashFlow(2025, accountId: "acct-A", fromMonth: 1, toMonth: 2);
 
-        // 2025 net = (1200+900) - (500+400) = 1200, prev year net = 0
-        Assert.AreEqual(1200m, result.MonthlyOverview.NetCashFlowChangeAmount);
-        Assert.AreEqual(0m, result.MonthlyOverview.NetCashFlowChangePercent);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_TopCategories_ReturnsTopFive()
-    {
-        var txns = Enumerable.Range(1, 6).Select(i =>
-            MakeTxn($"t{i}", 2025, 3, i, i * 100m, category: $"CAT_{i}")).ToArray();
-        var (_, svc) = await BuildAsync(nameof(GetExecutiveSummary_TopCategories_ReturnsTopFive), txns);
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        Assert.AreEqual(5, result.TopCategories.Count);
-        Assert.AreEqual("CAT_6", result.TopCategories[0].Category);
-        Assert.AreEqual(600m, result.TopCategories[0].Total);
-        Assert.AreEqual("CAT_5", result.TopCategories[1].Category);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_TopMerchants_GroupsByAliasOrNormalizedName()
-    {
-        var dbName = nameof(GetExecutiveSummary_TopMerchants_GroupsByAliasOrNormalizedName);
-        var db = BuildDb(dbName);
-        var alias = new BusinessAlias { AliasName = "Amazon" };
-        db.BusinessAliases.Add(alias);
-        await db.SaveChangesAsync();
-
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 3, 1, 100m, name: "Amazon Purchase"),
-            MakeTxn("t2", 2025, 3, 2, 50m, name: "Amazon Renewal"),
-        };
-        foreach (var t in txns)
-        {
-            t.AliasId = alias.Id;
-            t.NormalizedName = "amazon";
-        }
-        db.Transactions.AddRange(txns);
-        await db.SaveChangesAsync();
-
-        var svc = new ReportService(db, BuildSettings(db));
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        Assert.AreEqual(1, result.TopMerchants.Count);
-        Assert.AreEqual("Amazon", result.TopMerchants[0].Name);
-        Assert.IsTrue(result.TopMerchants[0].IsMapped);
-        Assert.AreEqual(150m, result.TopMerchants[0].Total);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_RecurringCharges_DetectsThreeMonthMerchant()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "Netflix"),
-            MakeTxn("t2", 2025, 2, 1, 100m, name: "Netflix"),
-            MakeTxn("t3", 2025, 3, 1, 100m, name: "Netflix"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetExecutiveSummary_RecurringCharges_DetectsThreeMonthMerchant), txns);
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        Assert.AreEqual(1, result.RecurringCharges.Count);
-        Assert.AreEqual("Netflix", result.RecurringCharges[0].Name);
-        Assert.AreEqual(3, result.RecurringCharges[0].OccurrenceCount);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_Alerts_CountsUncategorizedTransactions()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, category: "Unassigned"),
-            MakeTxn("t2", 2025, 1, 2, -50m, category: ""),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetExecutiveSummary_Alerts_CountsUncategorizedTransactions), txns);
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        var uncat = result.Alerts.Items.FirstOrDefault(a => a.Type == "UncategorizedTransactions");
-        Assert.IsNotNull(uncat);
-        Assert.AreEqual(2, uncat.Count);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_AccountSummary_GroupsByAccount()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, -1000m, name: "Payroll"),
-            MakeTxn("t2", 2025, 1, 2, 300m, name: "Store"),
-            MakeTxn("t3", 2025, 1, 3, -500m, name: "Freelance"),
-        };
-        foreach (var t in txns) t.AccountId = "acct-1";
-        var txns2 = MakeTxn("t4", 2025, 1, 4, 200m, name: "Other");
-        txns2.AccountId = "acct-2";
-        var allTxns = txns.Concat(new[] { txns2 }).ToArray();
-
-        var (_, svc) = await BuildAsync(
-            nameof(GetExecutiveSummary_AccountSummary_GroupsByAccount), allTxns);
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        Assert.AreEqual(2, result.Accounts.Count);
-        var acct1 = result.Accounts.Single(a => a.AccountId == "acct-1");
-        Assert.AreEqual(1500m, acct1.Income);
-        Assert.AreEqual(300m, acct1.Expenses);
-        Assert.AreEqual(1200m, acct1.NetCashFlow);
-        Assert.AreEqual(3, acct1.TransactionCount);
-    }
-
-    [TestMethod]
-    public async Task ExecutiveSummaryCsv_IncludesExpectedSections()
-    {
-        var (_, svc) = await BuildAsync(nameof(ExecutiveSummaryCsv_IncludesExpectedSections), []);
-
-        var csv = await svc.ExecutiveSummaryCsv(2025);
-        var text = System.Text.Encoding.UTF8.GetString(csv);
-
-        Assert.IsTrue(text.Contains("Overview"));
-        Assert.IsTrue(text.Contains("Top Categories"));
-        Assert.IsTrue(text.Contains("Top Merchants"));
-        Assert.IsTrue(text.Contains("Alerts"));
-        Assert.IsTrue(text.Contains("Accounts"));
-    }
-
-    [TestMethod]
-    public async Task GetPivot_GrandTotal_MatchesSumOfRowTotals()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, category: "FOOD"),
-            MakeTxn("t2", 2025, 2, 1, 200m, category: "TRAVEL"),
-        };
-        var (_, svc) = await BuildAsync(nameof(GetPivot_GrandTotal_MatchesSumOfRowTotals), txns);
-
-        var result = await svc.GetPivot(2025);
-
-        Assert.AreEqual(result.Rows.Sum(r => r.RowTotal), result.GrandTotal);
-    }
-
-    // ── Excluded Categories ─────────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task GetCategorySummary_FiltersExcludedCategories()
-    {
-        var txns = new[]
-        {
-            new Transaction
-            {
-                TransactionId = "t1", AccountId = "acct-1",
-                Date = new DateOnly(2025, 1, 1), Amount = 100m,
-                Debit = 100m, Name = "M1", Category = "FOOD",
-                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-            },
-            new Transaction
-            {
-                TransactionId = "t2", AccountId = "acct-1",
-                Date = new DateOnly(2025, 1, 1), Amount = 50m,
-                Debit = 50m, Name = "M2", Category = "TRAVEL",
-                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-            },
-            new Transaction
-            {
-                TransactionId = "t3", AccountId = "acct-1",
-                Date = new DateOnly(2025, 2, 1), Amount = 200m,
-                Debit = 200m, Name = "M3", Category = "FOOD",
-                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-            },
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetCategorySummary_FiltersExcludedCategories), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetCategorySummary(2025, 1);
-
-        Assert.AreEqual(1, result.Count);
-        Assert.AreEqual("TRAVEL", result[0].Category);
-        Assert.AreEqual(50, result[0].MonthDebit);
-    }
-
-    [TestMethod]
-    public async Task GetCategorySummary_FiltersMultipleExcludedCategories()
-    {
-        var txns = new[]
-        {
-            new Transaction
-            {
-                TransactionId = "t1", AccountId = "acct-1",
-                Date = new DateOnly(2025, 1, 1), Amount = 100m,
-                Debit = 100m, Name = "M1", Category = "FOOD",
-                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-            },
-            new Transaction
-            {
-                TransactionId = "t2", AccountId = "acct-1",
-                Date = new DateOnly(2025, 1, 1), Amount = 50m,
-                Debit = 50m, Name = "M2", Category = "TRAVEL",
-                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-            },
-            new Transaction
-            {
-                TransactionId = "t3", AccountId = "acct-1",
-                Date = new DateOnly(2025, 1, 1), Amount = 75m,
-                Debit = 75m, Name = "M3", Category = "UTILITIES",
-                CreatedAt = DateTime.UtcNow, UpdatedAt = DateTime.UtcNow
-            },
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetCategorySummary_FiltersMultipleExcludedCategories), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD,UTILITIES" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetCategorySummary(2025, 1);
-
-        Assert.AreEqual(1, result.Count);
-        Assert.AreEqual("TRAVEL", result[0].Category);
-    }
-
-    [TestMethod]
-    public async Task GetCategorySummary_NoFilteredCategories_ReturnsAll()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetCategorySummary_NoFilteredCategories_ReturnsAll), txns);
-
-        var result = await svc.GetCategorySummary(2025, 1);
-
-        Assert.AreEqual(2, result.Count);
-    }
-
-    [TestMethod]
-    public async Task GetCashFlow_FiltersExcludedCategories()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 1, 200m, name: "M2", category: "SHOPPING"),
-            MakeTxn("t3", 2025, 1, 15, -50m, name: "M3", category: "REFUND"),
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetCashFlow_FiltersExcludedCategories), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetCashFlow(2025);
-
-        var jan = result.Months.Single(m => m.Month == "2025-01");
-        Assert.AreEqual(200, jan.Expenses);
-        Assert.AreEqual(50, jan.Income);
-        Assert.AreEqual(-150, jan.Net);
-    }
-
-    [TestMethod]
-    public async Task GetCashFlow_AllCategoriesExcluded_ReturnsZero()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetCashFlow_AllCategoriesExcluded_ReturnsZero), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetCashFlow(2025);
-
-        foreach (var row in result.Months)
-        {
-            Assert.AreEqual(0, row.Expenses);
-            Assert.AreEqual(0, row.Income);
-            Assert.AreEqual(0, row.Net);
-        }
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_FiltersExcludedCategories()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 1, 200m, name: "M2", category: "SHOPPING"),
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetExecutiveSummary_FiltersExcludedCategories), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        Assert.AreEqual(200, result.MonthlyOverview.TotalSpending);
-        Assert.AreEqual(1, result.TopCategories.Count);
-        Assert.AreEqual("SHOPPING", result.TopCategories[0].Category);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_FiltersExcludedCategoriesFromMerchants()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "MerchantA", category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 5, 200m, name: "MerchantA", category: "FOOD"),
-            MakeTxn("t3", 2025, 1, 10, 150m, name: "MerchantB", category: "SHOPPING"),
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetExecutiveSummary_FiltersExcludedCategoriesFromMerchants), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetExecutiveSummary(2025);
-
-        Assert.AreEqual(1, result.TopMerchants.Count);
-        Assert.AreEqual("MerchantB", result.TopMerchants[0].Name);
-    }
-
-    [TestMethod]
-    public async Task GetByCategory_FiltersExcludedCategories()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetByCategory_FiltersExcludedCategories), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetByCategory(2025);
-
-        Assert.AreEqual(1, result.Categories.Count);
-        Assert.IsFalse(result.Categories.Any(r => r.Category == "FOOD"));
-        Assert.AreEqual("TRAVEL", result.Categories[0].Category);
-    }
-
-    [TestMethod]
-    public async Task GetTopMerchants_FiltersExcludedCategories()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetTopMerchants_FiltersExcludedCategories), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetTopMerchants(year: 2025);
-
-        Assert.AreEqual(1, result.Merchants.Count);
-        Assert.IsFalse(result.Merchants.Any(r => r.PrimaryCategory == "FOOD"));
-        Assert.AreEqual("M2", result.Merchants[0].Name);
-    }
-
-    [TestMethod]
-    public async Task GetPivot_FiltersExcludedCategories()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 100m, name: "M1", category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 1, 50m, name: "M2", category: "TRAVEL"),
-        };
-        var (db, svc) = await BuildAsync(
-            nameof(GetPivot_FiltersExcludedCategories), txns);
-
-        db.AppSettings.Add(new AppSetting { ExcludedCategories = "FOOD" });
-        await db.SaveChangesAsync();
-
-        var result = await svc.GetPivot(2025);
-
-        Assert.IsFalse(result.Categories.Contains("FOOD"));
-        Assert.AreEqual("TRAVEL", result.Categories.Single());
-    }
-
-    // ── Month Filter ──────────────────────────────────────────────────────────
-
-    [TestMethod]
-    public async Task GetByCategory_MonthFilter_ReturnsOnlyThatMonthsTransactions()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 15, 100m, category: "FOOD"),
-            MakeTxn("t2", 2025, 2, 10, 50m, category: "FOOD"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_MonthFilter_ReturnsOnlyThatMonthsTransactions), txns);
-
-        var result = await svc.GetByCategory(2025, 1);
-
-        Assert.AreEqual(100m, result.TotalSpend);
-        var food = result.Categories.Single(c => c.Category == "FOOD");
-        Assert.AreEqual(1, food.Transactions.Count);
-        Assert.AreEqual("t1", food.Transactions[0].TransactionId);
-    }
-
-    [TestMethod]
-    public async Task GetByCategory_MonthFilter_PreviousYearTotalStillUsesFullYear()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 15, 100m, category: "FOOD"),
-            MakeTxn("t2", 2025, 1, 20, 50m, category: "FOOD"),
-            MakeTxn("t3", 2024, 7, 1, 200m, category: "FOOD"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_MonthFilter_PreviousYearTotalStillUsesFullYear), txns);
-
-        var result = await svc.GetByCategory(2025, 1);
-
-        var food = result.Categories.Single(c => c.Category == "FOOD");
-        Assert.AreEqual(200m, food.PreviousTotal);
-    }
-
-    [TestMethod]
-    public async Task GetByCategory_MonthFilter_TrailingAverageUsesRolling12Months()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 1, 120m, category: "FOOD"),
-            MakeTxn("t2", 2025, 2, 1, 60m, category: "FOOD"),
-            MakeTxn("t3", 2024, 2, 1, 120m, category: "FOOD"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_MonthFilter_TrailingAverageUsesRolling12Months), txns);
-
-        var result = await svc.GetByCategory(2025, 1);
-
-        var food = result.Categories.Single(c => c.Category == "FOOD");
-        // Trailing 12 months: Feb 2024 - Jan 2025 -> includes t3 (120) + t1 (120) = 240 / 12 = 20
-        Assert.AreEqual(240m, food.TwelveMonthTotal);
-        Assert.AreEqual(20m, food.TwelveMonthAverage);
-    }
-
-    [TestMethod]
-    public async Task GetByCategory_MonthFilter_NoDataInMonth_ReturnsEmpty()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 3, 1, 100m, category: "FOOD"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetByCategory_MonthFilter_NoDataInMonth_ReturnsEmpty), txns);
-
-        var result = await svc.GetByCategory(2025, 1);
-
-        Assert.AreEqual(0m, result.TotalSpend);
-        Assert.AreEqual(0, result.Categories.Count);
-    }
-
-    [TestMethod]
-    public async Task GetTopMerchants_MonthFilter_ReturnsOnlyThatMonthsMerchants()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 15, 100m, name: "Store A"),
-            MakeTxn("t2", 2025, 2, 10, 50m, name: "Store B"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_MonthFilter_ReturnsOnlyThatMonthsMerchants), txns);
-
-        var result = await svc.GetTopMerchants(10, 2025, 1);
-
-        Assert.AreEqual(1, result.Merchants.Count);
-        Assert.AreEqual("Store A", result.Merchants[0].Name);
-    }
-
-    [TestMethod]
-    public async Task GetTopMerchants_MonthFilter_PreviousYearTotalStillUsesFullYear()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 15, 100m, name: "Store A"),
-            MakeTxn("t2", 2025, 2, 10, 50m, name: "Store A"),
-            MakeTxn("t3", 2024, 6, 1, 200m, name: "Store A"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetTopMerchants_MonthFilter_PreviousYearTotalStillUsesFullYear), txns);
-
-        var result = await svc.GetTopMerchants(10, 2025, 1);
-
-        var store = result.Merchants.Single(m => m.MerchantKey == "name:Store A");
-        Assert.AreEqual(200m, store.PreviousTotal);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_MonthFilter_ReturnsOnlyThatMonthsSources()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 15, -1000m, name: "Employer"),
-            MakeTxn("t2", 2025, 3, 10, -500m, name: "Employer"),
-        };
-        foreach (var t in txns) t.NormalizedName = "employer";
-        var (_, svc) = await BuildAsync(
-            nameof(GetIncome_MonthFilter_ReturnsOnlyThatMonthsSources), txns);
-
-        var result = await svc.GetIncome(2025, 1);
-
+        Assert.AreEqual(2, result.Months.Count);
         Assert.AreEqual(1000m, result.TotalIncome);
-        Assert.AreEqual(1, result.Sources[0].Count);
-    }
-
-    [TestMethod]
-    public async Task GetIncome_MonthFilter_PreviousYearTotalStillUsesFullYear()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 1, 15, -1000m, name: "Employer"),
-            MakeTxn("t2", 2025, 2, 10, -500m, name: "Employer"),
-            MakeTxn("t3", 2024, 6, 1, -300m, name: "Employer"),
-        };
-        foreach (var t in txns) t.NormalizedName = "employer";
-        var (_, svc) = await BuildAsync(
-            nameof(GetIncome_MonthFilter_PreviousYearTotalStillUsesFullYear), txns);
-
-        var result = await svc.GetIncome(2025, 1);
-
-        var source = result.Sources.Single(s => s.SourceKey == "raw:employer");
-        Assert.AreEqual(300m, source.PreviousTotal);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_MonthParameter_OverridesAutoDetect()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 3, 15, 100m),
-            MakeTxn("t2", 2025, 6, 1, 50m),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetExecutiveSummary_MonthParameter_OverridesAutoDetect), txns);
-
-        var result = await svc.GetExecutiveSummary(2025, 3);
-
-        Assert.AreEqual(3, result.Month);
-        Assert.AreEqual("2025-03", result.MonthKey);
-    }
-
-    [TestMethod]
-    public async Task GetExecutiveSummary_MonthParameter_TopCategoriesReflectThatMonth()
-    {
-        var txns = new[]
-        {
-            MakeTxn("t1", 2025, 3, 15, 100m, category: "FOOD"),
-            MakeTxn("t2", 2025, 6, 1, 200m, category: "TRAVEL"),
-        };
-        var (_, svc) = await BuildAsync(
-            nameof(GetExecutiveSummary_MonthParameter_TopCategoriesReflectThatMonth), txns);
-
-        var result = await svc.GetExecutiveSummary(2025, 3);
-
-        Assert.AreEqual(1, result.TopCategories.Count);
-        Assert.AreEqual("FOOD", result.TopCategories[0].Category);
+        Assert.AreEqual(300m, result.TotalExpenses);
+        Assert.AreEqual(2, result.TransactionCount);
     }
 }

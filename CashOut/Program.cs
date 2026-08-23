@@ -7,7 +7,6 @@ using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Force US culture for currency formatting
 var culture = new CultureInfo("en-US");
 CultureInfo.DefaultThreadCurrentCulture = culture;
 CultureInfo.DefaultThreadCurrentUICulture = culture;
@@ -26,32 +25,22 @@ builder.Services.AddRazorPages();
 builder.Services.AddServerSideBlazor();
 builder.Services.AddControllers();
 
-// Enable IFormFile support for CSV upload endpoints
 builder.Services.Configure<FormOptions>(o =>
 {
-    o.MultipartBodyLengthLimit = 11 * 1024 * 1024; // 11 MB (slightly above 10 MB client limit)
+    o.MultipartBodyLengthLimit = 11 * 1024 * 1024;
 });
 
 // ── Services ──────────────────────────────────────────────────────────────
-builder.Services.AddSingleton<EncryptionService>();
 builder.Services.AddScoped<SettingsService>();
 
-// AddHttpClient<T> registers PlaidService as a typed HttpClient consumer with
-// proper socket pooling via IHttpClientFactory. Do NOT also call AddScoped<PlaidService>.
-builder.Services.AddHttpClient<PlaidService>(client =>
-{
-    client.DefaultRequestHeaders.Add("Plaid-Version", "2020-09-14");
-});
-
-builder.Services.AddScoped<MerchantNormalizationService>();
 builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<PdfImportService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
-builder.Services.AddScoped<AccountReportService>();
+
 builder.Services.AddMudServices();
 
-// ── HttpClient for Blazor pages calling local API endpoints ───────────────
+// ── HttpClient for Blazor pages ───────────────────────────────────────────
 builder.Services.AddScoped<HttpClient>(sp =>
 {
     var urls = builder.Configuration["ASPNETCORE_URLS"]
@@ -68,7 +57,7 @@ builder.Services.AddScoped<HttpClient>(sp =>
 
 var app = builder.Build();
 
-// ── Auto-migrate on startup (with retry for Docker DNS race) ─────────────
+// ── Auto-migrate on startup ──────────────────────────────────────────────
 {
     var maxRetries = 10;
     for (var attempt = 1; attempt <= maxRetries; attempt++)
@@ -92,22 +81,10 @@ var app = builder.Build();
 app.UseStaticFiles();
 app.UseRouting();
 
-// Gate the debug controller to Development environment only
-if (!app.Environment.IsDevelopment())
-{
-    app.Use(async (context, next) =>
-    {
-        if (context.Request.Path.StartsWithSegments("/api/debug"))
-        {
-            context.Response.StatusCode = 404;
-            return;
-        }
-        await next();
-    });
-}
-
 app.MapControllers();
 app.MapBlazorHub();
 app.MapFallbackToPage("/_Host");
 
 app.Run();
+
+public partial class Program { }

@@ -19,105 +19,18 @@ else
         <MudSimpleTable Elevation="0">
             <tbody>
                 <tr>
-                    <td><strong>Plaid Environment</strong></td>
-                    <td>
-                        <MudStack Row="true" AlignItems="AlignItems.Center">
-                            <MudChip T="string" Color="@(_plaidEnvironment == "production" ? Color.Error : Color.Info)" Size="Size.Small" Variant="Variant.Filled">
-                                @_plaidEnvironment.ToUpper()
-                            </MudChip>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                (set via <code>PLAID_ENV</code> env var)
-                            </MudText>
-                        </MudStack>
-                    </td>
-                </tr>
-                <tr>
-                    <td><strong>Active Year</strong></td>
-                    <td>
-                        <MudStack Row="true" AlignItems="AlignItems.Center">
-                            <MudText>@_outputYear</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                (from most recent transaction)
-                            </MudText>
-                        </MudStack>
-                    </td>
-                </tr>
-                <tr>
                     <td><strong>Version</strong></td>
                     <td><MudText Typo="Typo.body2" Style="font-family:monospace">@_version</MudText></td>
                 </tr>
             </tbody>
         </MudSimpleTable>
-
-        @if (_plaidEnvironment == "production")
-        {
-            <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-6" Icon="@Icons.Material.Filled.Warning">
-                Production mode — using real financial data.
-            </MudAlert>
-        }
-
-        @if (_plaidEnvironment == "sandbox")
-        {
-            <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-6" Icon="@Icons.Material.Filled.Info">
-                Sandbox mode — safe for testing with Plaid test credentials.
-            </MudAlert>
-        }
-    </MudPaper>
-
-    <MudPaper Elevation="1" Class="pa-6 mt-6" MaxWidth="600px">
-        <MudText Typo="Typo.h6" GutterBottom="true">Excluded Categories</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-            Categories selected below are excluded from all reports. Toggle a category to exclude or include it, then click Save.
-        </MudText>
-
-        @if (_allCategories.Count == 0)
-        {
-            <MudText Typo="Typo.body2" Color="Color.Secondary">No categories found. Add transactions with categories first.</MudText>
-        }
-        else
-        {
-            <div class="category-grid">
-                @foreach (var cat in _allCategories)
-                {
-                    var isExcluded = _selectedExcluded.Contains(cat);
-                    <MudChip T="string"
-                             Color="@(isExcluded ? Color.Warning : Color.Default)"
-                             Variant="@(isExcluded ? Variant.Filled : Variant.Outlined)"
-                             Size="Size.Small"
-                             OnClick="@(() => ToggleCategory(cat))">
-                        @cat
-                    </MudChip>
-                }
-            </div>
-
-            <div class="mt-4">
-                <MudButton Variant="Variant.Filled"
-                           Color="Color.Primary"
-                           Disabled="@(!_hasChanges)"
-                           OnClick="@SaveExcludedCategories"
-                           Class="mr-2">
-                    Save
-                </MudButton>
-                @if (_saving)
-                {
-                    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-2" />
-                }
-                @if (_saveSuccess)
-                {
-                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-2" Dense="true">
-                        Excluded categories saved.
-                    </MudAlert>
-                }
-            </div>
-        }
     </MudPaper>
 
     <MudPaper Elevation="1" Class="pa-6 mt-6" MaxWidth="600px">
         <MudText Typo="Typo.h6" GutterBottom="true">Data Cleanup</MudText>
         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
             Find and remove transactions and CSV mapping profiles that reference
-            deleted accounts. Use this after removing linked or manual accounts
-            that had backfilled CSV data.
+            deleted accounts.
         </MudText>
 
         @if (!_cleanupConfirming)
@@ -125,14 +38,7 @@ else
             <MudButton Variant="Variant.Filled" Color="Color.Warning"
                        OnClick="@StartCleanup" Disabled="@_cleaning"
                        StartIcon="@Icons.Material.Filled.CleaningServices">
-                @if (_cleaning)
-                {
-                    <span>Cleaning...</span>
-                }
-                else
-                {
-                    <span>Find &amp; Remove Orphans</span>
-                }
+                @(_cleaning ? "Cleaning..." : "Find & Remove Orphans")
             </MudButton>
         }
         else
@@ -141,14 +47,8 @@ else
                 This will permanently delete orphaned data. Are you sure?
             </MudAlert>
             <MudStack Row="true" Spacing="2">
-                <MudButton Variant="Variant.Filled" Color="Color.Error"
-                           OnClick="@ConfirmCleanup">
-                    Yes, clean up
-                </MudButton>
-                <MudButton Variant="Variant.Outlined"
-                           OnClick="@CancelCleanup">
-                    Cancel
-                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="@ConfirmCleanup">Yes, clean up</MudButton>
+                <MudButton Variant="Variant.Outlined" OnClick="@CancelCleanup">Cancel</MudButton>
             </MudStack>
         }
 
@@ -161,34 +61,16 @@ else
         {
             <MudAlert Severity="@(_cleanupResult.TransactionsRemoved > 0 || _cleanupResult.ProfilesRemoved > 0 ? Severity.Success : Severity.Info)"
                       Variant="Variant.Outlined" Class="mt-4" Dense="true">
-                Removed @_cleanupResult.TransactionsRemoved transaction(s)
-                and @_cleanupResult.ProfilesRemoved CSV mapping profile(s).
+                Removed @_cleanupResult.TransactionsRemoved transaction(s) and @_cleanupResult.ProfilesRemoved CSV mapping profile(s).
             </MudAlert>
         }
     </MudPaper>
 }
 
-<style>
-    .category-grid {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-</style>
-
 @code {
-    private string _plaidEnvironment = "sandbox";
-    private int _outputYear = DateTime.Now.Year;
     private string _version = "—";
     private bool _loading = true;
     private string? _error;
-
-    private List<string> _allCategories = new();
-    private HashSet<string> _selectedExcluded = new(StringComparer.OrdinalIgnoreCase);
-    private HashSet<string> _originalExcluded = new(StringComparer.OrdinalIgnoreCase);
-    private bool _saving;
-    private bool _saveSuccess;
-    private bool _hasChanges => !_selectedExcluded.SetEquals(_originalExcluded);
 
     private bool _cleaning;
     private bool _cleanupConfirming;
@@ -198,95 +80,27 @@ else
     {
         try
         {
-            var settings = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/settings")
-                           ?? new();
-            if (settings.TryGetValue("plaid_environment", out var e))
-                _plaidEnvironment = e;
-            if (settings.TryGetValue("output_year", out var y) && int.TryParse(y, out var yi))
-                _outputYear = yi;
-
             var versionResp = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/version");
-            if (versionResp?.TryGetValue("version", out var v) == true)
-                _version = v;
-
-            var excluded = await Http.GetFromJsonAsync<List<string>>("api/settings/excluded-categories")
-                           ?? new();
-            _selectedExcluded = new HashSet<string>(excluded, StringComparer.OrdinalIgnoreCase);
-            _originalExcluded = new HashSet<string>(_selectedExcluded, StringComparer.OrdinalIgnoreCase);
-
-            _allCategories = await Http.GetFromJsonAsync<List<string>>("api/settings/categories")
-                             ?? new();
+            if (versionResp?.TryGetValue("version", out var v) == true) _version = v;
         }
         catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
     }
 
-    private void ToggleCategory(string category)
-    {
-        if (_selectedExcluded.Contains(category))
-            _selectedExcluded.Remove(category);
-        else
-            _selectedExcluded.Add(category);
-        _saveSuccess = false;
-    }
-
-    private async Task SaveExcludedCategories()
-    {
-        _saving = true;
-        _saveSuccess = false;
-        try
-        {
-            var updated = await Http.PutAsJsonAsync(
-                "api/settings/excluded-categories",
-                _selectedExcluded.ToList());
-            updated.EnsureSuccessStatusCode();
-            var result = await updated.Content.ReadFromJsonAsync<List<string>>() ?? new();
-            _selectedExcluded = new HashSet<string>(result, StringComparer.OrdinalIgnoreCase);
-            _originalExcluded = new HashSet<string>(_selectedExcluded, StringComparer.OrdinalIgnoreCase);
-            _saveSuccess = true;
-        }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
-        finally
-        {
-            _saving = false;
-        }
-    }
-
-    private void StartCleanup()
-    {
-        _cleanupResult = null;
-        _error = null;
-        _cleanupConfirming = true;
-    }
-
-    private void CancelCleanup()
-    {
-        _cleanupConfirming = false;
-    }
+    private void StartCleanup() { _cleanupResult = null; _error = null; _cleanupConfirming = true; }
+    private void CancelCleanup() { _cleanupConfirming = false; }
 
     private async Task ConfirmCleanup()
     {
-        _cleanupConfirming = false;
-        _cleaning = true;
-        _cleanupResult = null;
-        _error = null;
+        _cleanupConfirming = false; _cleaning = true; _cleanupResult = null; _error = null;
         try
         {
             var resp = await Http.PostAsync("api/settings/cleanup", null);
             resp.EnsureSuccessStatusCode();
             _cleanupResult = await resp.Content.ReadFromJsonAsync<CleanupResult>();
         }
-        catch (Exception ex)
-        {
-            _error = ex.Message;
-        }
-        finally
-        {
-            _cleaning = false;
-        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _cleaning = false; }
     }
 
     private record CleanupResult(int TransactionsRemoved, int ProfilesRemoved);

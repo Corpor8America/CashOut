@@ -5,7 +5,6 @@ public class AppDbContextFactory : IDesignTimeDbContextFactory<AppDbContext>
 {
     public AppDbContext CreateDbContext(string[] args)
     {
-        // Load .env file automatically
         DotNetEnv.Env.Load("../.env");
 
         var config = new ConfigurationBuilder()

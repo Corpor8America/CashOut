@@ -4,15 +4,11 @@ using Microsoft.EntityFrameworkCore;
 public class CsvImportService
 {
     private readonly AppDbContext _db;
-    private readonly MerchantNormalizationService _normalization;
 
-    public CsvImportService(AppDbContext db, MerchantNormalizationService normalization)
+    public CsvImportService(AppDbContext db)
     {
         _db = db;
-        _normalization = normalization;
     }
-
-    // ── Profile Management ────────────────────────────────────────────────
 
     public async Task<CsvMappingProfile?> GetCurrentProfile(string accountId)
     {
@@ -28,6 +24,7 @@ public class CsvImportService
             .Where(p => p.AccountId == accountId)
             .MaxAsync(p => (int?)p.Version) ?? 0;
 
+        profile.Id = 0;
         profile.AccountId = accountId;
         profile.Version = maxVersion + 1;
         profile.CreatedAt = DateTime.UtcNow;
@@ -37,13 +34,6 @@ public class CsvImportService
         return profile;
     }
 
-    // ── CSV Preview ───────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Parses the raw CSV and returns headers + up to 5 data rows.
-    /// When skipTop > 0, that many rows are discarded before the header row.
-    /// When skipBottom > 0, that many rows are trimmed from the end of data rows.
-    /// </summary>
     public CsvPreview Preview(string csvContent, int skipTop = 0, int skipBottom = 0)
     {
         var rows = ParseCsv(csvContent);
@@ -52,11 +42,9 @@ public class CsvImportService
         if (rows.Count == 0) return new CsvPreview(Array.Empty<string>(), Array.Empty<string[]>());
 
         var headers = rows[0];
-        var preview = rows.Skip(1).Take(5).ToArray();
+        var preview = rows.Skip(1).ToArray();
         return new CsvPreview(headers, preview);
     }
-
-    // ── Profile Validation ────────────────────────────────────────────────
 
     public List<string>? ValidateProfile(CsvMappingProfile profile, string[] csvHeaders)
     {
@@ -67,26 +55,16 @@ public class CsvImportService
         return missing.Count > 0 ? missing : null;
     }
 
-    // ── Import ────────────────────────────────────────────────────────────
-
     public async Task<ImportResult> Import(
         string accountId, string csvContent, CsvMappingProfile profile)
     {
-        // Resolve LinkedAccount Guid → Plaid account_id so CSV transactions
-        // use the same AccountId as Plaid-synced ones for the same account.
         var resolvedAccountId = accountId;
-        if (Guid.TryParse(accountId, out var guid))
-        {
-            var linked = await _db.LinkedAccounts.FindAsync(guid);
-            if (linked != null)
-                resolvedAccountId = linked.AccountId;
-        }
 
         var rows = ParseCsv(csvContent);
         rows = ApplyRowTrimming(rows, profile.SkipRowsFromTop, profile.SkipRowsFromBottom);
 
         if (rows.Count <= 1)
-            return new ImportResult(0, 0, new List<SkippedRow>());
+            return new ImportResult(0, new List<SkippedRow>());
 
         var headers = rows[0].Select(h => h.ToLowerInvariant()).ToList();
         var dataRows = rows.Skip(1).ToList();
@@ -107,46 +85,27 @@ public class CsvImportService
         var amountIdx = ColIdx(profile.AmountColumn);
         var categoryIdx = ColIdx(profile.CategoryColumn);
 
-        // Pre-load normalization data for batch processing
-        var allPatterns = await _db.AliasPatterns
-            .Include(p => p.Alias)
-            .ToListAsync();
-
-        var rawByNormalized = await _db.RawBusinesses
-            .ToDictionaryAsync(b => b.RawNameNormalized);
-
-        // Collect all distinct dates from parsed rows so we can batch-load
-        // existing DB transactions for additive-only dedup.
-        var distinctDates = new List<DateOnly>();
+        var csvDates = new HashSet<DateOnly>();
         foreach (var row in dataRows)
         {
-            var rawDate = GetField(row, dateIdx);
-            if (DateOnly.TryParse(rawDate, out var d) && !distinctDates.Contains(d))
-                distinctDates.Add(d);
+            if (DateOnly.TryParse(GetField(row, dateIdx), out var d))
+                csvDates.Add(d);
         }
 
-        // Load existing transactions for each date + account (date-exact match).
-        // Build a HashSet for O(1) lookup: (date, signed amount, normalizedName).
-        var existingTuples = new HashSet<(DateOnly date, decimal amount, string normalizedName)>();
-        foreach (var d in distinctDates)
-        {
-            var txnsForDate = await _db.Transactions
-                .Where(t => t.AccountId == resolvedAccountId && t.Date == d)
-                .ToListAsync();
-            foreach (var t in txnsForDate)
-                existingTuples.Add((t.Date, t.Amount, t.NormalizedName));
-        }
+        var existingDates = (await _db.Transactions
+            .Where(t => t.AccountId == resolvedAccountId && csvDates.Contains(t.Date))
+            .Select(t => t.Date)
+            .ToListAsync())
+            .ToHashSet();
 
         int imported = 0;
-        int skippedAlreadyPresent = 0;
         var skippedRows = new List<SkippedRow>();
 
         for (int rowNum = 0; rowNum < dataRows.Count; rowNum++)
         {
             var row = dataRows[rowNum];
-            var rawRowNum = rowNum + 2; // 1-based + header
+            var rawRowNum = rowNum + 2;
 
-            // Parse date
             var rawDate = GetField(row, dateIdx);
             if (!DateOnly.TryParse(rawDate, out var date))
             {
@@ -154,10 +113,15 @@ public class CsvImportService
                 continue;
             }
 
-            // ── Amount normalization ──────────────────────────────────────
+            if (existingDates.Contains(date))
+            {
+                skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row),
+                    "Transactions for this day were already imported"));
+                continue;
+            }
+
             decimal? credit;
             decimal? debit;
-            decimal amount;
 
             if (amountIdx >= 0)
             {
@@ -172,7 +136,8 @@ public class CsvImportService
                     skippedRows.Add(new SkippedRow(rawRowNum, TruncateRow(row), "Amount is zero"));
                     continue;
                 }
-                (credit, debit, amount) = Transaction.NormalizeSingleAmount(parsed);
+                if (!profile.NegativeIsCredit) parsed = -parsed;
+                (credit, debit) = Transaction.NormalizeSingleAmount(parsed);
             }
             else
             {
@@ -220,7 +185,7 @@ public class CsvImportService
                     parsedDebit = d;
                 }
 
-                (credit, debit, amount) = Transaction.NormalizeSplitColumns(parsedCredit, parsedDebit);
+                (credit, debit) = Transaction.NormalizeSplitColumns(parsedCredit, parsedDebit);
 
                 if (credit == null && debit == null)
                 {
@@ -238,57 +203,29 @@ public class CsvImportService
 
             var categoryRaw = GetField(row, categoryIdx);
 
-            var (alias, rawBusiness, normalizedName, effectiveCategory) = await _normalization.ResolveBulk(
-                description, categoryRaw, allPatterns, rawByNormalized);
-
-            // ── Additive-only dedup: skip if (date, signed amount, normalizedName) already in DB ──
-            if (existingTuples.Contains((date, amount, normalizedName)))
-            {
-                skippedAlreadyPresent++;
-                continue;
-            }
-
-            // When an alias matched, use the canonical alias name as the display name.
-            // description (raw) is preserved in RawName.
-            var displayName = alias != null ? alias.AliasName : description;
-
             var txn = new Transaction
             {
                 TransactionId = $"csv-{Guid.NewGuid()}",
                 AccountId = resolvedAccountId,
                 Source = TransactionSource.CSV,
                 Date = date,
-                Name = displayName,
+                Name = description,
                 RawName = description,
-                NormalizedName = normalizedName,
                 Credit = credit,
                 Debit = debit,
-                Amount = amount,
-                Category = effectiveCategory,
-                AliasId = alias?.Id,
-                Alias = alias,
-                RawBusinessId = rawBusiness?.Id == 0 ? null : rawBusiness?.Id,
-                RawBusiness = rawBusiness,
+                Category = categoryRaw,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
             _db.Transactions.Add(txn);
-            // Do NOT add to existingTuples — two identical rows in the same CSV both get inserted.
             imported++;
         }
 
         await _db.SaveChangesAsync();
-        return new ImportResult(imported, skippedAlreadyPresent, skippedRows);
+        return new ImportResult(imported, skippedRows);
     }
 
-    // ── Row Trimming ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Applies top/bottom row skipping to a parsed row list.
-    /// skipTop removes rows before the header (the header is the first row
-    /// after skipping). skipBottom removes rows from the tail of data rows.
-    /// </summary>
     private static List<string[]> ApplyRowTrimming(
         List<string[]> rows, int skipTop, int skipBottom)
     {
@@ -297,7 +234,6 @@ public class CsvImportService
 
         if (skipBottom > 0 && rows.Count > 1)
         {
-            // Keep header (index 0) + data rows minus the bottom trim
             var header = rows[0];
             var dataRows = rows.Skip(1).ToList();
             var trimmedData = dataRows.Take(Math.Max(0, dataRows.Count - skipBottom)).ToList();
@@ -307,8 +243,6 @@ public class CsvImportService
 
         return rows;
     }
-
-    // ── Helpers ───────────────────────────────────────────────────────────
 
     private static string GetField(string[] row, int idx) =>
         idx >= 0 && idx < row.Length ? row[idx].Trim() : "";
@@ -327,7 +261,7 @@ public class CsvImportService
     private static string TruncateRow(string[] row, int maxLen = 80)
     {
         var joined = string.Join(", ", row);
-        return joined.Length > maxLen ? joined[..maxLen] + "…" : joined;
+        return joined.Length > maxLen ? joined[..maxLen] + "..." : joined;
     }
 
     private static List<string[]> ParseCsv(string content)
@@ -374,8 +308,6 @@ public class CsvImportService
     }
 }
 
-// ── Result types ──────────────────────────────────────────────────────────────
-
 public record CsvPreview(string[] Headers, string[][] Rows);
 public record SkippedRow(int RowNumber, string RawData, string Reason);
-public record ImportResult(int Imported, int SkippedAlreadyPresent, List<SkippedRow> SkippedRows);
+public record ImportResult(int Imported, List<SkippedRow> SkippedRows);
