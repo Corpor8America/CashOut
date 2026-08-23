@@ -1,16 +1,32 @@
 @page "/accounts"
-@using Microsoft.JSInterop
 @inject HttpClient Http
-@inject IJSRuntime JS
-@inject ILogger<Accounts> Logger
-@inject NavigationManager Nav
-@implements IDisposable
 
-<MudText Typo="Typo.h4" GutterBottom="true">Linked Accounts</MudText>
+<MudText Typo="Typo.h4" GutterBottom="true">Accounts</MudText>
 
-@if (_error != null)
+<MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+           OnClick="ShowCreateForm" Class="mb-4">
+    Create Account
+</MudButton>
+
+@if (_showForm)
 {
-    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
+    <MudPaper Elevation="1" Class="pa-4 mb-4" MaxWidth="400px">
+        <MudTextField T="string" @bind-Value="_newName" Label="Account Name" Required="true" />
+        <MudTextField T="string" @bind-Value="_newDescription" Label="Description (optional)" />
+        <MudStack Row="true" Spacing="2" Class="mt-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAccount">Save</MudButton>
+            <MudButton Variant="Variant.Outlined" OnClick="CancelCreate">Cancel</MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="my-2">@_message</MudAlert>
+}
+@if (!string.IsNullOrEmpty(_error))
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-2">@_error</MudAlert>
 }
 
 @if (_loading)
@@ -19,288 +35,83 @@
 }
 else if (_accounts.Count == 0)
 {
-    <MudText Color="Color.Secondary" Class="mb-4">No accounts linked yet.</MudText>
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+        No accounts yet. Create one to import CSV transactions.
+    </MudAlert>
 }
 else
 {
-    <MudTable T="AccountDto" Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true" Class="mb-4" OnRowClick="HandleRowClick">
+    <MudTable Items="@_accounts" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="1" Dense="true">
         <HeaderContent>
-            <MudTh>Institution</MudTh>
             <MudTh>Name</MudTh>
-            <MudTh>Account #</MudTh>
-            <MudTh>Type</MudTh>
+            <MudTh>Description</MudTh>
+            <MudTh>Created</MudTh>
             <MudTh></MudTh>
         </HeaderContent>
         <RowTemplate>
-            <MudTd DataLabel="Institution">@context.Institution</MudTd>
-            <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Account #">••••@context.Mask</MudTd>
-            <MudTd DataLabel="Type">@context.Subtype</MudTd>
-            <MudTd @onclick:stopPropagation="true">
-                @if (_confirmRemoveId == context.Id)
-                {
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                        <MudText Typo="Typo.body2">Sure?</MudText>
-                        <MudButton Variant="Variant.Filled" Color="Color.Error" Size="Size.Small"
-                                   OnClick="() => ConfirmRemove(context.Id)">Yes, remove</MudButton>
-                        <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="CancelRemove">Cancel</MudButton>
-                    </MudStack>
-                }
-                else
-                {
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                        <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small"
-                                   Href="@($"/csv-import/{context.Id}")">Backfill (CSV)</MudButton>
-                        <MudButton Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small"
-                                   OnClick="() => RequestRemove(context.Id)">Remove</MudButton>
-                    </MudStack>
-                }
+            <MudTd DataLabel="Name">
+                <MudLink Href="@($"/transactions?accountId={context.Id}")">@context.Name</MudLink>
+            </MudTd>
+            <MudTd DataLabel="Description">@context.Description</MudTd>
+            <MudTd DataLabel="Created">@context.CreatedAt.ToString("MMM d, yyyy")</MudTd>
+            <MudTd>
+                <MudStack Row="true" Spacing="1">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Href="@($"/csv-import/{context.Id}")">
+                        Import CSV
+                    </MudButton>
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small"
+                                   OnClick="() => DeleteAccount(context)" />
+                </MudStack>
             </MudTd>
         </RowTemplate>
     </MudTable>
 }
 
-<MudStack Row="true" Spacing="2">
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="StartLinkFlow" Disabled="@(!_isRendered || _linking || _syncing)"
-               StartIcon="@(_linking ? null : Icons.Material.Filled.Add)">
-        @if (!_isRendered)
-        {
-            <span>Loading…</span>
-        }
-        else if (_linking)
-        {
-            <span>Connecting...</span>
-        }
-        else
-        {
-            <span>Add Account</span>
-        }
-    </MudButton>
-
-    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="SyncTransactions" Disabled="@(!_isRendered || _linking || _syncing)"
-               StartIcon="@Icons.Material.Filled.Sync">
-        @if (_syncing)
-        {
-            <span>Syncing...</span>
-        }
-        else
-        {
-            <span>Sync Transactions</span>
-        }
-    </MudButton>
-</MudStack>
-
-@if (_newAccounts.Count > 0)
-{
-    <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="mt-4">Added @_newAccounts.Count account(s)
-        successfully.</MudAlert>
-}
-
-@if (_syncResult != null)
-{
-    <MudAlert Severity="Severity.Info" Variant="Variant.Filled" Class="mt-4" ContentAlignment="HorizontalAlignment.Center">
-        Sync complete: @_syncResult.Added new transactions, @_syncResult.Removed removed.
-    </MudAlert>
-}
-
 @code {
     private List<AccountDto> _accounts = new();
-    private List<object> _newAccounts = new();
     private bool _loading = true;
-    private bool _linking = false;
-    private bool _syncing = false;
-    private SyncResult? _syncResult;
-    private bool _isRendered = false;
+    private bool _showForm;
+    private string _newName = "";
+    private string _newDescription = "";
+    private string? _message;
     private string? _error;
-    private Guid? _confirmRemoveId;
-    private DotNetObjectReference<Accounts>? _dotNetRef;
 
-    protected override async Task OnInitializedAsync()
-    {
-        Logger.LogInformation("Accounts: OnInitializedAsync");
-        await LoadAccounts();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender)
-        {
-            Logger.LogInformation("Accounts: first real browser render complete");
-            _isRendered = true;
-            StateHasChanged();
-            try
-            {
-                await JS.InvokeVoidAsync("console.log", "[Blazor] Accounts page JS interop OK");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Accounts: JS interop failed on first render");
-            }
-        }
-    }
+    protected override async Task OnInitializedAsync() => await LoadAccounts();
 
     private async Task LoadAccounts()
     {
         _loading = true;
-        _error = null;
-        try
-        {
-            Logger.LogInformation("Accounts: fetching api/accounts");
-            _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Accounts: LoadAccounts failed");
-            _error = $"Failed to load accounts: {ex.Message}";
-        }
+        try { _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new(); }
+        catch (Exception ex) { _error = ex.Message; }
         finally { _loading = false; }
     }
 
-    private async Task StartLinkFlow()
+    private void ShowCreateForm() { _showForm = true; _newName = ""; _newDescription = ""; }
+    private void CancelCreate() { _showForm = false; }
+
+    private async Task CreateAccount()
     {
-        Logger.LogInformation("Accounts: StartLinkFlow clicked, _isRendered={IsRendered}", _isRendered);
-
-        if (!_isRendered)
-        {
-            _error = "Page not fully loaded yet. Please wait a moment.";
-            StateHasChanged();
-            return;
-        }
-
-        _linking = true;
-        _error = null;
-        _newAccounts.Clear();
-        StateHasChanged();
-
+        if (string.IsNullOrWhiteSpace(_newName)) return;
         try
         {
-            Logger.LogInformation("Accounts: requesting link token");
-            var resp = await Http.PostAsync("api/plaid/link-token", null);
-
-            if (!resp.IsSuccessStatusCode)
-            {
-                var body = await resp.Content.ReadAsStringAsync();
-                throw new Exception($"HTTP {(int)resp.StatusCode}: {body}");
-            }
-
-            var json = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
-            var linkToken = json?["link_token"] ?? throw new Exception("link_token missing from response");
-
-            _dotNetRef?.Dispose();
-            _dotNetRef = DotNetObjectReference.Create(this);
-
-            await JS.InvokeVoidAsync("cashoutPlaid.open", linkToken, _dotNetRef);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Accounts: StartLinkFlow failed");
-            _error = $"Could not start Plaid Link: {ex.Message}";
-            _linking = false;
-            StateHasChanged();
-        }
-    }
-
-    [JSInvokable]
-    public async Task OnPlaidSuccess(string publicToken)
-    {
-        Logger.LogInformation("Accounts: OnPlaidSuccess");
-        try
-        {
-            var resp = await Http.PostAsJsonAsync("api/plaid/exchange",
-                new { PublicToken = publicToken });
-            resp.EnsureSuccessStatusCode();
-            _newAccounts = await resp.Content.ReadFromJsonAsync<List<object>>() ?? new();
+            await Http.PostAsJsonAsync("api/accounts", new { Name = _newName, Description = _newDescription });
+            _showForm = false;
+            _message = "Account created.";
             await LoadAccounts();
         }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Accounts: OnPlaidSuccess exchange failed");
-            _error = $"Account linking failed: {ex.Message}";
-        }
-        finally
-        {
-            _linking = false;
-            StateHasChanged();
-        }
+        catch (Exception ex) { _error = ex.Message; }
     }
 
-    [JSInvokable]
-    public Task OnPlaidExit()
+    private async Task DeleteAccount(AccountDto account)
     {
-        Logger.LogInformation("Accounts: OnPlaidExit");
-        _linking = false;
-        StateHasChanged();
-        return Task.CompletedTask;
-    }
-
-    [JSInvokable]
-    public Task OnPlaidError(string message)
-    {
-        Logger.LogError("Accounts: OnPlaidError: {Message}", message);
-        _error = message;
-        _linking = false;
-        StateHasChanged();
-        return Task.CompletedTask;
-    }
-
-    private void RequestRemove(Guid id) => _confirmRemoveId = id;
-    private void CancelRemove() => _confirmRemoveId = null;
-
-    private async Task ConfirmRemove(Guid id)
-    {
-        _error = null;
         try
         {
-            var resp = await Http.DeleteAsync($"api/accounts/{id}");
-            resp.EnsureSuccessStatusCode();
+            await Http.DeleteAsync($"api/accounts/{account.Id}");
+            _message = $"Deleted {account.Name}.";
             await LoadAccounts();
         }
-        catch (Exception ex)
-        {
-            _error = $"Remove failed: {ex.Message}";
-        }
-        finally { _confirmRemoveId = null; }
+        catch (Exception ex) { _error = ex.Message; }
     }
 
-    private async Task SyncTransactions()
-    {
-        _syncing = true;
-        _error = null;
-        _syncResult = null;
-        StateHasChanged();
-
-        try
-        {
-            var resp = await Http.PostAsync("api/transactions/sync", null);
-            resp.EnsureSuccessStatusCode();
-            _syncResult = await resp.Content.ReadFromJsonAsync<SyncResult>();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Accounts: SyncTransactions failed");
-            _error = $"Sync failed: {ex.Message}";
-        }
-        finally
-        {
-            _syncing = false;
-            StateHasChanged();
-        }
-    }
-
-    public void Dispose()
-    {
-        _dotNetRef?.Dispose();
-        _dotNetRef = null;
-    }
-
-    private record AccountDto(Guid Id, string AccountId, string Name, string Mask,
-        string Subtype, string Institution);
-
-    private void HandleRowClick(TableRowClickEventArgs<AccountDto> args)
-    {
-        if (args.Item is null) return;
-        Nav.NavigateTo($"/accounts/{Uri.EscapeDataString(args.Item.AccountId)}");
-    }
-
-    private record SyncResult(int Added, int Removed);
+    private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
 }

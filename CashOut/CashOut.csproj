@@ -22,7 +22,6 @@
     <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
   </ItemGroup>
 
-  <!-- Copy VERSION file from repo root into publish output so VersionController can read it -->
   <ItemGroup>
     <Content Include="..\VERSION">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

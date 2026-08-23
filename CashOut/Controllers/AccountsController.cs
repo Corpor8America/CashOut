@@ -6,46 +6,54 @@ using Microsoft.EntityFrameworkCore;
 public class AccountsController : ControllerBase
 {
     private readonly AppDbContext _db;
-    private readonly PlaidService _plaid;
 
-    public AccountsController(AppDbContext db, PlaidService plaid)
-    {
-        _db = db;
-        _plaid = plaid;
-    }
+    public AccountsController(AppDbContext db) => _db = db;
 
     [HttpGet]
     public async Task<IActionResult> List()
     {
-        var accounts = await _db.LinkedAccounts
-            .OrderBy(a => a.Institution)
-            .ThenBy(a => a.Name)
-            .Select(a => new
-            {
-                a.Id,
-                a.AccountId,
-                a.Mask,
-                a.Name,
-                a.Subtype,
-                a.Institution,
-                a.CreatedAt
-                // AccessToken and ItemId intentionally excluded from response
-            })
+        var accounts = await _db.Accounts
+            .OrderBy(a => a.Name)
             .ToListAsync();
-
         return Ok(accounts);
     }
 
-    [HttpDelete("{id:guid}")]
-    public async Task<IActionResult> Remove(Guid id)
+    [HttpPost]
+    public async Task<IActionResult> Create([FromBody] CreateAccountRequest req)
     {
-        var account = await _db.LinkedAccounts.FindAsync(id);
+        if (string.IsNullOrWhiteSpace(req.Name))
+            return BadRequest(new { error = "Name is required." });
+
+        var account = new Account
+        {
+            Id = Guid.NewGuid(),
+            Name = req.Name.Trim(),
+            Description = req.Description?.Trim() ?? "",
+            CreatedAt = DateTime.UtcNow
+        };
+
+        _db.Accounts.Add(account);
+        await _db.SaveChangesAsync();
+        return Ok(account);
+    }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
+    {
+        var account = await _db.Accounts.FindAsync(id);
         if (account == null) return NotFound();
 
-        // Pass ItemId so RemoveItem can group-delete by stable Plaid identifier.
-        // RemoveItem handles DB deletion internally and will still delete locally
-        // even if the Plaid revocation call fails.
-        await _plaid.RemoveItem(account.AccessToken, account.ItemId);
+        var accountIdStr = id.ToString();
+        var txns = await _db.Transactions.Where(t => t.AccountId == accountIdStr).ToListAsync();
+        _db.Transactions.RemoveRange(txns);
+
+        var profiles = await _db.CsvMappingProfiles.Where(p => p.AccountId == accountIdStr).ToListAsync();
+        _db.CsvMappingProfiles.RemoveRange(profiles);
+
+        _db.Accounts.Remove(account);
+        await _db.SaveChangesAsync();
         return NoContent();
     }
+
+    public record CreateAccountRequest(string Name, string? Description);
 }

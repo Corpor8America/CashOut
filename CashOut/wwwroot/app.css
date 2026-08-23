@@ -13,14 +13,11 @@ body {
     color: #1a1a1a;
 }
 
-/* Custom styles for specific elements not covered by MudBlazor or needing tweaks */
-
 .text-muted {
     color: #888;
     font-size: 0.85em;
 }
 
-/* CSV preview table tweaks */
 .mud-table-container {
     overflow-x: auto;
 }
@@ -52,7 +49,6 @@ code {
     color: #0f5142 !important;
 }
 
-/* Ensure alerts have some margin */
 .mud-alert {
     margin-bottom: 1rem;
 }
