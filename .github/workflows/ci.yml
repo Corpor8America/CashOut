@@ -28,10 +28,10 @@ jobs:
           dotnet-version: "9.0.x"
 
       - name: Restore
-        run: dotnet restore CashOut/CashOut.csproj
+        run: dotnet restore CashOut.sln
 
       - name: Build
-        run: dotnet build CashOut/CashOut.csproj --no-restore --configuration Release
+        run: dotnet build CashOut.sln --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test CashOut.Tests/CashOut.Tests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test CashOut.sln --no-build --configuration Release --verbosity normal
