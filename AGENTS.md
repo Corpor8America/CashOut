@@ -8,7 +8,7 @@ Single ASP.NET Core 9.0 Blazor Server app (formerly V2, now the sole application
 |---|---|
 | Scope | CSV-only import, single Account entity, 3 report types |
 | DB entities | 3 DbSets (Account, Transaction, CsvMappingProfile) |
-| Tests | Unit tests only (no Playwright) |
+| Tests | Unit tests (MSTest) + Playwright integration tests |
 | Docker | DB + pgadmin only |
 | VERSION | `1.0.0-beta.001` |
 
@@ -61,6 +61,7 @@ Use descriptive PascalCase names: `AddUpdatedAtField`, `RenameCategoryColumn`, `
 ```bash
 dotnet build CashOut/CashOut.csproj                      # build
 dotnet test CashOut.Tests/CashOut.Tests.csproj            # unit tests
+dotnet test CashOut.Tests/CashOut.Tests.csproj --filter "TestCategory=UI"  # Playwright UI tests
 
 # Docker
 docker-compose -f docker-compose.dev.yml up db -d         # Postgres only
