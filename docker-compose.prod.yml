@@ -1,0 +1,58 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: cashout
+      POSTGRES_USER: cashout
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cashout"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-${DB_PASSWORD}}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - backend
+      - web
+
+  app:
+    build:
+      context: .
+      dockerfile: CashOut/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - ConnectionStrings__Default=Host=db;Database=cashout;Username=cashout;Password=${DB_PASSWORD}
+      - ASPNETCORE_ENVIRONMENT=Production
+    networks:
+      - backend
+      - web
+
+volumes:
+  pgdata:
+  pgadmin_data:
+
+networks:
+  backend:
+    driver: bridge
+  web:
+    driver: bridge
