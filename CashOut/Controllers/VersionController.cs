@@ -8,12 +8,10 @@ public class VersionController : ControllerBase
 
     private static string ReadVersion()
     {
-        // Look for VERSION file relative to the app's content root
         var versionFile = Path.Combine(AppContext.BaseDirectory, "VERSION");
         if (System.IO.File.Exists(versionFile))
             return System.IO.File.ReadAllText(versionFile).Trim();
 
-        // Fallback: read from assembly informational version
         var asm = typeof(VersionController).Assembly;
         var attr = asm.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false);
         if (attr.Length > 0)

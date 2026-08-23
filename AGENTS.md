@@ -1,13 +1,27 @@
 # Agent Instructions
 
+## Project
+
+Single ASP.NET Core 9.0 Blazor Server app (formerly V2, now the sole application).
+
+| | CashOut |
+|---|---|
+| Scope | CSV-only import, single Account entity, 3 report types |
+| DB entities | 3 DbSets (Account, Transaction, CsvMappingProfile) |
+| Tests | Unit tests (MSTest) + Playwright integration tests |
+| Docker | DB + pgadmin only |
+| VERSION | `1.0.0-beta.001` |
+
+---
+
 ## EF Core Migrations
 
 When modifying entity models, DbContext configuration, or adding/changing/removing properties on entities, you MUST generate an EF Core migration after the code changes.
 
 ### Triggers
 
-- Adding, removing, or renaming properties on entity classes in `CashOut/Models/`
-- Changing `HasDefaultValueSql`, `HasConversion`, or other fluent configuration in `CashOut/Data/AppDbContext.cs`
+- Adding, removing, or renaming properties on entity classes in `Models/`
+- Changing `HasDefaultValueSql`, `HasConversion`, or other fluent configuration in `Data/AppDbContext.cs`
 - Adding new entity classes or `DbSet<T>` properties
 
 ### Steps
@@ -17,7 +31,7 @@ When modifying entity models, DbContext configuration, or adding/changing/removi
    ```bash
    docker-compose -f docker-compose.dev.yml up db -d
    ```
-3. Generate the migration from the `CashOut` directory:
+3. Generate the migration (from the **repo root**):
    ```bash
    dotnet ef migrations add <DescriptiveMigrationName> --project CashOut
    ```
@@ -28,7 +42,7 @@ When modifying entity models, DbContext configuration, or adding/changing/removi
 
 ### Connection
 
-The design-time factory (`CashOut/Data/AppDbContextFactory.cs`) reads `ConnectionStrings__Default` from the `.env` file at the project root. The `.env` file must contain:
+The design-time factory (`Data/AppDbContextFactory.cs`) reads `ConnectionStrings__Default` from the `.env` file one directory up from the project (`../.env`).
 
 ```
 ConnectionStrings__Default=Host=localhost;Database=cashout;Username=cashout;Password=<DB_PASSWORD>
@@ -42,59 +56,47 @@ Use descriptive PascalCase names: `AddUpdatedAtField`, `RenameCategoryColumn`, `
 
 ---
 
+## Build & Test Commands
+
+```bash
+dotnet build CashOut/CashOut.csproj                      # build
+dotnet test CashOut.Tests/CashOut.Tests.csproj            # unit tests
+dotnet test CashOut.Tests/CashOut.Tests.csproj --filter "TestCategory=UI"  # Playwright UI tests
+
+# Docker
+docker-compose -f docker-compose.dev.yml up db -d         # Postgres only
+docker-compose -f docker-compose.dev.yml up -d --build    # full dev stack
+```
+
+---
+
 ## Project Structure
 
 | Directory | Purpose |
 |---|---|
-| `CashOut/Controllers/` | REST API endpoints under `/api/*` |
-| `CashOut/Services/` | Business logic layer (all services) |
-| `CashOut/Models/` | EF Core entity classes and DTOs |
-| `CashOut/Data/` | `AppDbContext`, design-time factory, migrations |
+| `CashOut/Controllers/` | REST API endpoints (`/api/*`) |
+| `CashOut/Services/` | Business logic layer |
+| `CashOut/Models/` | EF Core entities |
+| `CashOut/Data/` | `AppDbContext`, design-time factory |
 | `CashOut/Pages/` | Blazor Server UI pages |
-| `CashOut/Shared/` | Layout components (`MainLayout`, `ReportShell`) |
-| `CashOut.Tests/` | MSTest unit tests and Playwright UI tests |
-| `docs/` | Design specs and feature documentation |
-
----
-
-## Build & Test Commands
-
-```bash
-# Build
-dotnet build
-
-# Run unit tests (excludes Playwright UI tests)
-dotnet test --filter "TestCategory!=UI"
-
-# Run UI tests (requires Docker stack running)
-dotnet test --filter "TestCategory=UI"
-
-# Run all tests
-dotnet test
-
-# EF Core migration
-dotnet ef migrations add <Name> --project CashOut
-
-# Docker dev (PostgreSQL only)
-docker-compose -f docker-compose.dev.yml up db -d
-
-# Docker dev (full stack)
-docker-compose -f docker-compose.dev.yml up -d --build
-```
+| `CashOut/Shared/` | Layout components |
+| `CashOut.Tests/` | MSTest unit tests |
+| `docs/` | Design docs |
 
 ---
 
 ## Code Conventions
 
-- **Namespaces:** No namespaces in main project (global namespace). File-scoped namespaces in tests (`namespace CashOut.Tests;`)
+- **Namespaces:** No namespaces (global namespace). Tests use file-scoped `namespace CashOut.Tests;`
 - **Nullable:** Enabled project-wide. Use `string?` for optional fields, `int?` for optional FKs
 - **Strings:** Always initialized to `""`, never null
-- **Private fields:** `_camelCase` prefix (`_db`, `_plaid`)
-- **DB tables:** snake_case (`linked_accounts`, `transactions`)
-- **Controller routes:** kebab-case (`api/csv-import`, `api/normalization`)
+- **Private fields:** `_camelCase` prefix (`_db`)
+- **DB tables:** snake_case (`accounts`, `transactions`)
+- **Controller routes:** kebab-case (`api/csv-import`)
 - **Records:** Used for DTOs and request types
 - **Enums:** Stored as strings in DB via `HasConversion<string>()`
-- **Auth/Security:** No auth on API. Plaid tokens encrypted with AES-256-GCM. Debug controller gated to Development environment only.
+- **Auth/Security:** No auth on API. Manual CSV-import only (no Plaid/bank linking).
+- **Entity config:** Fluent API in `AppDbContext.OnModelCreating` (no data annotations)
 
 ---
 
@@ -102,9 +104,8 @@ docker-compose -f docker-compose.dev.yml up -d --build
 
 - **Stack:** ASP.NET Core 9.0 Blazor Server + MudBlazor + PostgreSQL (Npgsql)
 - **Pattern:** Controllers → Services → EF Core DbContext (thin controllers, logic in services)
-- **DI:** Services registered as Scoped, `EncryptionService` as Singleton, `PlaidService` via `AddHttpClient<PlaidService>` (typed HTTP client)
-- **Data:** All entity config via Fluent API in `AppDbContext.OnModelCreating` (no data annotations)
-- **Auto-migration:** Runs on startup (`db.Database.Migrate()`)
+- **DI:** Services registered as Scoped
+- **Auto-migration:** Runs on startup with retry logic (`db.Database.Migrate()`)
 - **Sign convention:** Positive Amount = expense/outflow, Negative Amount = income/inflow
 
 ---
@@ -114,5 +115,18 @@ docker-compose -f docker-compose.dev.yml up -d --build
 - **Framework:** MSTest with in-memory EF Core (`Microsoft.EntityFrameworkCore.InMemory`)
 - **Naming:** `MethodName_Scenario_ExpectedBehavior` (e.g., `GetMonthly_GroupsByMonth_AndSumsCorrectly`)
 - **Test DBs:** Use `nameof(MethodName)` for unique database names
-- **UI tests:** Playwright, require full Docker stack on port 8080
 - **No mocking library:** Services instantiated directly with in-memory DB
+
+---
+
+## CI
+
+CI (`.github/workflows/ci.yml`):
+1. `dotnet build CashOut/CashOut.csproj --configuration Release`
+2. `dotnet test CashOut.Tests/CashOut.Tests.csproj --configuration Release`
+
+---
+
+## Gotchas
+
+- The `AppDbContextFactory` loads `../.env` — always run `dotnet ef` from the **repo root**, not from inside `CashOut/`

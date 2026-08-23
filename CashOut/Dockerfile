@@ -2,12 +2,10 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Copy VERSION file and project file first for better caching
 COPY VERSION ./
 COPY CashOut/CashOut.csproj ./CashOut/
 RUN dotnet restore CashOut/CashOut.csproj
 
-# Copy the rest of the source
 COPY CashOut/ ./CashOut/
 
 RUN dotnet publish CashOut/CashOut.csproj \

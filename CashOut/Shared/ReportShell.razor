@@ -1,45 +1,92 @@
-@* CashOut/Shared/ReportShell.razor *@
 @using MudBlazor
+
 <MudText Typo="Typo.h4" GutterBottom="true">@Title</MudText>
 
-@if (Error != null)
-{
-    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@Error</MudAlert>
-}
-
-<MudPaper Class="pa-4 mb-4" Elevation="1">
+<MudPaper Elevation="1" Class="pa-4 mb-4">
     <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="4">
-        <MudSelect T="int" Label="Year" Value="Year" ValueChanged="OnYearChanged"
-                   Dense="true" Margin="Margin.Dense" Style="width:100px">
-            @foreach (var y in AvailableYears)
-            {
-                <MudSelectItem Value="@y">@y</MudSelectItem>
-            }
-        </MudSelect>
         @if (ShowMonthPicker)
         {
-            <MudSelect T="int?" Label="Month" Value="Month" ValueChanged="OnMonthChanged"
-                       Dense="true" Margin="Margin.Dense" Style="width:130px" Clearable="true">
-                <MudSelectItem T="int?" Value="@((int?)null)">All months</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)1)">January</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)2)">February</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)3)">March</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)4)">April</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)5)">May</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)6)">June</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)7)">July</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)8)">August</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)9)">September</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)10)">October</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)11)">November</MudSelectItem>
-                <MudSelectItem T="int?" Value="@((int?)12)">December</MudSelectItem>
+            <MudSelect T="int" Label="Year" Value="Year" ValueChanged="OnYearChanged" Dense="true"
+                       Margin="Margin.Dense" Style="width:100px" Variant="Variant.Outlined">
+                @foreach (var y in AvailableYears)
+                {
+                    <MudSelectItem Value="@y">@y</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?" Label="Month" Value="Month" ValueChanged="OnMonthChanged" Dense="true"
+                       Clearable="true" Margin="Margin.Dense" Style="width:140px" Variant="Variant.Outlined">
+                <MudSelectItem T="int?" Value="@null">All months</MudSelectItem>
+                @for (int m = 1; m <= 12; m++)
+                {
+                    var month = m;
+                    <MudSelectItem T="int?" Value="@month">@MonthName(month)</MudSelectItem>
+                }
             </MudSelect>
         }
+
+        @if (ShowMonthRange)
+        {
+            <MudSelect T="int?" Label="From Month" Value="FromMonth" ValueChanged="OnFromMonthChanged"
+                       Dense="true" Margin="Margin.Dense"
+                       Style="width:130px" Variant="Variant.Outlined">
+                @for (int m = 1; m <= 12; m++)
+                {
+                    var month = m;
+                    <MudSelectItem T="int?" Value="@month">@MonthName(month)</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?" Label="From Year" Value="FromYear" ValueChanged="OnFromYearChanged"
+                       Dense="true" Margin="Margin.Dense" Style="width:100px" Variant="Variant.Outlined">
+                @foreach (var yr in RangeYears)
+                {
+                    var y = yr;
+                    <MudSelectItem T="int?" Value="@((int?)y)">@y</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?" Label="To Month" Value="ToMonth" ValueChanged="OnToMonthChanged"
+                       Dense="true" Margin="Margin.Dense"
+                       Style="width:130px" Variant="Variant.Outlined">
+                @for (int m = 1; m <= 12; m++)
+                {
+                    var month = m;
+                    <MudSelectItem T="int?" Value="@month">@MonthName(month)</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?" Label="To Year" Value="ToYear" ValueChanged="OnToYearChanged"
+                       Dense="true" Margin="Margin.Dense" Style="width:100px" Variant="Variant.Outlined">
+                @foreach (var yr in RangeYears)
+                {
+                    var y = yr;
+                    <MudSelectItem T="int?" Value="@((int?)y)">@y</MudSelectItem>
+                }
+            </MudSelect>
+        }
+
+        @if (Accounts is { Count: > 0 })
+        {
+            <MudSelect T="string" Label="Account"
+                       Value="@(AccountId ?? "")"
+                       ValueChanged="v => OnAccountIdChanged.InvokeAsync(string.IsNullOrEmpty(v) ? null : v)"
+                       Text="@(string.IsNullOrEmpty(AccountId) ? "All Accounts" : Accounts.FirstOrDefault(a => a.Id == AccountId)?.Name ?? "All Accounts")"
+                       Dense="true" Margin="Margin.Dense" Style="width:220px" Variant="Variant.Outlined">
+                <MudSelectItem T="string" Value="@("")">All Accounts</MudSelectItem>
+                @foreach (var acct in Accounts)
+                {
+                    <MudSelectItem T="string" Value="@acct.Id">@acct.Name</MudSelectItem>
+                }
+            </MudSelect>
+        }
+
+        <MudSpacer />
+
         @if (!string.IsNullOrEmpty(ExportHref))
         {
-            <MudSpacer />
-            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download"
-                       Href="@ExportHref" Target="_blank">
+            <MudButton Href="@ExportHref" Target="_blank"
+                       Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Download">
                 Export CSV
             </MudButton>
         }
@@ -48,19 +95,11 @@
 
 @if (Loading)
 {
-    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+    <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
 }
-
-@if (IsStub)
+else if (!string.IsNullOrEmpty(Error))
 {
-    <MudPaper Class="pa-8" Elevation="0" Style="text-align:center; border: 2px dashed var(--mud-palette-divider)">
-        <MudIcon Icon="@Icons.Material.Filled.Construction"
-                 Style="font-size:3rem; color:var(--mud-palette-text-secondary); margin-bottom:12px" />
-        <MudText Typo="Typo.h6" Color="Color.Secondary">Coming Soon</MudText>
-        <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mt-2">
-            This report is not yet implemented.
-        </MudText>
-    </MudPaper>
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@Error</MudAlert>
 }
 else
 {
@@ -69,15 +108,32 @@ else
 
 @code {
     [Parameter] public string Title { get; set; } = "";
-    [Parameter] public RenderFragment? ChildContent { get; set; }
-    [Parameter] public EventCallback<int> OnYearChanged { get; set; }
     [Parameter] public int Year { get; set; } = DateTime.Now.Year;
     [Parameter] public List<int> AvailableYears { get; set; } = new();
-    [Parameter] public bool Loading { get; set; }
-    [Parameter] public string? Error { get; set; }
-    [Parameter] public string? ExportHref { get; set; }
-    [Parameter] public bool IsStub { get; set; }
+    [Parameter] public EventCallback<int> OnYearChanged { get; set; }
+    [Parameter] public List<int> RangeYears { get; set; } = new();
     [Parameter] public int? Month { get; set; }
     [Parameter] public EventCallback<int?> OnMonthChanged { get; set; }
     [Parameter] public bool ShowMonthPicker { get; set; }
+    [Parameter] public bool ShowMonthRange { get; set; }
+    [Parameter] public int? FromMonth { get; set; }
+    [Parameter] public EventCallback<int?> OnFromMonthChanged { get; set; }
+    [Parameter] public int? FromYear { get; set; }
+    [Parameter] public EventCallback<int?> OnFromYearChanged { get; set; }
+    [Parameter] public int? ToMonth { get; set; }
+    [Parameter] public EventCallback<int?> OnToMonthChanged { get; set; }
+    [Parameter] public int? ToYear { get; set; }
+    [Parameter] public EventCallback<int?> OnToYearChanged { get; set; }
+    [Parameter] public List<AccountOption>? Accounts { get; set; }
+    [Parameter] public string? AccountId { get; set; }
+    [Parameter] public EventCallback<string?> OnAccountIdChanged { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public string? ExportHref { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private static string MonthName(int m) =>
+        System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetAbbreviatedMonthName(m);
+
+    public record AccountOption(string Id, string Name);
 }

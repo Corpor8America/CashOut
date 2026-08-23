@@ -28,7 +28,6 @@
             Upload a CSV or PDF statement from your bank. You'll map the columns next.
         </MudText>
 
-        @* ── Drop zone ── *@
         <div class="csv-drop-zone @(_isDragOver ? "csv-drop-zone--active" : "")" @ondragover="OnDragOver"
              @ondragover:preventDefault="true" @ondragleave="OnDragLeave" @ondrop="OnDrop" @ondrop:preventDefault="true">
 
@@ -82,7 +81,73 @@
         Required: Date, Description, and at least one amount column.
     </MudText>
 
-    @* ── Row trimming controls ── *@
+    @if (_isPdf)
+    {
+        <MudPaper Elevation="1" Class="pa-6 mb-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-1" Style="font-weight:600">PDF Settings</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+                Pages and the row regex control how transactions are detected.
+                Each named capture group in the regex becomes a column you can map below —
+                name the groups whatever you like; groups you never map are ignored.
+                Leave the regex empty to use automatic text detection.
+            </MudText>
+
+            <MudGrid Spacing="3">
+                <MudItem xs="12" sm="3">
+                    <MudTextField T="string" @bind-Value="_mapping.PdfPages"
+                                  Label="Pages to parse" HelperText='e.g. "3" or "2,3" or "1-3"'
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                @if (string.IsNullOrWhiteSpace(_mapping.PdfRowRegex))
+                {
+                    <MudItem xs="6" sm="2">
+                        <MudNumericField T="decimal?" @bind-Value="_mapping.PdfDateColumnEnd"
+                                         Label="Date col ends" HelperText="% of page width, e.g. 0.12"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="1" Step="0.01m" />
+                    </MudItem>
+                    <MudItem xs="6" sm="2">
+                        <MudNumericField T="decimal?" @bind-Value="_mapping.PdfAmountColumnStart"
+                                         Label="Amount col starts" HelperText="% of page width, e.g. 0.75"
+                                         Variant="Variant.Outlined" Margin="Margin.Dense" Min="0" Max="1" Step="0.01m" />
+                    </MudItem>
+                }
+            </MudGrid>
+
+            <MudTextField T="string" @bind-Value="_mapping.PdfRowRegex" Class="mt-2"
+                          Label="Row regex"
+                          HelperText='Per-line pattern. Every named group becomes a mappable column. e.g. ^(?<Date>\d{1,2}/\d{2})\s?(?<TransId>\S{17})\s?(?<Description>.+?)\s?(?<Amount>-?\$[\d,.]+)$'
+                          Variant="Variant.Outlined" Margin="Margin.Dense" Lines="2" />
+
+            <MudSwitch T="bool" @bind-Value="_mapping.PdfJoinContinuationRows" Color="Color.Primary"
+                       Class="mt-2" Label="Join wrapped description rows (continuation lines are appended to the transaction above)" />
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" Class="mt-3"
+                       OnClick="ReprocessPdf" Disabled="@_previewLoading"
+                       StartIcon="@Icons.Material.Filled.Refresh">
+                Re-parse with these settings
+            </MudButton>
+
+            @if (_pdfDebug != null)
+            {
+                <MudExpansionPanels Class="mt-4">
+                    <MudExpansionPanel Text="@($"Reconstructed rows ({CountLines(_pdfDebug.RawText)})")">
+                        <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2">
+                            These are the rows seen by the parser, in reading order. Use them to tune the
+                            date/amount column boundaries.
+                        </MudText>
+                        <pre style="max-height:250px;overflow:auto;font-size:0.75rem">@_pdfDebug.RawText</pre>
+                    </MudExpansionPanel>
+                    @if (_pdfDebug.SkippedLines.Length > 0)
+                    {
+                        <MudExpansionPanel Text="@($"Skipped lines ({_pdfDebug.SkippedLines.Length})")">
+                            <pre style="max-height:250px;overflow:auto;font-size:0.75rem">@string.Join("\n", _pdfDebug.SkippedLines)</pre>
+                        </MudExpansionPanel>
+                    }
+                </MudExpansionPanels>
+            }
+        </MudPaper>
+    }
+
     <MudPaper Elevation="1" Class="pa-6 mb-4">
         <MudText Typo="Typo.subtitle1" Class="mb-1" Style="font-weight:600">Row Trimming</MudText>
         <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
@@ -104,7 +169,6 @@
         </MudGrid>
     </MudPaper>
 
-    @* ── Preview table ── *@
     <MudPaper Elevation="1" Class="mb-4">
         @if (_previewLoading)
         {
@@ -118,16 +182,22 @@
         }
         else
         {
-            <MudTable Items="@_preview.Rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Height="200px"
+            <MudTable T="CsvPreviewRow" Items="@_preview.NumberedRows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" Height="300px"
                       FixedHeader="true">
                 <HeaderContent>
+                    <MudTh Style="width:40px"></MudTh>
                     @foreach (var h in _preview.Headers)
                     {
                         <MudTh>@h</MudTh>
                     }
                 </HeaderContent>
                 <RowTemplate>
-                    @foreach (var cell in context)
+                    <MudTd>
+                        <MudCheckBox T="bool" Value="@(!_excludedRows.Contains(context.Index))"
+                                     ValueChanged="@((bool val) => ToggleRow(context.Index, val))"
+                                     Dense="true" Size="Size.Small" />
+                    </MudTd>
+                    @foreach (var cell in context.Cells)
                     {
                         <MudTd>@cell</MudTd>
                     }
@@ -136,7 +206,6 @@
         }
     </MudPaper>
 
-    @* ── Column mapping ── *@
     <MudPaper Class="pa-6" Elevation="1">
         <MudText Typo="Typo.subtitle1" Class="mb-4" Style="font-weight:600">Column Mapping</MudText>
         <MudGrid Spacing="3">
@@ -203,6 +272,13 @@
                         }
                     </MudSelect>
                 </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSwitch T="bool" @bind-Value="_mapping.NegativeIsCredit" Label="Negative = credit"
+                               Color="Color.Primary" />
+                    <MudText Typo="Typo.caption" Color="Color.Secondary">
+                        @(_mapping.NegativeIsCredit ? "Negative amounts are credits (income), positive are debits (expenses)" : "Negative amounts are debits (expenses), positive are credits (income)")
+                    </MudText>
+                </MudItem>
             }
 
             <MudItem xs="12" sm="6">
@@ -238,10 +314,6 @@
                 <tr>
                     <td>Rows imported</td>
                     <td style="text-align:right"><strong>@_result.Imported</strong></td>
-                </tr>
-                <tr>
-                    <td>Skipped (already present)</td>
-                    <td style="text-align:right">@_result.SkippedAlreadyPresent</td>
                 </tr>
                 <tr>
                     <td>Skipped (parse errors)</td>
@@ -325,11 +397,18 @@
 
     private bool _uploading, _importing, _previewLoading;
     private bool _isDragOver;
+    private bool _isPdf;
+    private byte[]? _pdfBytes;
+
+    private const string DefaultPdfRowRegex =
+        @"^(?<Date>\d{1,2}/\d{2})\s?(?<TransId>\S{17})\s?(?<Description>.+?)\s?(?<Amount>-?\$[\d,.]+)$";
+
+    private PdfDebugInfo? _pdfDebug;
     private string? _csvContent;
     private string? _selectedFileName;
     private string? _error, _message;
+    private HashSet<int> _excludedRows = new();
 
-    // Debounce for skip-row live refresh
     private CancellationTokenSource? _skipDebounce;
 
     protected override async Task OnInitializedAsync()
@@ -340,10 +419,8 @@
                 $"api/csv-import/{AccountId}/profile");
             if (profile != null) _mapping = profile;
         }
-        catch { /* No profile yet — fine */ }
+        catch { }
     }
-
-    // ── File selection ────────────────────────────────────────────────────
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
@@ -352,8 +429,6 @@
         _selectedFileName = file.Name;
         await ProcessFile(file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024), file.Name);
     }
-
-    // ── Drag and drop ─────────────────────────────────────────────────────
 
     private void OnDragOver() => _isDragOver = true;
     private void OnDragLeave() => _isDragOver = false;
@@ -373,24 +448,35 @@
         {
             if (fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             {
+                _isPdf = true;
                 using var ms = new System.IO.MemoryStream();
                 await stream.CopyToAsync(ms);
                 var bytes = ms.ToArray();
+                _pdfBytes = bytes;
+
+                if (string.IsNullOrWhiteSpace(_mapping.PdfRowRegex))
+                    _mapping.PdfRowRegex = DefaultPdfRowRegex;
 
                 using var form = new MultipartFormDataContent();
                 form.Add(new ByteArrayContent(bytes), "file", fileName);
 
-                var resp = await Http.PostAsync($"api/csv-import/{AccountId}/pdf-preview", form);
+                var url = BuildPdfPreviewUrl();
+
+                var resp = await Http.PostAsync(url, form);
                 if (!resp.IsSuccessStatusCode)
                 {
-                    var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
-                    _error = err?["error"] ?? "PDF parsing failed.";
+                    _error = await ReadErrorResponse(resp);
                     return;
                 }
 
-                var result = await resp.Content.ReadFromJsonAsync<PdfPreviewResult>();
-                _csvContent = result!.CsvContent;
+                var body = await resp.Content.ReadAsStringAsync();
+                var result = System.Text.Json.JsonSerializer.Deserialize<PdfPreviewResult>(body,
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (result == null) { _error = "PDF preview returned an unexpected response."; return; }
+                _csvContent = result.CsvContent;
                 _preview = result.Preview;
+                _pdfDebug = result.Debug;
+                _excludedRows.Clear();
 
                 _mapping.DateColumn = "Date";
                 _mapping.DescriptionColumn = "Description";
@@ -401,6 +487,7 @@
             }
             else
             {
+                _isPdf = false;
                 using var reader = new System.IO.StreamReader(stream);
                 _csvContent = await reader.ReadToEndAsync();
 
@@ -413,8 +500,6 @@
         finally { _uploading = false; }
     }
 
-    // ── Skip row live update ──────────────────────────────────────────────
-
     private async Task OnSkipChanged()
     {
         _skipDebounce?.Cancel();
@@ -425,9 +510,80 @@
         {
             await Task.Delay(400, token);
             if (!token.IsCancellationRequested)
-                await RefreshPreview();
+            {
+                if (_isPdf) await ReprocessPdf();
+                else await RefreshPreview();
+            }
         }
-        catch (TaskCanceledException) { /* debounced — ignore */ }
+        catch (TaskCanceledException) { }
+    }
+
+    private void ToggleRow(int index, bool included)
+    {
+        if (included) _excludedRows.Remove(index);
+        else _excludedRows.Add(index);
+    }
+
+    private string BuildPdfPreviewUrl()
+    {
+        var url = $"api/csv-import/{AccountId}/pdf-preview";
+        void Add(string name, string value) =>
+            url += (url.Contains('?') ? "&" : "?") + $"{name}={Uri.EscapeDataString(value)}";
+
+        if (!string.IsNullOrWhiteSpace(_mapping.PdfPages)) Add("pages", _mapping.PdfPages);
+        if (!string.IsNullOrWhiteSpace(_mapping.PdfRowRegex)) Add("rowRegex", _mapping.PdfRowRegex);
+        if (_mapping.PdfDateColumnEnd.HasValue && _mapping.PdfAmountColumnStart.HasValue)
+        {
+            Add("dateColEnd", _mapping.PdfDateColumnEnd.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            Add("amountColStart", _mapping.PdfAmountColumnStart.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+        Add("joinCont", _mapping.PdfJoinContinuationRows ? "true" : "false");
+        return url;
+    }
+
+    private static int CountLines(string? s) =>
+        string.IsNullOrWhiteSpace(s) ? 0 : s.Split('\n', StringSplitOptions.RemoveEmptyEntries).Length;
+
+    private async Task ReprocessPdf()
+    {
+        if (_pdfBytes == null) return;
+        _previewLoading = true; _error = null;
+        StateHasChanged();
+
+        try
+        {
+            await Http.PostAsJsonAsync($"api/csv-import/{AccountId}/profile", _mapping);
+
+            using var form = new MultipartFormDataContent();
+            form.Add(new ByteArrayContent(_pdfBytes), "file", _selectedFileName ?? "statement.pdf");
+
+            var url = BuildPdfPreviewUrl();
+
+            var resp = await Http.PostAsync(url, form);
+            if (!resp.IsSuccessStatusCode)
+            {
+                _error = await ReadErrorResponse(resp);
+                return;
+            }
+
+            var body = await resp.Content.ReadAsStringAsync();
+            var result = System.Text.Json.JsonSerializer.Deserialize<PdfPreviewResult>(body,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (result == null) { _error = "PDF preview returned an unexpected response."; return; }
+            _csvContent = result.CsvContent;
+            _preview = result.Preview;
+            _pdfDebug = result.Debug;
+            _excludedRows.Clear();
+
+            if (_mapping.DateColumn != "" && _preview != null)
+            {
+                _missingColumns = _mapping.MappedColumns()
+                    .Where(col => !(_preview.Headers.Select(h => h.ToLowerInvariant()).Contains(col)))
+                    .ToList();
+            }
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _previewLoading = false; StateHasChanged(); }
     }
 
     private async Task RefreshPreview()
@@ -450,8 +606,8 @@
             var resp = await Http.PostAsync(url, form);
             resp.EnsureSuccessStatusCode();
             _preview = await resp.Content.ReadFromJsonAsync<CsvPreview>();
+            _excludedRows.Clear();
 
-            // Check if saved column mapping is still valid against the new headers
             if (_mapping.DateColumn != "" && _preview != null)
             {
                 _missingColumns = _mapping.MappedColumns()
@@ -459,7 +615,6 @@
                     .ToList();
             }
 
-            // Restore amount type from saved mapping
             if (!string.IsNullOrEmpty(_mapping.AmountColumn))
                 _amountType = "single";
         }
@@ -467,14 +622,11 @@
         finally { _previewLoading = false; StateHasChanged(); }
     }
 
-    // ── Import ────────────────────────────────────────────────────────────
-
     private async Task RunImport()
     {
         if (_csvContent == null) return;
         _importing = true; _error = null;
 
-        // Apply amount type
         if (_amountType == "single")
         {
             _mapping.CreditColumn = null;
@@ -487,23 +639,39 @@
 
         try
         {
-            // Save mapping profile (includes SkipRowsFromTop / SkipRowsFromBottom)
             await Http.PostAsJsonAsync($"api/csv-import/{AccountId}/profile", _mapping);
 
-            // Run import
+            var csvToSend = _csvContent;
+            if (_excludedRows.Count > 0)
+            {
+                var lines = csvToSend.Split('\n', StringSplitOptions.None).ToList();
+                if (lines.Count > 1)
+                {
+                    var header = lines[0];
+                    var dataLines = lines.Skip(1).ToList();
+                    var filtered = dataLines
+                        .Select((line, idx) => new { idx, line })
+                        .Where(x => !_excludedRows.Contains(x.idx))
+                        .Select(x => x.line)
+                        .ToList();
+                    csvToSend = string.Join("\n", new[] { header }.Concat(filtered));
+                }
+            }
+
             using var form = new MultipartFormDataContent();
             form.Add(new StreamContent(new System.IO.MemoryStream(
-                System.Text.Encoding.UTF8.GetBytes(_csvContent))), "file", "import.csv");
+                System.Text.Encoding.UTF8.GetBytes(csvToSend))), "file", "import.csv");
 
             var resp = await Http.PostAsync($"api/csv-import/{AccountId}/import", form);
             if (!resp.IsSuccessStatusCode)
             {
-                var err = await resp.Content.ReadFromJsonAsync<Dictionary<string, string>>();
-                _error = err?["error"] ?? "Import failed.";
+                _error = await ReadErrorResponse(resp);
                 return;
             }
 
-            _result = await resp.Content.ReadFromJsonAsync<ImportResult>();
+            var body = await resp.Content.ReadAsStringAsync();
+            _result = System.Text.Json.JsonSerializer.Deserialize<ImportResult>(body,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             _step = Step.Result;
         }
         catch (Exception ex) { _error = ex.Message; }
@@ -511,6 +679,19 @@
     }
 
     private void GoToTransactions() => Nav.NavigateTo("/transactions");
+
+    private async Task<string> ReadErrorResponse(HttpResponseMessage resp)
+    {
+        var text = await resp.Content.ReadAsStringAsync();
+        try
+        {
+            var err = System.Text.Json.JsonSerializer.Deserialize<ErrorResponse>(text,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (err?.Error != null) return err.Error;
+        }
+        catch { }
+        return string.IsNullOrWhiteSpace(text) ? "Request failed." : text;
+    }
 
     private void Reset()
     {
@@ -523,11 +704,20 @@
         _message = null;
         _missingColumns.Clear();
         _isDragOver = false;
+        _isPdf = false;
+        _pdfBytes = null;
+        _pdfDebug = null;
+        _excludedRows.Clear();
     }
 
-    // Local mirror of server types for JSON deserialization
-    private record CsvPreview(string[] Headers, string[][] Rows);
-    private record PdfPreviewResult(string CsvContent, CsvPreview Preview);
+    private record CsvPreviewRow(int Index, string[] Cells);
+    private record CsvPreview(string[] Headers, string[][] Rows)
+    {
+        public List<CsvPreviewRow> NumberedRows => Rows.Select((r, i) => new CsvPreviewRow(i, r)).ToList();
+    }
+    private record PdfPreviewResult(string CsvContent, CsvPreview Preview, PdfDebugInfo? Debug);
+    private record PdfDebugInfo(string RawText, string[] SkippedLines);
     private record SkippedRow(int RowNumber, string RawData, string Reason);
-    private record ImportResult(int Imported, int SkippedAlreadyPresent, List<SkippedRow> SkippedRows);
+    private record ImportResult(int Imported, List<SkippedRow> SkippedRows);
+    private record ErrorResponse(string Error);
 }
