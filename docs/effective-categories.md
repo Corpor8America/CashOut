@@ -119,8 +119,8 @@ Per AGENTS.md workflow:
 
 ```bash
 docker-compose -f docker-compose.dev.yml up db -d
-dotnet ef migrations add AddEffectiveCategories --project CashOutV2/CashOut
-dotnet build CashOutV2/CashOut/CashOut.csproj
+dotnet ef migrations add AddEffectiveCategories --project CashOut
+dotnet build CashOut/CashOut.csproj
 ```
 
 Startup auto-migration (`Program.cs`) applies it automatically. Verify the generated migration creates `categories`, `category_rules`, and adds `CategoryId`/`CategoryRuleId` columns to `transactions`.
@@ -703,8 +703,8 @@ MSTest, in-memory EF, unique database name per test, `MethodName_Scenario_Expect
 ## 19. Verification
 
 ```bash
-dotnet build CashOutV2/CashOut/CashOut.csproj
-dotnet test CashOutV2/CashOut.Tests/CashOut.Tests.csproj
+dotnet build CashOut/CashOut.csproj
+dotnet test CashOut.Tests/CashOut.Tests.csproj
 ```
 
 Manual smoke test against the full Docker stack:
