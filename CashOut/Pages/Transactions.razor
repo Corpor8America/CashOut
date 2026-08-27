@@ -336,6 +336,11 @@ else
             _accountSelection = _filterAccountId;
         }
 
+        if (query.TryGetValue("year", out var yearStr) && int.TryParse(yearStr, out var year))
+        {
+            _filterYear = year;
+        }
+
         await LoadTransactions();
     }
 
@@ -534,13 +539,4 @@ else
         await LoadTransactions();
         RecomputeVisible();
     }
-
-    private record TransactionDto(
-        string TransactionId, string AccountId, string AccountName, DateOnly Date,
-        string Name, decimal? Credit, decimal? Debit, decimal Amount, string Category,
-        int? EffectiveCategoryId, string EffectiveCategoryName, bool IsManualAssignment);
-
-    private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
-    private record CategoryDto(int Id, string Name);
-    private record RuleDto(int Id, string Pattern, string CategoryName, int CategoryId, int MatchCount);
 }

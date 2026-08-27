@@ -11,7 +11,7 @@ public class AccountTests : UiTestBase
     public async Task Accounts_EmptyState_ShowsNoAccountsMessage()
     {
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Expect(Page.GetByText("No accounts yet. Create one to import CSV transactions.")).ToBeVisibleAsync();
     }
@@ -22,7 +22,7 @@ public class AccountTests : UiTestBase
         var accountName = $"Test Account {Guid.NewGuid():N}";
 
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "Create Account" }).ClickAsync();
         await Page.GetByLabel("Account Name").FillAsync(accountName);
@@ -37,7 +37,7 @@ public class AccountTests : UiTestBase
     public async Task Accounts_CreateAccount_CancelHideForm()
     {
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "Create Account" }).ClickAsync();
         await Expect(Page.GetByLabel("Account Name")).ToBeVisibleAsync();
@@ -53,14 +53,15 @@ public class AccountTests : UiTestBase
         await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
         await Expect(Page.GetByText(accountName)).ToBeVisibleAsync();
 
         var row = Page.GetByRole(AriaRole.Row).Filter(new() { HasText = accountName });
         await row.GetByRole(AriaRole.Button).Last.ClickAsync();
 
         await Expect(Page.GetByText($"Deleted {accountName}.")).ToBeVisibleAsync();
-        await Expect(Page.GetByText(accountName)).ToBeHiddenAsync();
+        var remainingRows = Page.GetByRole(AriaRole.Row).Filter(new() { HasText = accountName });
+        await Expect(remainingRows).ToHaveCountAsync(0);
     }
 
     [TestMethod]
@@ -70,7 +71,7 @@ public class AccountTests : UiTestBase
         var accountId = await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         var row = Page.GetByRole(AriaRole.Row).Filter(new() { HasText = accountName });
         await row.GetByRole(AriaRole.Link, new() { Name = "Import CSV" }).ClickAsync();
@@ -86,7 +87,7 @@ public class AccountTests : UiTestBase
         var accountId = await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Page.GetByRole(AriaRole.Link, new() { Name = accountName }).ClickAsync();
         await Page.WaitForURLAsync($"**/transactions?accountId={accountId}");

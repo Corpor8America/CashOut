@@ -4,6 +4,7 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using MudBlazor.Services;
 using Testcontainers.PostgreSql;
@@ -42,6 +43,8 @@ public class CashOutAppFactory : IDisposable
             EnvironmentName = Environments.Development,
             ContentRootPath = cashOutProjectDir
         });
+
+        builder.WebHost.UseWebRoot(Path.Combine(cashOutProjectDir, "wwwroot"));
 
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -89,6 +92,9 @@ public class CashOutAppFactory : IDisposable
             db.Database.Migrate();
         }
 
+        var webRoot = _app.Environment.WebRootPath;
+        CopyNuGetStaticAssets(webRoot);
+
         _app.UseStaticFiles();
         _app.UseRouting();
         _app.MapControllers();
@@ -112,6 +118,44 @@ public class CashOutAppFactory : IDisposable
     }
 
     void IDisposable.Dispose() => DisposeAsync().GetAwaiter().GetResult();
+
+    private static void CopyNuGetStaticAssets(string webRoot)
+    {
+        var nugetGlobalPackages = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".nuget", "packages");
+
+        var packagesToCopy = new[] { "mudblazor" };
+
+        foreach (var package in packagesToCopy)
+        {
+            var packageDir = Path.Combine(nugetGlobalPackages, package);
+            if (!Directory.Exists(packageDir))
+                continue;
+
+            var latestVersion = Directory.GetDirectories(packageDir)
+                .Select(d => Path.GetFileName(d))
+                .OrderByDescending(v => v, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+
+            if (string.IsNullOrEmpty(latestVersion))
+                continue;
+
+            var staticAssetsDir = Path.Combine(packageDir, latestVersion, "staticwebassets");
+            if (!Directory.Exists(staticAssetsDir))
+                continue;
+
+            var targetDir = Path.Combine(webRoot, "_content", package);
+            Directory.CreateDirectory(targetDir);
+
+            foreach (var file in Directory.GetFiles(staticAssetsDir))
+            {
+                var targetFile = Path.Combine(targetDir, Path.GetFileName(file));
+                if (!File.Exists(targetFile))
+                    File.Copy(file, targetFile, overwrite: false);
+            }
+        }
+    }
 
     private static int GetAvailablePort()
     {

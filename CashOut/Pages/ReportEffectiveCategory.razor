@@ -241,7 +241,7 @@
     {
         try
         {
-            var result = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts");
+            var result = await Http.GetFromJsonAsync<List<ReportAccountDto>>("api/accounts");
             if (result is not null)
                 _accounts = result.Select(a => new ReportShell.AccountOption(a.Id, a.Name)).ToList();
         }
@@ -328,5 +328,4 @@
     private string GetRowClass(CategoryDetailRow row, int index) => row == _selectedCategory ? "selected-row" : "";
     private string NetClass(decimal value) => value > 0 ? "net-positive" : value < 0 ? "net-negative" : "";
 
-    private record AccountDto(string Id, string Name);
 }

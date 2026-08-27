@@ -19,20 +19,21 @@ public class NavigationTests : UiTestBase
     public async Task Sidebar_DisplaysAllNavLinks()
     {
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Accounts" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Transactions" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Inflow vs Outflow" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "By Category" })).ToBeVisibleAsync();
-        await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Settings" })).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "By Tracked Category" })).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Category Rules" })).ToBeVisibleAsync();
     }
 
     [TestMethod]
     public async Task Sidebar_NavigateToTransactions()
     {
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Page.GetByRole(AriaRole.Link, new() { Name = "Transactions" }).ClickAsync();
         await Page.WaitForURLAsync("**/transactions");
@@ -43,32 +44,43 @@ public class NavigationTests : UiTestBase
     public async Task Sidebar_NavigateToCashFlowReport()
     {
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Page.GetByRole(AriaRole.Link, new() { Name = "Inflow vs Outflow" }).ClickAsync();
         await Page.WaitForURLAsync("**/reports/cashflow");
-        await Expect(Page.GetByText("Inflow vs Outflow")).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Inflow vs Outflow").First).ToBeVisibleAsync();
     }
 
     [TestMethod]
     public async Task Sidebar_NavigateToCategoryReport()
     {
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Page.GetByRole(AriaRole.Link, new() { Name = "By Category" }).ClickAsync();
         await Page.WaitForURLAsync("**/reports/category");
-        await Expect(Page.GetByText("By Category")).ToBeVisibleAsync();
+        await Expect(Page.GetByText("By Category").First).ToBeVisibleAsync();
     }
 
     [TestMethod]
-    public async Task Sidebar_NavigateToSettings()
+    public async Task Sidebar_NavigateToEffectiveCategoryReport()
     {
         await Page.GotoAsync($"{BaseUrl}/accounts");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
-        await Page.GetByRole(AriaRole.Link, new() { Name = "Settings" }).ClickAsync();
-        await Page.WaitForURLAsync("**/settings");
-        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Settings" })).ToBeVisibleAsync();
+        await Page.GetByRole(AriaRole.Link, new() { Name = "By Tracked Category" }).ClickAsync();
+        await Page.WaitForURLAsync("**/reports/effective-category");
+        await Expect(Page.GetByText("By Tracked Category").First).ToBeVisibleAsync();
+    }
+
+    [TestMethod]
+    public async Task Sidebar_NavigateToCategoryRules()
+    {
+        await Page.GotoAsync($"{BaseUrl}/accounts");
+        await WaitForBlazorContent();
+
+        await Page.GetByRole(AriaRole.Link, new() { Name = "Category Rules" }).ClickAsync();
+        await Page.WaitForURLAsync("**/category-rules");
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Category Rules" })).ToBeVisibleAsync();
     }
 }
