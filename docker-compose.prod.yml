@@ -35,9 +35,7 @@ services:
       - web
 
   app:
-    build:
-      context: .
-      dockerfile: CashOut/Dockerfile
+    image: ghcr.io/${GHCR_OWNER:-corpor8america}/cashout:latest
     restart: unless-stopped
     depends_on:
       db:

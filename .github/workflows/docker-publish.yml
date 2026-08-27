@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   build-and-push:
@@ -48,19 +49,20 @@ jobs:
         if: steps.tagcheck.outputs.exists == 'false'
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         if: steps.tagcheck.outputs.exists == 'false'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata (tags and labels)
         if: steps.tagcheck.outputs.exists == 'false'
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/cashout
+          images: ghcr.io/${{ github.repository_owner }}/cashout
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.version.outputs.app_version }}
