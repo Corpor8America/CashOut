@@ -26,9 +26,9 @@ public abstract class UiTestBase : PageTest
         }
     }
 
-    protected static string BaseUrl => AppFactory.Server.BaseAddress.ToString().TrimEnd('/');
+    protected static string BaseUrl => AppFactory.BaseUrl;
 
-    protected static HttpClient Api => AppFactory.CreateClient();
+    protected static HttpClient Api => AppFactory.Api;
 
     [TestInitialize]
     public async Task UiTestInitialize()
