@@ -86,9 +86,10 @@ public class ReportTests : UiTestBase
         await WaitForBlazorContent();
 
         var monthRow = Page.Locator(".mud-table tbody tr").First;
-        await monthRow.ClickAsync(new() { Force = true });
+        await monthRow.ClickAsync();
 
         await Expect(Page.GetByText("Select a month to view transactions.").First).ToBeHiddenAsync();
+        await Expect(Page.Locator(".drilldown-header")).ToBeVisibleAsync();
     }
 
     [TestMethod]
@@ -128,7 +129,7 @@ public class ReportTests : UiTestBase
         await WaitForBlazorContent();
 
         var categoryRow = Page.Locator(".mud-table tbody tr").Filter(new() { HasText = "Food" });
-        await categoryRow.ClickAsync(new() { Force = true });
+        await categoryRow.ClickAsync();
 
         await Expect(Page.GetByText("Coffee Shop").First).ToBeVisibleAsync();
     }
