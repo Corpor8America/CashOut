@@ -1,6 +1,8 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
 @using MudBlazor
+@using System.Net.Http.Json
+@inject HttpClient Http
 @inherits LayoutComponentBase
 
 <MudThemeProvider Theme="_theme" />
@@ -13,6 +15,7 @@
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
                        OnClick="@((e) => DrawerToggle())" />
         <MudSpacer />
+        <MudText Typo="Typo.body2" Style="font-family:monospace;opacity:0.7" Class="mr-2">@_version</MudText>
         <MudIconButton Icon="@Icons.Material.Filled.Code" Color="Color.Inherit"
                        Href="https://github.com/corpor8america/cashout" Target="_blank" />
     </MudAppBar>
@@ -61,12 +64,6 @@
                         Icon="@Icons.Material.Filled.Rule">
                 Category Rules
             </MudNavLink>
-
-            @if (_drawerOpen)
-            {
-                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="ml-4 mt-4 mb-1">System</MudText>
-            }
-            <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">Settings</MudNavLink>
         </MudNavMenu>
     </MudDrawer>
     <MudMainContent Class="pa-8 pt-18">
@@ -86,10 +83,21 @@
 
 @code {
     bool _drawerOpen = true;
+    private string _version = "";
 
     void DrawerToggle()
     {
         _drawerOpen = !_drawerOpen;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var resp = await Http.GetFromJsonAsync<Dictionary<string, string>>("api/version");
+            if (resp?.TryGetValue("version", out var v) == true) _version = v;
+        }
+        catch { }
     }
 
     private MudTheme _theme = new MudTheme()

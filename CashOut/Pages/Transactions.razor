@@ -36,16 +36,16 @@
             }
         </MudSelect>
 
-        <MudButtonGroup OverrideStyles="true">
-            <MudButton OnClick="@(() => OnCategoryModeChanged(false))"
-                       Variant="Variant.Outlined"
-                       Color="@(!_useTrackedCategory ? Color.Primary : Color.Default)"
-                       Size="Size.Small">Category</MudButton>
-            <MudButton OnClick="@(() => OnCategoryModeChanged(true))"
-                       Variant="Variant.Outlined"
-                       Color="@(_useTrackedCategory ? Color.Primary : Color.Default)"
-                       Size="Size.Small">Tracked</MudButton>
-        </MudButtonGroup>
+        <MudToggleGroup T="bool"
+                        Value="@_useTrackedCategory"
+                        ValueChanged="OnCategoryModeChanged"
+                        SelectionMode="SelectionMode.SingleSelection"
+                        Outlined="true"
+                        Color="Color.Primary"
+                        Size="Size.Small">
+            <MudToggleItem T="bool" Value="false">Category</MudToggleItem>
+            <MudToggleItem T="bool" Value="true">Tracked</MudToggleItem>
+        </MudToggleGroup>
 
         <div style="position: relative;">
             <MudTooltip Text="@(_useTrackedCategory ? "Filter by tracked category" : "Filter by category")">
@@ -302,7 +302,7 @@ else
     private string _accountSelection = "";
     private string _search = "";
 
-    private bool _useTrackedCategory;
+    private bool _useTrackedCategory = true;
     private bool _categoryPopoverOpen;
     private HashSet<string> _selectedFilterCategories = new();
     private HashSet<string> _pendingFilterCategories = new();

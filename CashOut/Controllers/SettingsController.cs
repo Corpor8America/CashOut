@@ -33,30 +33,4 @@ public class SettingsController : ControllerBase
             .ToListAsync();
         return Ok(categories);
     }
-
-    [HttpPost("cleanup")]
-    public async Task<IActionResult> CleanupOrphans()
-    {
-        var accounts = await _db.Accounts.ToListAsync();
-
-        var validIds = new HashSet<string>();
-        foreach (var a in accounts)
-            validIds.Add(a.Id.ToString());
-
-        var orphanTxns = await _db.Transactions
-            .Where(t => !validIds.Contains(t.AccountId))
-            .ToListAsync();
-        var orphanProfiles = await _db.CsvMappingProfiles
-            .Where(p => !validIds.Contains(p.AccountId))
-            .ToListAsync();
-
-        var txnCount = orphanTxns.Count;
-        var profileCount = orphanProfiles.Count;
-
-        _db.Transactions.RemoveRange(orphanTxns);
-        _db.CsvMappingProfiles.RemoveRange(orphanProfiles);
-        await _db.SaveChangesAsync();
-
-        return Ok(new { transactionsRemoved = txnCount, profilesRemoved = profileCount });
-    }
 }
