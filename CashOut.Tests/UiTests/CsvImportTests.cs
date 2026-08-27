@@ -76,7 +76,7 @@ public class CsvImportTests : UiTestBase
         await MapColumnsAndImport();
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "View Transactions" }).ClickAsync();
-        await Page.WaitForURLAsync("**/transactions");
+        await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex(@"/transactions"));
         await WaitForBlazorContent();
 
         await Expect(Page.GetByText("Coffee Shop").First).ToBeVisibleAsync();
