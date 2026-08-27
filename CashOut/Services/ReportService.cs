@@ -381,6 +381,137 @@ public class ReportService
     private static string MonthLabel(int year, int month) =>
         new DateOnly(year, month, 1).ToString("MMM yyyy");
 
+    private static string EffectiveCategoryKey(Transaction t) =>
+        t.EffectiveCategory?.Name ?? "(uncategorized)";
+
+    public async Task<CategoryDetailReportResult> GetEffectiveCategoryDetail(
+        int? fromYear = null, int? fromMonth = null,
+        int? toYear = null, int? toMonth = null,
+        string? accountId = null)
+    {
+        var y = await _settings.GetOutputYear();
+        var fy = fromYear ?? y;
+        var fm = fromMonth ?? 1;
+        var ty = toYear ?? y;
+        var tm = toMonth ?? 12;
+
+        var minYear = Math.Min(fy, ty);
+        var maxYear = Math.Max(fy, ty);
+
+        var currentQuery = _db.Transactions
+            .Include(t => t.EffectiveCategory)
+            .Where(t => t.Date.Year >= minYear && t.Date.Year <= maxYear
+                && t.Date.Month >= (t.Date.Year == fy ? fm : 1)
+                && t.Date.Month <= (t.Date.Year == ty ? tm : 12)
+                && (t.Credit != null || t.Debit != null));
+
+        if (!string.IsNullOrEmpty(accountId))
+        {
+            currentQuery = currentQuery.Where(t => t.AccountId == accountId);
+        }
+
+        var currentTxns = await currentQuery.ToListAsync();
+
+        var accountNames = await _db.Accounts
+            .ToDictionaryAsync(a => a.Id.ToString(), a => a.Name);
+
+        string ResolveAccountName(string id) =>
+            accountNames.TryGetValue(id, out var n) ? n
+            : $"Account {id[..Math.Min(8, id.Length)]}";
+
+        var monthsInRange = 0;
+        {
+            var (cY, cM) = (fy, fm);
+            while (cY < ty || (cY == ty && cM <= tm))
+            {
+                monthsInRange++;
+                cM++;
+                if (cM > 12) { cM = 1; cY++; }
+            }
+        }
+        if (monthsInRange == 0) monthsInRange = 1;
+
+        var totalIncome = currentTxns.Sum(IncomeAmount);
+        var totalExpenses = currentTxns.Sum(ExpenseAmount);
+        var netCashFlow = totalIncome - totalExpenses;
+
+        var currentGroups = currentTxns
+            .GroupBy(t => EffectiveCategoryKey(t))
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var categories = currentGroups
+            .SelectMany(g =>
+            {
+                var cat = g.Key;
+                var txns = g.Value;
+
+                var incomeTxns = txns.Where(t => t.Credit != null).ToList();
+                var expenseTxns = txns.Where(t => t.Debit != null).ToList();
+
+                var rows = new List<CategoryDetailRow>();
+
+                if (incomeTxns.Count > 0)
+                {
+                    var total = incomeTxns.Sum(IncomeAmount);
+                    var count = incomeTxns.Count;
+                    var avgPerMonth = Math.Round(total / monthsInRange, 2);
+                    var transactionRows = incomeTxns
+                        .OrderByDescending(t => t.Date)
+                        .ThenByDescending(t => Math.Abs(t.Amount))
+                        .Select(t => new CategoryDetailTransactionRow(
+                            t.TransactionId, t.AccountId, ResolveAccountName(t.AccountId),
+                            t.Date, t.Name, t.RawName, t.Amount, t.Debit, t.Credit, t.Category, t.Source))
+                        .ToList();
+                    rows.Add(new CategoryDetailRow(
+                        cat, total, avgPerMonth, count,
+                        Percent(total, totalIncome), 0, transactionRows));
+                }
+
+                if (expenseTxns.Count > 0)
+                {
+                    var expenseTotal = expenseTxns.Sum(t => t.Amount);
+                    var absTotal = Math.Abs(expenseTotal);
+                    var count = expenseTxns.Count;
+                    var avgPerMonth = Math.Round(absTotal / monthsInRange, 2);
+                    var transactionRows = expenseTxns
+                        .OrderByDescending(t => t.Date)
+                        .ThenByDescending(t => Math.Abs(t.Amount))
+                        .Select(t => new CategoryDetailTransactionRow(
+                            t.TransactionId, t.AccountId, ResolveAccountName(t.AccountId),
+                            t.Date, t.Name, t.RawName, t.Amount, t.Debit, t.Credit, t.Category, t.Source))
+                        .ToList();
+                    rows.Add(new CategoryDetailRow(
+                        cat, expenseTotal, avgPerMonth, count,
+                        0, Percent(absTotal, totalExpenses), transactionRows));
+                }
+
+                return rows;
+            })
+            .OrderByDescending(r => r.Total)
+            .ToList();
+
+        return new CategoryDetailReportResult(
+            fy, fm, ty, tm,
+            totalIncome, totalExpenses, netCashFlow,
+            Math.Round(totalIncome / monthsInRange, 2),
+            Math.Round(totalExpenses / monthsInRange, 2),
+            Math.Round(netCashFlow / monthsInRange, 2),
+            currentTxns.Count,
+            categories);
+    }
+
+    public async Task<byte[]> EffectiveCategoryDetailCsv(
+        int? fromYear = null, int? fromMonth = null,
+        int? toYear = null, int? toMonth = null,
+        string? accountId = null)
+    {
+        var result = await GetEffectiveCategoryDetail(fromYear, fromMonth, toYear, toMonth, accountId);
+        var sb = new StringBuilder("Category,Total,AvgPerMonth,PctOfIncome,PctOfExpenses,Transactions\n");
+        foreach (var r in result.Categories)
+            sb.AppendLine($"{Esc(r.Category)},{r.Total},{r.AvgPerMonth},{r.PctOfIncome},{r.PctOfExpenses},{r.Count}");
+        return Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
     public async Task<byte[]> MonthlyCsv(int? year = null)
     {
         var rows = await GetMonthly(year);

@@ -37,6 +37,8 @@ builder.Services.AddScoped<CsvImportService>();
 builder.Services.AddScoped<PdfImportService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
+builder.Services.AddScoped<CategoryService>();
+builder.Services.AddScoped<CategoryRuleService>();
 
 builder.Services.AddMudServices();
 

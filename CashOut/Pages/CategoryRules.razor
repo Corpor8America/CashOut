@@ -1,0 +1,305 @@
+@page "/category-rules"
+@using System.Net.Http.Json
+@inject HttpClient Http
+
+<MudText Typo="Typo.h4" GutterBottom="true">Category Rules</MudText>
+
+@if (_error != null)
+{
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-4">@_error</MudAlert>
+}
+
+<MudPaper Elevation="1" Class="pa-4 mb-4">
+    <MudText Typo="Typo.h6" Class="mb-2">Categories</MudText>
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudTable Items="_categories" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+            <HeaderContent>
+                <MudTh>Name</MudTh>
+                <MudTh Style="text-align:right">Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate Context="cat">
+                @if (_editingCategoryId == cat.Id)
+                {
+                    <MudTd>
+                        <MudTextField T="string" @bind-Value="_editCategoryName" Margin="Margin.Dense"
+                                      Variant="Variant.Outlined" Style="max-width:300px" />
+                    </MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudButton Size="Size.Small" Color="Color.Primary" OnClick="() => SaveCategoryEdit(cat.Id)">Save</MudButton>
+                        <MudButton Size="Size.Small" OnClick="CancelCategoryEdit">Cancel</MudButton>
+                    </MudTd>
+                }
+                else
+                {
+                    <MudTd>@cat.Name</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="() => StartCategoryEdit(cat)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick="() => ConfirmDeleteCategory(cat)" />
+                    </MudTd>
+                }
+            </RowTemplate>
+            <FooterContent>
+                <MudTd>
+                    <MudTextField T="string" @bind-Value="_newCategoryName" Margin="Margin.Dense"
+                                  Placeholder="New category name" Variant="Variant.Outlined" Style="max-width:300px" />
+                </MudTd>
+                <MudTd Style="text-align:right">
+                    <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                               OnClick="CreateCategory" Disabled="@string.IsNullOrWhiteSpace(_newCategoryName)">
+                        Add
+                    </MudButton>
+                </MudTd>
+            </FooterContent>
+        </MudTable>
+    }
+</MudPaper>
+
+<MudPaper Elevation="1" Class="pa-4 mb-4">
+    <MudText Typo="Typo.h6" Class="mb-2">Rules</MudText>
+    @if (_loading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+    }
+    else
+    {
+        <MudTable Items="_rules" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+            <HeaderContent>
+                <MudTh>Pattern</MudTh>
+                <MudTh>Category</MudTh>
+                <MudTh Class="right-align">Matches</MudTh>
+                <MudTh Style="text-align:right">Actions</MudTh>
+            </HeaderContent>
+            <RowTemplate Context="rule">
+                @if (_editingRuleId == rule.Id)
+                {
+                    <MudTd>
+                        <MudTextField T="string" @bind-Value="_editRulePattern" Margin="Margin.Dense"
+                                      Variant="Variant.Outlined" Style="max-width:200px" />
+                    </MudTd>
+                    <MudTd>
+                        <MudSelect T="int" @bind-Value="_editRuleCategoryId" Dense="true" Margin="Margin.Dense"
+                                   Variant="Variant.Outlined" Style="width:160px">
+                            @foreach (var cat in _categories)
+                            {
+                                <MudSelectItem Value="@cat.Id">@cat.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudTd>
+                    <MudTd Class="right-align"></MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudButton Size="Size.Small" Color="Color.Primary" OnClick="() => SaveRuleEdit(rule.Id)">Save</MudButton>
+                        <MudButton Size="Size.Small" OnClick="CancelRuleEdit">Cancel</MudButton>
+                    </MudTd>
+                }
+                else
+                {
+                    <MudTd>@rule.Pattern</MudTd>
+                    <MudTd>@rule.CategoryName</MudTd>
+                    <MudTd Class="right-align">@rule.MatchCount</MudTd>
+                    <MudTd Style="text-align:right">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="() => StartRuleEdit(rule)" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       Color="Color.Error" OnClick="() => ConfirmDeleteRule(rule)" />
+                    </MudTd>
+                }
+            </RowTemplate>
+            <FooterContent>
+                <MudTd>
+                    <MudTextField T="string" @bind-Value="_newRulePattern" Margin="Margin.Dense"
+                                  Placeholder="Pattern (e.g. Food Lion)" Variant="Variant.Outlined" Style="max-width:200px" />
+                </MudTd>
+                <MudTd>
+                    <MudSelect T="int?" @bind-Value="_newRuleCategoryId" Dense="true" Margin="Margin.Dense"
+                               Variant="Variant.Outlined" Style="width:160px">
+                        <MudSelectItem T="int?" Value="@null">Select category</MudSelectItem>
+                        @foreach (var cat in _categories)
+                        {
+                            <MudSelectItem Value="@((int?)cat.Id)">@cat.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudTd>
+                <MudTd Class="right-align"></MudTd>
+                <MudTd Style="text-align:right">
+                    <MudButton Size="Size.Small" Color="Color.Primary" Variant="Variant.Filled"
+                               OnClick="CreateRule"
+                               Disabled="@(string.IsNullOrWhiteSpace(_newRulePattern) || !_newRuleCategoryId.HasValue)">
+                        Add
+                    </MudButton>
+                </MudTd>
+            </FooterContent>
+        </MudTable>
+    }
+</MudPaper>
+
+<MudDialog @bind-Visible="_deleteDialogVisible" Options="_dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@_deleteDialogTitle</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>@_deleteDialogMessage</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _deleteDialogVisible = false">Cancel</MudButton>
+        <MudButton Color="Color.Error" OnClick="ExecuteDelete">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<CategoryDto> _categories = new();
+    private List<RuleDto> _rules = new();
+    private bool _loading = true;
+    private string? _error;
+
+    private string _newCategoryName = "";
+    private int? _editingCategoryId;
+    private string _editCategoryName = "";
+
+    private string _newRulePattern = "";
+    private int? _newRuleCategoryId;
+    private int? _editingRuleId;
+    private string _editRulePattern = "";
+    private int _editRuleCategoryId;
+
+    private bool _deleteDialogVisible;
+    private string _deleteDialogTitle = "";
+    private string _deleteDialogMessage = "";
+    private Func<Task>? _deleteAction;
+    private DialogOptions _dialogOptions = new() { MaxWidth = MaxWidth.ExtraSmall };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _categories = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories") ?? new();
+            _rules = await Http.GetFromJsonAsync<List<RuleDto>>("api/category-rules") ?? new();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task CreateCategory()
+    {
+        if (string.IsNullOrWhiteSpace(_newCategoryName)) return;
+        try
+        {
+            await Http.PostAsJsonAsync("api/categories", new { Name = _newCategoryName.Trim() });
+            _newCategoryName = "";
+            await LoadData();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void StartCategoryEdit(CategoryDto cat)
+    {
+        _editingCategoryId = cat.Id;
+        _editCategoryName = cat.Name;
+    }
+
+    private void CancelCategoryEdit()
+    {
+        _editingCategoryId = null;
+        _editCategoryName = "";
+    }
+
+    private async Task SaveCategoryEdit(int id)
+    {
+        try
+        {
+            await Http.PatchAsJsonAsync($"api/categories/{id}", new { Name = _editCategoryName.Trim() });
+            _editingCategoryId = null;
+            await LoadData();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void ConfirmDeleteCategory(CategoryDto cat)
+    {
+        _deleteDialogTitle = "Delete Category";
+        _deleteDialogMessage = $"Delete \"{cat.Name}\"? This will remove tracked category assignments from manually-assigned transactions and delete all rules pointing to this category.";
+        _deleteAction = async () =>
+        {
+            await Http.DeleteAsync($"api/categories/{cat.Id}");
+            await LoadData();
+        };
+        _deleteDialogVisible = true;
+    }
+
+    private async Task CreateRule()
+    {
+        if (string.IsNullOrWhiteSpace(_newRulePattern) || !_newRuleCategoryId.HasValue) return;
+        try
+        {
+            await Http.PostAsJsonAsync("api/category-rules", new { Pattern = _newRulePattern.Trim(), CategoryId = _newRuleCategoryId.Value });
+            _newRulePattern = "";
+            _newRuleCategoryId = null;
+            await LoadData();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void StartRuleEdit(RuleDto rule)
+    {
+        _editingRuleId = rule.Id;
+        _editRulePattern = rule.Pattern;
+        _editRuleCategoryId = rule.CategoryId;
+    }
+
+    private void CancelRuleEdit()
+    {
+        _editingRuleId = null;
+        _editRulePattern = "";
+        _editRuleCategoryId = 0;
+    }
+
+    private async Task SaveRuleEdit(int id)
+    {
+        try
+        {
+            await Http.PatchAsJsonAsync($"api/category-rules/{id}",
+                new { Pattern = _editRulePattern.Trim(), CategoryId = _editRuleCategoryId });
+            _editingRuleId = null;
+            await LoadData();
+        }
+        catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private void ConfirmDeleteRule(RuleDto rule)
+    {
+        _deleteDialogTitle = "Delete Rule";
+        _deleteDialogMessage = $"Delete rule \"{rule.Pattern}\"? Transactions assigned by this rule will lose their tracked category.";
+        _deleteAction = async () =>
+        {
+            await Http.DeleteAsync($"api/category-rules/{rule.Id}");
+            await LoadData();
+        };
+        _deleteDialogVisible = true;
+    }
+
+    private async Task ExecuteDelete()
+    {
+        _deleteDialogVisible = false;
+        if (_deleteAction != null)
+        {
+            try { await _deleteAction(); }
+            catch (Exception ex) { _error = ex.Message; }
+        }
+    }
+
+    private record CategoryDto(int Id, string Name);
+    private record RuleDto(int Id, string Pattern, string CategoryName, int CategoryId, int MatchCount);
+}

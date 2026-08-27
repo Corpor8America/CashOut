@@ -48,6 +48,19 @@
                         Icon="@Icons.Material.Filled.Category">
                 By Category
             </MudNavLink>
+            <MudNavLink Href="/reports/effective-category"
+                        Icon="@Icons.Material.Filled.Label">
+                By Tracked Category
+            </MudNavLink>
+
+            @if (_drawerOpen)
+            {
+                <MudText Typo="Typo.subtitle2" Color="Color.Primary" Class="ml-4 mt-4 mb-1">Manage</MudText>
+            }
+            <MudNavLink Href="/category-rules"
+                        Icon="@Icons.Material.Filled.Rule">
+                Category Rules
+            </MudNavLink>
 
             @if (_drawerOpen)
             {

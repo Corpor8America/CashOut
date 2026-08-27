@@ -53,4 +53,17 @@ public class ReportsController : ControllerBase
                 "text/csv", "cashflow.csv");
         return Ok(await _reports.GetCashFlow(year, accountId, fromYear, fromMonth, toYear, toMonth));
     }
+
+    [HttpGet("effective-category")]
+    public async Task<IActionResult> EffectiveCategory(
+        [FromQuery] int? fromYear, [FromQuery] int? fromMonth,
+        [FromQuery] int? toYear, [FromQuery] int? toMonth,
+        [FromQuery] string? accountId,
+        [FromQuery] string? format)
+    {
+        if (format == "csv")
+            return File(await _reports.EffectiveCategoryDetailCsv(fromYear, fromMonth, toYear, toMonth, accountId),
+                "text/csv", "effective-category.csv");
+        return Ok(await _reports.GetEffectiveCategoryDetail(fromYear, fromMonth, toYear, toMonth, accountId));
+    }
 }

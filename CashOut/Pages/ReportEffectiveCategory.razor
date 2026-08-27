@@ -1,0 +1,332 @@
+@page "/reports/effective-category"
+@inject HttpClient Http
+
+<ReportShell Title="By Tracked Category"
+             ShowMonthRange="true"
+             RangeYears="_rangeYears"
+             FromMonth="_fromMonth"
+             OnFromMonthChanged="OnFromMonthChanged"
+             FromYear="_fromYear"
+             OnFromYearChanged="OnFromYearChanged"
+             ToMonth="_toMonth"
+             OnToMonthChanged="OnToMonthChanged"
+             ToYear="_toYear"
+             OnToYearChanged="OnToYearChanged"
+             Accounts="_accounts"
+             AccountId="_accountId"
+             OnAccountIdChanged="OnAccountIdChanged"
+             Loading="_loading"
+             Error="@_error"
+             ExportHref="@BuildExportHref()">
+    @if (_report is null || _report.Categories.Count == 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
+            No tracked category spending data found.
+        </MudAlert>
+    }
+    else
+    {
+        <div class="report-summary-grid">
+            <div class="metric-panel">
+                <div class="metric-label">Total Income</div>
+                <div class="metric-value income-value">@_report.TotalIncome.ToString("C")</div>
+                <div class="metric-sub income-value">Avg/mo: @_report.AvgIncomePerMonth.ToString("C")</div>
+            </div>
+            <div class="metric-panel">
+                <div class="metric-label">Total Expenses</div>
+                <div class="metric-value expense-value">@_report.TotalExpenses.ToString("C")</div>
+                <div class="metric-sub expense-value">Avg/mo: @_report.AvgExpensesPerMonth.ToString("C")</div>
+            </div>
+            <div class="metric-panel">
+                <div class="metric-label">Total Net</div>
+                <div class="metric-value @NetClass(_report.NetCashFlow)">@_report.NetCashFlow.ToString("C")</div>
+                <div class="metric-sub @NetClass(_report.AvgNetPerMonth)">Avg/mo: @_report.AvgNetPerMonth.ToString("C")</div>
+            </div>
+        </div>
+
+        var incomeCategories = _report.Categories.Where(c => c.Total >= 0).ToList();
+        var expenseCategories = _report.Categories.Where(c => c.Total < 0).ToList();
+
+        @if (incomeCategories.Count > 0)
+        {
+            <div class="section-header mt-4" @onclick="() => _incomeExpanded = !_incomeExpanded">
+                <MudIcon Icon="@(Icons.Material.Filled.KeyboardArrowDown)" Size="Size.Small"
+                         Style="@(_incomeExpanded ? "transform:rotate(0deg)" : "transform:rotate(-90deg)")"
+                         Class="mr-1" />
+                <MudText Typo="Typo.subtitle1" Class="income-value" Style="font-weight:600">
+                    Income (@incomeCategories.Count categories)
+                </MudText>
+            </div>
+            <MudCollapse @bind-Expanded="_incomeExpanded">
+                <MudTable T="CategoryDetailRow"
+                          Items="@incomeCategories"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0"
+                          OnRowClick="OnCategoryRowClick"
+                          RowClassFunc="GetRowClass"
+                          Class="mt-2">
+                    <ColGroup>
+                        <col style="width: 30%" />
+                        <col style="width: 25%" />
+                        <col style="width: 25%" />
+                        <col style="width: 20%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Category</MudTh>
+                        <MudTh Class="right-align">Total</MudTh>
+                        <MudTh Class="right-align">Avg/Mo</MudTh>
+                        <MudTh Class="right-align">% of Income</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="cat">
+                        <MudTd DataLabel="Category">@cat.Category</MudTd>
+                        <MudTd DataLabel="Total" Class="right-align income-value">@cat.Total.ToString("C")</MudTd>
+                        <MudTd DataLabel="Avg/Mo" Class="right-align income-value">@cat.AvgPerMonth.ToString("C")</MudTd>
+                        <MudTd DataLabel="%" Class="right-align">@cat.PctOfIncome.ToString("F1")%</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudCollapse>
+        }
+
+        @if (expenseCategories.Count > 0)
+        {
+            <div class="section-header mt-4" @onclick="() => _expenseExpanded = !_expenseExpanded">
+                <MudIcon Icon="@(Icons.Material.Filled.KeyboardArrowDown)" Size="Size.Small"
+                         Style="@(_expenseExpanded ? "transform:rotate(0deg)" : "transform:rotate(-90deg)")"
+                         Class="mr-1" />
+                <MudText Typo="Typo.subtitle1" Class="expense-value" Style="font-weight:600">
+                    Expenses (@expenseCategories.Count categories)
+                </MudText>
+            </div>
+            <MudCollapse @bind-Expanded="_expenseExpanded">
+                <MudTable T="CategoryDetailRow"
+                          Items="@expenseCategories"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0"
+                          OnRowClick="OnCategoryRowClick"
+                          RowClassFunc="GetRowClass"
+                          Class="mt-2">
+                    <ColGroup>
+                        <col style="width: 30%" />
+                        <col style="width: 25%" />
+                        <col style="width: 25%" />
+                        <col style="width: 20%" />
+                    </ColGroup>
+                    <HeaderContent>
+                        <MudTh>Category</MudTh>
+                        <MudTh Class="right-align">Total</MudTh>
+                        <MudTh Class="right-align">Avg/Mo</MudTh>
+                        <MudTh Class="right-align">% of Expenses</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="cat">
+                        <MudTd DataLabel="Category">@cat.Category</MudTd>
+                        <MudTd DataLabel="Total" Class="right-align expense-value">@cat.Total.ToString("C")</MudTd>
+                        <MudTd DataLabel="Avg/Mo" Class="right-align expense-value">@cat.AvgPerMonth.ToString("C")</MudTd>
+                        <MudTd DataLabel="%" Class="right-align">@cat.PctOfExpenses.ToString("F1")%</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudCollapse>
+        }
+
+        @if (_selectedCategory is not null)
+        {
+            var pctLabel = _selectedCategory.Total >= 0 ? "% of Income" : "% of Expenses";
+            var pctValue = _selectedCategory.Total >= 0 ? _selectedCategory.PctOfIncome : _selectedCategory.PctOfExpenses;
+            <div class="drilldown-header mt-4">
+                <span class="drilldown-title">@_selectedCategory.Category</span>
+                <span class="drilldown-meta">
+                    Total: @_selectedCategory.Total.ToString("C") —
+                    Avg/mo: @_selectedCategory.AvgPerMonth.ToString("C") —
+                    @pctLabel: @pctValue.ToString("F1")% —
+                    @_selectedCategory.Count.ToString("N0") transactions
+                </span>
+            </div>
+
+            @if (_selectedCategory.Transactions.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mt-2">No transactions for this category.</MudText>
+            }
+            else
+            {
+                <MudTable Items="@_selectedCategory.Transactions"
+                          Dense="true"
+                          Hover="true"
+                          Breakpoint="Breakpoint.Sm"
+                          Elevation="0"
+                          Class="mt-2">
+                    <HeaderContent>
+                        <MudTh>Date</MudTh>
+                        <MudTh>Name</MudTh>
+                        <MudTh>Account</MudTh>
+                        <MudTh Class="right-align">Amount</MudTh>
+                    </HeaderContent>
+                    <RowTemplate Context="txn">
+                        <MudTd DataLabel="Date">@txn.Date.ToString("MMM dd, yyyy")</MudTd>
+                        <MudTd DataLabel="Name">@txn.Name</MudTd>
+                        <MudTd DataLabel="Account">@txn.AccountName</MudTd>
+                        <MudTd DataLabel="Amount" Class="right-align" Style="@(txn.Amount >= 0 ? "color:#1b5e20 !important;font-weight:600 !important" : "color:#b71c1c !important;font-weight:600 !important")">@txn.Amount.ToString("C")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            }
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="mt-4">Select a category to view transactions.</MudText>
+        }
+    }
+</ReportShell>
+
+<style>
+    .report-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 16px; }
+    .metric-panel { padding: 12px 16px; border: 1px solid var(--mud-palette-lines-inputs, #e0e0e0); border-radius: 8px; }
+    .metric-label { font-size: 0.8rem; color: var(--mud-palette-text-secondary, #757575); margin-bottom: 4px; }
+    .metric-value { font-size: 1.5rem; font-weight: 600; }
+    .metric-sub { font-size: 0.85rem; margin-top: 2px; }
+    .right-align { text-align: right; }
+    .income-value { color: #1b5e20; }
+    .expense-value { color: #b71c1c; }
+    .net-positive { color: #1b5e20; font-weight: 600; }
+    .net-negative { color: #b71c1c; font-weight: 600; }
+    .drilldown-header { padding: 12px 0 4px 0; border-bottom: 1px solid var(--mud-palette-lines-inputs, #e0e0e0); }
+    .drilldown-title { font-size: 1rem; font-weight: 600; margin-right: 12px; }
+    .drilldown-meta { font-size: 0.85rem; color: var(--mud-palette-text-secondary, #757575); }
+    .section-header { display: flex; align-items: center; padding: 8px 0; cursor: pointer; user-select: none; }
+    ::deep .mud-table-root .right-align { text-align: right; }
+    ::deep .selected-row { background-color: rgba(46, 125, 50, 0.08); }
+    ::deep .selected-row:hover { background-color: rgba(46, 125, 50, 0.12); }
+</style>
+
+@code {
+    private bool _loading;
+    private string? _error;
+    private CategoryDetailReportResult? _report;
+    private CategoryDetailRow? _selectedCategory;
+    private bool _incomeExpanded = true;
+    private bool _expenseExpanded = true;
+
+    private int _fromMonth = 1;
+    private int _fromYear = DateTime.Now.Year;
+    private int _toMonth = DateTime.Now.Month;
+    private int _toYear = DateTime.Now.Year;
+    private string? _accountId;
+    private List<int> _rangeYears = new();
+    private List<ReportShell.AccountOption> _accounts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadYears();
+        await LoadAccounts();
+        await LoadReport();
+    }
+
+    private async Task LoadYears()
+    {
+        try
+        {
+            var years = await Http.GetFromJsonAsync<List<int>>("api/settings/years");
+            if (years is { Count: > 0 })
+            {
+                _rangeYears = years;
+                _fromYear = years[0];
+                _toYear = years[0];
+            }
+        }
+        catch { _rangeYears = new() { DateTime.Now.Year }; }
+    }
+
+    private async Task LoadAccounts()
+    {
+        try
+        {
+            var result = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts");
+            if (result is not null)
+                _accounts = result.Select(a => new ReportShell.AccountOption(a.Id, a.Name)).ToList();
+        }
+        catch { _accounts = new(); }
+    }
+
+    private async Task OnFromMonthChanged(int? month)
+    {
+        _fromMonth = month ?? 1;
+        _selectedCategory = null;
+        await LoadReport();
+    }
+
+    private async Task OnFromYearChanged(int? year)
+    {
+        _fromYear = year ?? DateTime.Now.Year;
+        _selectedCategory = null;
+        await LoadReport();
+    }
+
+    private async Task OnToMonthChanged(int? month)
+    {
+        _toMonth = month ?? 12;
+        _selectedCategory = null;
+        await LoadReport();
+    }
+
+    private async Task OnToYearChanged(int? year)
+    {
+        _toYear = year ?? DateTime.Now.Year;
+        _selectedCategory = null;
+        await LoadReport();
+    }
+
+    private async Task OnAccountIdChanged(string? accountId)
+    {
+        _accountId = accountId;
+        _selectedCategory = null;
+        await LoadReport();
+    }
+
+    private async Task LoadReport()
+    {
+        _loading = true; _error = null;
+        try
+        {
+            var url = BuildApiUrl();
+            _report = await Http.GetFromJsonAsync<CategoryDetailReportResult>(url);
+            _selectedCategory = null;
+            _incomeExpanded = true;
+            _expenseExpanded = true;
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private string BuildApiUrl()
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrEmpty(_accountId))
+            parts.Add($"accountId={Uri.EscapeDataString(_accountId)}");
+        parts.Add($"fromYear={_fromYear}");
+        parts.Add($"fromMonth={_fromMonth}");
+        parts.Add($"toYear={_toYear}");
+        parts.Add($"toMonth={_toMonth}");
+        return $"api/reports/effective-category?{string.Join("&", parts)}";
+    }
+
+    private string BuildExportHref()
+    {
+        var parts = new List<string> { "format=csv" };
+        if (!string.IsNullOrEmpty(_accountId))
+            parts.Add($"accountId={Uri.EscapeDataString(_accountId)}");
+        parts.Add($"fromYear={_fromYear}");
+        parts.Add($"fromMonth={_fromMonth}");
+        parts.Add($"toYear={_toYear}");
+        parts.Add($"toMonth={_toMonth}");
+        return $"api/reports/effective-category?{string.Join("&", parts)}";
+    }
+
+    private void OnCategoryRowClick(TableRowClickEventArgs<CategoryDetailRow> args) =>
+        _selectedCategory = args.Item == _selectedCategory ? null : args.Item;
+
+    private string GetRowClass(CategoryDetailRow row, int index) => row == _selectedCategory ? "selected-row" : "";
+    private string NetClass(decimal value) => value > 0 ? "net-positive" : value < 0 ? "net-negative" : "";
+
+    private record AccountDto(string Id, string Name);
+}
