@@ -1,5 +1,6 @@
 @page "/transactions"
 @using System.Globalization
+@using System.Net.Http.Json
 @using Microsoft.AspNetCore.WebUtilities
 @inject HttpClient Http
 @inject NavigationManager Nav
@@ -35,32 +36,45 @@
             }
         </MudSelect>
 
+        <MudToggleGroup T="bool"
+                        Value="@_useTrackedCategory"
+                        ValueChanged="OnCategoryModeChanged"
+                        SelectionMode="SelectionMode.SingleSelection"
+                        Outlined="true"
+                        Color="Color.Primary"
+                        Size="Size.Small">
+            <MudToggleItem T="bool" Value="false">Category</MudToggleItem>
+            <MudToggleItem T="bool" Value="true">Tracked</MudToggleItem>
+        </MudToggleGroup>
+
         <div style="position: relative;">
-            <MudTooltip Text="Filter by category">
-                <MudBadge Content="@(_selectedCategories.Count > 0 ? _selectedCategories.Count.ToString() : null)"
-                          Color="Color.Primary" Overlap="true" Visible="@(_selectedCategories.Count > 0)">
+            <MudTooltip Text="@(_useTrackedCategory ? "Filter by tracked category" : "Filter by category")">
+                <MudBadge Content="@(ActiveFilterCount > 0 ? ActiveFilterCount.ToString() : null)"
+                          Color="Color.Primary" Overlap="true" Visible="@(ActiveFilterCount > 0)">
                     <MudIconButton Icon="@Icons.Material.Filled.FilterList"
-                                   Color="@(_selectedCategories.Count > 0 ? Color.Primary : Color.Default)"
+                                   Color="@(ActiveFilterCount > 0 ? Color.Primary : Color.Default)"
                                    OnClick="ToggleCategoryFilter" id="cat-filter-btn" />
                 </MudBadge>
             </MudTooltip>
 
             <MudPopover Open="_categoryPopoverOpen" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                 <MudPaper Elevation="4" Style="width:260px; padding:12px">
-                    <MudText Typo="Typo.subtitle2" Class="mb-2">Filter by Category</MudText>
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">
+                        @(_useTrackedCategory ? "Filter by Tracked Category" : "Filter by Category")
+                    </MudText>
 
-                    @if (_categories.Count == 0)
+                    @if (ActiveFilterOptions.Count == 0)
                     {
                         <MudText Typo="Typo.body2" Color="Color.Secondary">No categories available.</MudText>
                     }
                     else
                     {
                         <div style="max-height:260px; overflow-y:auto; margin-bottom:8px">
-                            @foreach (var cat in _categories)
+                            @foreach (var cat in ActiveFilterOptions)
                             {
                                 var isCat = cat;
-                                <MudCheckBox T="bool" Value="@_pendingCategories.Contains(isCat)"
-                                             ValueChanged="@(v => ToggleCategorySelection(isCat, v))" Label="@isCat" Dense="true"
+                                <MudCheckBox T="bool" Value="@_pendingFilterCategories.Contains(isCat)"
+                                             ValueChanged="@(v => ToggleFilterCategorySelection(isCat, v))" Label="@isCat" Dense="true"
                                              Color="Color.Primary" />
                             }
                         </div>
@@ -104,7 +118,14 @@ else if (IsSearching)
         <HeaderContent>
             <MudTh>Date</MudTh>
             <MudTh>Name</MudTh>
-            <MudTh>Category</MudTh>
+            @if (_useTrackedCategory)
+            {
+                <MudTh>Tracked</MudTh>
+            }
+            else
+            {
+                <MudTh>Category</MudTh>
+            }
             <MudTh Style="text-align:right">Amount</MudTh>
         </HeaderContent>
         <RowTemplate>
@@ -114,9 +135,20 @@ else if (IsSearching)
             }
             <MudTd DataLabel="Date">@context.Date.ToString("MMM d, yyyy")</MudTd>
             <MudTd DataLabel="Name">@context.Name</MudTd>
-            <MudTd DataLabel="Category">
-                @(string.IsNullOrEmpty(context.Category) ? "(uncategorized)" : context.Category)
-            </MudTd>
+            @if (_useTrackedCategory)
+            {
+                <MudTd DataLabel="Tracked">
+                    <span class="eff-cat-cell" @onclick="() => OpenAssignDialog(context)" style="cursor:pointer">
+                        @(string.IsNullOrEmpty(context.EffectiveCategoryName) ? "(uncategorized)" : context.EffectiveCategoryName)
+                    </span>
+                </MudTd>
+            }
+            else
+            {
+                <MudTd DataLabel="Category">
+                    @(string.IsNullOrEmpty(context.Category) ? "(uncategorized)" : context.Category)
+                </MudTd>
+            }
             <MudTd DataLabel="Amount" Style="text-align:right">
                 <MudText Color="@(isCredit ? Color.Success : Color.Error)" Style="font-weight:bold">
                     @displayAmount.ToString("C")
@@ -140,7 +172,14 @@ else
             {
                 <MudTh>Account</MudTh>
             }
-            <MudTh>Category</MudTh>
+            @if (_useTrackedCategory)
+            {
+                <MudTh>Tracked</MudTh>
+            }
+            else
+            {
+                <MudTh>Category</MudTh>
+            }
             <MudTh Style="text-align:right">Amount</MudTh>
         </HeaderContent>
         <GroupHeaderTemplate>
@@ -174,9 +213,20 @@ else
             {
                 <MudTd DataLabel="Account">@context.AccountName</MudTd>
             }
-            <MudTd DataLabel="Category">
-                @(string.IsNullOrEmpty(context.Category) ? "(uncategorized)" : context.Category)
-            </MudTd>
+            @if (_useTrackedCategory)
+            {
+                <MudTd DataLabel="Tracked">
+                    <span class="eff-cat-cell" @onclick="() => OpenAssignDialog(context)" style="cursor:pointer">
+                        @(string.IsNullOrEmpty(context.EffectiveCategoryName) ? "(uncategorized)" : context.EffectiveCategoryName)
+                    </span>
+                </MudTd>
+            }
+            else
+            {
+                <MudTd DataLabel="Category">
+                    @(string.IsNullOrEmpty(context.Category) ? "(uncategorized)" : context.Category)
+                </MudTd>
+            }
             <MudTd DataLabel="Amount" Style="text-align:right">
                 <MudText Color="@(isCredit ? Color.Success : Color.Error)" Style="font-weight:bold">
                     @displayAmount.ToString("C")
@@ -190,11 +240,58 @@ else
     </MudText>
 }
 
+<MudDialog @bind-Visible="_assignDialogVisible" Options="_assignDialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Assign Tracked Category</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (_assignTarget != null)
+        {
+            <MudText Typo="Typo.body2" Class="mb-2"><strong>@_assignTarget.Name</strong></MudText>
+
+            <MudSelect T="int?" Label="Category" @bind-Value="_assignCategoryId" Dense="true"
+                       Margin="Margin.Dense" Variant="Variant.Outlined" Class="mb-2">
+                <MudSelectItem T="int?" Value="@null">(none)</MudSelectItem>
+                @foreach (var cat in _trackedCategoryDtos)
+                {
+                    <MudSelectItem T="int?" Value="@cat.Id">@cat.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSwitch T="bool" @bind-Value="_assignCreateNew" Label="Create new category" Color="Color.Primary" Class="mb-2" />
+
+            @if (_assignCreateNew)
+            {
+                <MudTextField T="string" @bind-Value="_assignNewCategoryName" Label="New category name"
+                              Margin="Margin.Dense" Variant="Variant.Outlined" Class="mb-2" />
+            }
+
+            <MudTextField T="string" @bind-Value="_assignPattern" Label="Pattern (optional)"
+                          HelperText="Leave blank to assign only this transaction"
+                          Margin="Margin.Dense" Variant="Variant.Outlined" />
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => _assignDialogVisible = false">Cancel</MudButton>
+        @if (_assignCategoryId.HasValue || _assignCreateNew)
+        {
+            <MudButton OnClick="ClearTrackedCategory" Color="Color.Warning">Clear</MudButton>
+        }
+        <MudButton OnClick="SaveTrackedCategory" Color="Color.Primary">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<style>
+    .eff-cat-cell:hover { text-decoration: underline; color: var(--mud-palette-primary); }
+</style>
+
 @code {
     private List<TransactionDto> _transactions = new();
     private List<TransactionDto> _visible = new();
     private List<string> _categories = new();
     private List<string> _allCategories = new();
+    private List<string> _trackedCategories = new();
+    private List<CategoryDto> _trackedCategoryDtos = new();
     private List<int> _availableYears = new() { DateTime.Now.Year };
     private List<AccountDto> _accounts = new();
     private bool _loading = true;
@@ -205,17 +302,30 @@ else
     private string _accountSelection = "";
     private string _search = "";
 
+    private bool _useTrackedCategory = true;
     private bool _categoryPopoverOpen;
-    private HashSet<string> _selectedCategories = new();
-    private HashSet<string> _pendingCategories = new();
+    private HashSet<string> _selectedFilterCategories = new();
+    private HashSet<string> _pendingFilterCategories = new();
+
+    private bool _assignDialogVisible;
+    private TransactionDto? _assignTarget;
+    private int? _assignCategoryId;
+    private bool _assignCreateNew;
+    private string _assignNewCategoryName = "";
+    private string _assignPattern = "";
+    private DialogOptions _assignDialogOptions = new() { MaxWidth = MaxWidth.Small };
 
     private bool IsSearching => !string.IsNullOrWhiteSpace(_search);
     private bool ShowAccountColumn => string.IsNullOrEmpty(_filterAccountId);
+
+    private List<string> ActiveFilterOptions => _useTrackedCategory ? _trackedCategories : _categories;
+    private int ActiveFilterCount => _selectedFilterCategories.Count;
 
     protected override async Task OnInitializedAsync()
     {
         await LoadYears();
         await LoadCategories();
+        await LoadTrackedCategories();
         await LoadAccounts();
 
         var uri = new Uri(Nav.Uri);
@@ -224,6 +334,11 @@ else
         {
             _filterAccountId = accountId.ToString();
             _accountSelection = _filterAccountId;
+        }
+
+        if (query.TryGetValue("year", out var yearStr) && int.TryParse(yearStr, out var year))
+        {
+            _filterYear = year;
         }
 
         await LoadTransactions();
@@ -253,10 +368,30 @@ else
         catch { }
     }
 
+    private async Task LoadTrackedCategories()
+    {
+        try
+        {
+            _trackedCategoryDtos = await Http.GetFromJsonAsync<List<CategoryDto>>("api/categories") ?? new();
+            _trackedCategories = _trackedCategoryDtos.Select(c => c.Name).ToList();
+        }
+        catch { }
+    }
+
     private async Task LoadAccounts()
     {
         try { _accounts = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts") ?? new(); }
         catch { }
+    }
+
+    private void OnCategoryModeChanged(bool useTracked)
+    {
+        if (_useTrackedCategory == useTracked) return;
+        _useTrackedCategory = useTracked;
+        _selectedFilterCategories.Clear();
+        _pendingFilterCategories.Clear();
+        _categoryPopoverOpen = false;
+        RecomputeVisible();
     }
 
     private async Task OnYearChangedInternal(int year)
@@ -310,8 +445,13 @@ else
     {
         IEnumerable<TransactionDto> query = _transactions;
 
-        if (_selectedCategories.Count > 0)
-            query = query.Where(t => _selectedCategories.Contains(t.Category));
+        if (_selectedFilterCategories.Count > 0)
+        {
+            if (_useTrackedCategory)
+                query = query.Where(t => _selectedFilterCategories.Contains(t.EffectiveCategoryName));
+            else
+                query = query.Where(t => _selectedFilterCategories.Contains(t.Category));
+        }
 
         if (IsSearching)
             query = query.Where(t => t.Name.Contains(_search.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -321,34 +461,82 @@ else
 
     private void ToggleCategoryFilter()
     {
-        _pendingCategories = new HashSet<string>(_selectedCategories);
+        _pendingFilterCategories = new HashSet<string>(_selectedFilterCategories);
         _categoryPopoverOpen = !_categoryPopoverOpen;
     }
 
-    private void ToggleCategorySelection(string category, bool selected)
+    private void ToggleFilterCategorySelection(string category, bool selected)
     {
-        if (selected) _pendingCategories.Add(category);
-        else _pendingCategories.Remove(category);
+        if (selected) _pendingFilterCategories.Add(category);
+        else _pendingFilterCategories.Remove(category);
     }
 
     private void ApplyCategoryFilter()
     {
-        _selectedCategories = new HashSet<string>(_pendingCategories);
+        _selectedFilterCategories = new HashSet<string>(_pendingFilterCategories);
         _categoryPopoverOpen = false;
         RecomputeVisible();
     }
 
     private void ClearCategoryFilter()
     {
-        _selectedCategories.Clear();
-        _pendingCategories.Clear();
+        _selectedFilterCategories.Clear();
+        _pendingFilterCategories.Clear();
         _categoryPopoverOpen = false;
         RecomputeVisible();
     }
 
-    private record TransactionDto(
-        string TransactionId, string AccountId, string AccountName, DateOnly Date,
-        string Name, decimal? Credit, decimal? Debit, decimal Amount, string Category);
+    private void OpenAssignDialog(TransactionDto txn)
+    {
+        _assignTarget = txn;
+        _assignCategoryId = txn.EffectiveCategoryId;
+        _assignCreateNew = false;
+        _assignNewCategoryName = "";
+        _assignPattern = "";
+        _assignDialogVisible = true;
+    }
 
-    private record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
+    private async Task SaveTrackedCategory()
+    {
+        if (_assignTarget == null) return;
+
+        int? categoryId = _assignCategoryId;
+        int? ruleId = null;
+
+        if (_assignCreateNew && !string.IsNullOrWhiteSpace(_assignNewCategoryName))
+        {
+            var result = await Http.PostAsJsonAsync("api/categories", new { Name = _assignNewCategoryName.Trim() });
+            var created = await result.Content.ReadFromJsonAsync<CategoryDto>();
+            if (created != null) categoryId = created.Id;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_assignPattern) && categoryId.HasValue)
+        {
+            var result = await Http.PostAsJsonAsync("api/category-rules", new { Pattern = _assignPattern.Trim(), CategoryId = categoryId.Value });
+            var created = await result.Content.ReadFromJsonAsync<RuleDto>();
+            if (created != null) ruleId = created.Id;
+        }
+
+        await Http.PatchAsJsonAsync(
+            $"api/transactions/{_assignTarget.TransactionId}/effective-category",
+            new { CategoryId = categoryId, CategoryRuleId = ruleId });
+
+        _assignDialogVisible = false;
+        await LoadTrackedCategories();
+        await LoadTransactions();
+        RecomputeVisible();
+    }
+
+    private async Task ClearTrackedCategory()
+    {
+        if (_assignTarget == null) return;
+
+        await Http.PatchAsJsonAsync(
+            $"api/transactions/{_assignTarget.TransactionId}/effective-category",
+            new { CategoryId = (int?)null, CategoryRuleId = (int?)null });
+
+        _assignDialogVisible = false;
+        await LoadTransactions();
+        RecomputeVisible();
+    }
 }

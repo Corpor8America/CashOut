@@ -26,16 +26,22 @@ public abstract class UiTestBase : PageTest
         }
     }
 
-    protected static string BaseUrl => AppFactory.Server.BaseAddress.ToString().TrimEnd('/');
+    protected static string BaseUrl => AppFactory.BaseUrl;
 
-    protected static HttpClient Api => AppFactory.CreateClient();
+    protected static HttpClient Api => AppFactory.Api;
 
     [TestInitialize]
     public async Task UiTestInitialize()
     {
         Page.SetDefaultTimeout(10000);
         await Page.GotoAsync(BaseUrl);
+        await WaitForBlazorContent();
+    }
+
+    protected async Task WaitForBlazorContent()
+    {
         await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Page.WaitForSelectorAsync(".mud-layout", new() { Timeout = 15000 });
     }
 
     protected async Task<Guid> CreateAccountViaApi(string name, string description = "")
@@ -48,6 +54,17 @@ public abstract class UiTestBase : PageTest
 
     protected async Task ImportCsvViaApi(Guid accountId, string csvContent, string fileName = "import.csv")
     {
+        var hasCategory = csvContent.Split('\n').First().ToLowerInvariant().Contains("category");
+
+        await Api.PostAsJsonAsync($"api/csv-import/{accountId}/profile", new
+        {
+            DateColumn = "Date",
+            DescriptionColumn = "Description",
+            AmountColumn = "Amount",
+            CategoryColumn = hasCategory ? "Category" : null,
+            NegativeIsCredit = false
+        });
+
         using var form = new MultipartFormDataContent();
         form.Add(new StringContent(csvContent), "file", fileName);
 
@@ -64,29 +81,22 @@ public abstract class UiTestBase : PageTest
     {
         var tempFile = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}_{fileName}");
         await File.WriteAllTextAsync(tempFile, csvContent);
-        try
-        {
-            var fileInput = Page.Locator("#csvFileInput");
-            await fileInput.SetInputFilesAsync(tempFile);
-        }
-        finally
-        {
-            File.Delete(tempFile);
-        }
+        var fileInput = Page.Locator("#csvFileInput");
+        await fileInput.SetInputFilesAsync(tempFile);
     }
 
     protected async Task MapColumnsAndImport()
     {
-        await Page.GetByLabel("Date column *").ClickAsync();
+        await Page.GetByRole(AriaRole.Combobox, new() { Name = "Date column *" }).ClickAsync();
         await Page.GetByRole(AriaRole.Option, new() { Name = "Date" }).ClickAsync();
 
-        await Page.GetByLabel("Description column *").ClickAsync();
+        await Page.GetByRole(AriaRole.Combobox, new() { Name = "Description column *" }).ClickAsync();
         await Page.GetByRole(AriaRole.Option, new() { Name = "Description" }).ClickAsync();
 
-        await Page.GetByLabel("Credit column").ClickAsync();
-        await Page.GetByRole(AriaRole.Option, new() { Name = "Amount" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Combobox, new() { Name = "Amount type *" }).ClickAsync();
+        await Page.GetByRole(AriaRole.Option, new() { Name = "Single signed amount column" }).ClickAsync();
 
-        await Page.GetByLabel("Debit column").ClickAsync();
+        await Page.GetByRole(AriaRole.Combobox, new() { Name = "Amount column" }).ClickAsync();
         await Page.GetByRole(AriaRole.Option, new() { Name = "Amount" }).ClickAsync();
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "Import" }).ClickAsync();

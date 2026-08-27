@@ -1,12 +1,17 @@
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
+using Microsoft.Extensions.Hosting;
+using MudBlazor.Services;
 using Testcontainers.PostgreSql;
 
 namespace CashOut.Tests.UiTests.Helpers;
 
-public class CashOutAppFactory : WebApplicationFactory<Program>
+public class CashOutAppFactory : IDisposable
 {
     private readonly PostgreSqlContainer _db = new PostgreSqlBuilder("postgres:16-alpine")
         .WithDatabase("cashout")
@@ -14,38 +19,150 @@ public class CashOutAppFactory : WebApplicationFactory<Program>
         .WithPassword("testpass")
         .Build();
 
+    private WebApplication? _app;
+
     public string ConnectionString => _db.GetConnectionString();
+    public string BaseUrl => $"http://127.0.0.1:{_port}";
+    public HttpClient Api { get; private set; } = null!;
 
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    private int _port;
+
+    public async Task StartAsync()
     {
-        builder.UseEnvironment("Development");
+        await _db.StartAsync();
 
-        builder.ConfigureServices(services =>
+        _port = GetAvailablePort();
+
+        Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+        Environment.SetEnvironmentVariable("ASPNETCORE_URLS", $"http://127.0.0.1:{_port}");
+
+        var cashOutProjectDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "CashOut"));
+
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions
         {
-            var descriptor = services.SingleOrDefault(
-                d => d.ServiceType == typeof(DbContextOptions<AppDbContext>));
-            if (descriptor != null) services.Remove(descriptor);
-
-            var dbDescriptor = services.SingleOrDefault(
-                d => d.ServiceType == typeof(AppDbContext));
-            if (dbDescriptor != null) services.Remove(dbDescriptor);
-
-            services.AddDbContext<AppDbContext>(opts =>
-                opts.UseNpgsql(ConnectionString));
-
-            services.AddScoped<HttpClient>(sp =>
-            {
-                var factory = sp.GetRequiredService<IHttpClientFactory>();
-                return factory.CreateClient();
-            });
+            EnvironmentName = Environments.Development,
+            ContentRootPath = cashOutProjectDir
         });
+
+        builder.WebHost.UseWebRoot(Path.Combine(cashOutProjectDir, "wwwroot"));
+
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Default"] = ConnectionString
+        });
+
+        var culture = new System.Globalization.CultureInfo("en-US");
+        System.Globalization.CultureInfo.DefaultThreadCurrentCulture = culture;
+        System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = culture;
+
+        builder.Services.AddDbContext<AppDbContext>(opts =>
+            opts.UseNpgsql(ConnectionString));
+
+        var cashOutAssembly = typeof(Program).Assembly;
+
+        builder.Services.AddRazorPages().AddApplicationPart(cashOutAssembly);
+        builder.Services.AddServerSideBlazor();
+        builder.Services.AddControllers().AddApplicationPart(cashOutAssembly);
+        builder.Services.AddControllers();
+        builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
+        {
+            o.MultipartBodyLengthLimit = 11 * 1024 * 1024;
+        });
+
+        builder.Services.AddScoped<SettingsService>();
+        builder.Services.AddScoped<CsvImportService>();
+        builder.Services.AddScoped<PdfImportService>();
+        builder.Services.AddScoped<TransactionService>();
+        builder.Services.AddScoped<ReportService>();
+        builder.Services.AddScoped<CategoryService>();
+        builder.Services.AddScoped<CategoryRuleService>();
+
+        builder.Services.AddMudServices();
+
+        builder.Services.AddScoped<HttpClient>(sp =>
+        {
+            return new HttpClient { BaseAddress = new Uri(BaseUrl + "/") };
+        });
+
+        _app = builder.Build();
+
+        using (var scope = _app.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Database.Migrate();
+        }
+
+        var webRoot = _app.Environment.WebRootPath;
+        CopyNuGetStaticAssets(webRoot);
+
+        _app.UseStaticFiles();
+        _app.UseRouting();
+        _app.MapControllers();
+        _app.MapBlazorHub();
+        _app.MapFallbackToPage("/_Host");
+
+        await _app.StartAsync();
+
+        Api = new HttpClient { BaseAddress = new Uri(BaseUrl + "/") };
     }
 
-    public async Task StartAsync() => await _db.StartAsync();
-
-    public new async Task DisposeAsync()
+    public async Task DisposeAsync()
     {
+        Api?.Dispose();
+        if (_app != null)
+        {
+            await _app.StopAsync();
+            await _app.DisposeAsync();
+        }
         await _db.DisposeAsync();
-        await base.DisposeAsync();
+    }
+
+    void IDisposable.Dispose() => DisposeAsync().GetAwaiter().GetResult();
+
+    private static void CopyNuGetStaticAssets(string webRoot)
+    {
+        var nugetGlobalPackages = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".nuget", "packages");
+
+        var packagesToCopy = new[] { "mudblazor" };
+
+        foreach (var package in packagesToCopy)
+        {
+            var packageDir = Path.Combine(nugetGlobalPackages, package);
+            if (!Directory.Exists(packageDir))
+                continue;
+
+            var latestVersion = Directory.GetDirectories(packageDir)
+                .Select(d => Path.GetFileName(d))
+                .OrderByDescending(v => v, StringComparer.OrdinalIgnoreCase)
+                .FirstOrDefault();
+
+            if (string.IsNullOrEmpty(latestVersion))
+                continue;
+
+            var staticAssetsDir = Path.Combine(packageDir, latestVersion, "staticwebassets");
+            if (!Directory.Exists(staticAssetsDir))
+                continue;
+
+            var targetDir = Path.Combine(webRoot, "_content", package);
+            Directory.CreateDirectory(targetDir);
+
+            foreach (var file in Directory.GetFiles(staticAssetsDir))
+            {
+                var targetFile = Path.Combine(targetDir, Path.GetFileName(file));
+                if (!File.Exists(targetFile))
+                    File.Copy(file, targetFile, overwrite: false);
+            }
+        }
+    }
+
+    private static int GetAvailablePort()
+    {
+        var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        listener.Stop();
+        return port;
     }
 }

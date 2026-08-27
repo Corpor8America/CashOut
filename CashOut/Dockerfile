@@ -8,8 +8,11 @@ RUN dotnet restore CashOut/CashOut.csproj
 
 COPY CashOut/ ./CashOut/
 
+RUN mkdir -p /app/publish/wwwroot/_content/MudBlazor
+
 RUN dotnet publish CashOut/CashOut.csproj \
     --configuration Release \
+    --no-restore \
     --output /app/publish
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────

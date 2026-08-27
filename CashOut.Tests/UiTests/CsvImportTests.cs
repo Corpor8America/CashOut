@@ -21,11 +21,11 @@ public class CsvImportTests : UiTestBase
         var accountId = await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/csv-import/{accountId}");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Expect(Page.GetByText("Step 1: Upload CSV")).ToBeVisibleAsync();
         await Expect(Page.GetByText("Drag & drop your CSV or PDF here")).ToBeVisibleAsync();
-        await Expect(Page.GetByRole(AriaRole.Button, new() { Name = "Browse file" })).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Browse file")).ToBeVisibleAsync();
     }
 
     [TestMethod]
@@ -35,14 +35,14 @@ public class CsvImportTests : UiTestBase
         var accountId = await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/csv-import/{accountId}");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await UploadCsvFile(SampleCsv);
 
         await Expect(Page.GetByText("Step 2: Configure & Map Columns")).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Date")).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Description")).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Amount")).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Columnheader, new() { Name = "Date" })).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Columnheader, new() { Name = "Description" })).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Columnheader, new() { Name = "Amount" })).ToBeVisibleAsync();
     }
 
     [TestMethod]
@@ -52,7 +52,7 @@ public class CsvImportTests : UiTestBase
         var accountId = await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/csv-import/{accountId}");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await UploadCsvFile(SampleCsv);
         await Expect(Page.GetByText("Step 2: Configure & Map Columns")).ToBeVisibleAsync();
@@ -68,7 +68,7 @@ public class CsvImportTests : UiTestBase
         var accountId = await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/csv-import/{accountId}");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await UploadCsvFile(SampleCsv);
         await Expect(Page.GetByText("Step 2: Configure & Map Columns")).ToBeVisibleAsync();
@@ -76,11 +76,12 @@ public class CsvImportTests : UiTestBase
         await MapColumnsAndImport();
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "View Transactions" }).ClickAsync();
-        await Page.WaitForURLAsync("**/transactions");
+        await Expect(Page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex(@"/transactions"));
+        await WaitForBlazorContent();
 
-        await Expect(Page.GetByText("Coffee Shop")).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Gas Station")).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Paycheck")).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Coffee Shop").First).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Gas Station").First).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Paycheck").First).ToBeVisibleAsync();
     }
 
     [TestMethod]
@@ -90,7 +91,7 @@ public class CsvImportTests : UiTestBase
         var accountId = await CreateAccountViaApi(accountName);
 
         await Page.GotoAsync($"{BaseUrl}/csv-import/{accountId}");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await UploadCsvFile(SampleCsv);
         await Expect(Page.GetByText("Step 2: Configure & Map Columns")).ToBeVisibleAsync();

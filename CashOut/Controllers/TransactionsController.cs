@@ -24,9 +24,11 @@ public class TransactionsController : ControllerBase
         [FromQuery] int? year,
         [FromQuery] int? month,
         [FromQuery] string? accountId,
-        [FromQuery] List<string>? category)
+        [FromQuery] List<string>? category,
+        [FromQuery] List<int>? effectiveCategoryId)
     {
-        var results = await _txns.Query(year, month, accountId, category);
+        var results = await _txns.Query(year, month, accountId, category,
+            effectiveCategoryIds: effectiveCategoryId);
 
         var accountNames = await _db.Accounts
             .ToDictionaryAsync(a => a.Id.ToString(), a => a.Name);
@@ -41,7 +43,10 @@ public class TransactionsController : ControllerBase
             t.Credit,
             t.Debit,
             t.Amount,
-            t.Category
+            t.Category,
+            EffectiveCategoryId = t.CategoryId,
+            EffectiveCategoryName = t.EffectiveCategory?.Name ?? "",
+            IsManualAssignment = t.CategoryId.HasValue && t.CategoryRuleId == null,
         });
 
         return Ok(response);
@@ -64,5 +69,22 @@ public class TransactionsController : ControllerBase
         return Ok(new { updated.TransactionId, updated.Category });
     }
 
+    [HttpPatch("{transactionId}/effective-category")]
+    public async Task<IActionResult> AssignEffectiveCategory(
+        string transactionId,
+        [FromBody] AssignEffectiveCategoryRequest req)
+    {
+        var updated = await _txns.AssignEffectiveCategory(
+            transactionId, req.CategoryId, req.CategoryRuleId);
+        if (updated == null) return NotFound();
+        return Ok(new
+        {
+            updated.TransactionId,
+            EffectiveCategoryId = updated.CategoryId,
+            EffectiveCategoryName = updated.EffectiveCategory?.Name ?? "",
+        });
+    }
+
     public record UpdateCategoryRequest(string? Category);
+    public record AssignEffectiveCategoryRequest(int? CategoryId, int? CategoryRuleId);
 }

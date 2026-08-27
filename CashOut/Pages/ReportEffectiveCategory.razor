@@ -1,7 +1,7 @@
-@page "/reports/category"
+@page "/reports/effective-category"
 @inject HttpClient Http
 
-<ReportShell Title="By Category"
+<ReportShell Title="By Tracked Category"
              ShowMonthRange="true"
              RangeYears="_rangeYears"
              FromMonth="_fromMonth"
@@ -21,7 +21,7 @@
     @if (_report is null || _report.Categories.Count == 0)
     {
         <MudAlert Severity="Severity.Info" Variant="Variant.Outlined">
-            No category spending data found.
+            No tracked category spending data found.
         </MudAlert>
     }
     else
@@ -307,7 +307,7 @@
         parts.Add($"fromMonth={_fromMonth}");
         parts.Add($"toYear={_toYear}");
         parts.Add($"toMonth={_toMonth}");
-        return $"api/reports/category?{string.Join("&", parts)}";
+        return $"api/reports/effective-category?{string.Join("&", parts)}";
     }
 
     private string BuildExportHref()
@@ -319,17 +319,13 @@
         parts.Add($"fromMonth={_fromMonth}");
         parts.Add($"toYear={_toYear}");
         parts.Add($"toMonth={_toMonth}");
-        return $"api/reports/category?{string.Join("&", parts)}";
+        return $"api/reports/effective-category?{string.Join("&", parts)}";
     }
 
     private void OnCategoryRowClick(TableRowClickEventArgs<CategoryDetailRow> args) =>
         _selectedCategory = args.Item == _selectedCategory ? null : args.Item;
 
     private string GetRowClass(CategoryDetailRow row, int index) => row == _selectedCategory ? "selected-row" : "";
-    private string CatTotalStyle(decimal value) =>
-        value > 0 ? "color:#1b5e20 !important;font-weight:600 !important"
-        : value < 0 ? "color:#b71c1c !important;font-weight:600 !important"
-        : "";
     private string NetClass(decimal value) => value > 0 ? "net-positive" : value < 0 ? "net-negative" : "";
 
 }

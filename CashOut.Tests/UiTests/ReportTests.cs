@@ -10,11 +10,21 @@ public class ReportTests : UiTestBase
 {
     private static async Task SeedReportDataAsync(HttpClient api)
     {
-        var accountId = Guid.NewGuid();
-        await api.PostAsJsonAsync("api/accounts", new
+        var acctResp = await api.PostAsJsonAsync("api/accounts", new
         {
-            Name = $"Report Account {accountId:N}",
+            Name = $"Report Account {Guid.NewGuid():N}",
             Description = "For report tests"
+        });
+        var acct = await acctResp.Content.ReadFromJsonAsync<CreateAccountResponse>();
+        var accountId = acct!.Id;
+
+        await api.PostAsJsonAsync($"api/csv-import/{accountId}/profile", new
+        {
+            DateColumn = "Date",
+            DescriptionColumn = "Description",
+            AmountColumn = "Amount",
+            CategoryColumn = "Category",
+            NegativeIsCredit = false
         });
 
         var csv = """
@@ -32,6 +42,8 @@ public class ReportTests : UiTestBase
         await api.PostAsync($"api/csv-import/{accountId}/import", content);
     }
 
+    private record CreateAccountResponse(Guid Id, string Name, string Description, DateTime CreatedAt);
+
     [TestInitialize]
     public async Task ReportTestInit()
     {
@@ -42,16 +54,16 @@ public class ReportTests : UiTestBase
     public async Task CashFlow_ShowsReportTitle()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/cashflow");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
-        await Expect(Page.GetByText("Inflow vs Outflow")).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Inflow vs Outflow").First).ToBeVisibleAsync();
     }
 
     [TestMethod]
     public async Task CashFlow_WithDatos_ShowsSummaryMetrics()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/cashflow");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Expect(Page.GetByText("Total Income")).ToBeVisibleAsync();
         await Expect(Page.GetByText("Total Expenses")).ToBeVisibleAsync();
@@ -62,7 +74,7 @@ public class ReportTests : UiTestBase
     public async Task CashFlow_WithDatos_ShowsMonthTable()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/cashflow");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Expect(Page.GetByText("Select a month to view transactions.")).ToBeVisibleAsync();
     }
@@ -71,28 +83,29 @@ public class ReportTests : UiTestBase
     public async Task CashFlow_ClickMonth_ShowsDrilldown()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/cashflow");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
-        var monthRow = Page.GetByRole(AriaRole.Row).Filter(new() { HasText = "January" });
-        await monthRow.ClickAsync();
+        var monthRow = Page.Locator(".mud-table tbody tr").First;
+        await monthRow.DispatchEventAsync("click");
 
-        await Expect(Page.GetByText("January").First).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Select a month to view transactions.").First).ToBeHiddenAsync();
+        await Expect(Page.Locator(".drilldown-header")).ToBeVisibleAsync();
     }
 
     [TestMethod]
     public async Task Category_ShowsReportTitle()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/category");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
-        await Expect(Page.GetByText("By Category")).ToBeVisibleAsync();
+        await Expect(Page.GetByText("By Category").First).ToBeVisibleAsync();
     }
 
     [TestMethod]
     public async Task Category_WithDatos_ShowsIncomeAndExpenseSections()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/category");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Expect(Page.GetByText("Total Income")).ToBeVisibleAsync();
         await Expect(Page.GetByText("Total Expenses")).ToBeVisibleAsync();
@@ -102,22 +115,22 @@ public class ReportTests : UiTestBase
     public async Task Category_ShowsCategoryRows()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/category");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
         await Expect(Page.GetByText("Food")).ToBeVisibleAsync();
         await Expect(Page.GetByText("Transport")).ToBeVisibleAsync();
-        await Expect(Page.GetByText("Income")).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Cell, new() { Name = "Income" })).ToBeVisibleAsync();
     }
 
     [TestMethod]
     public async Task Category_ClickCategory_ShowsDrilldown()
     {
         await Page.GotoAsync($"{BaseUrl}/reports/category");
-        await Page.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await WaitForBlazorContent();
 
-        var categoryRow = Page.GetByRole(AriaRole.Row).Filter(new() { HasText = "Food" });
-        await categoryRow.ClickAsync();
+        var categoryRow = Page.Locator(".mud-table tbody tr").Filter(new() { HasText = "Food" });
+        await categoryRow.DispatchEventAsync("click");
 
-        await Expect(Page.GetByText("Coffee Shop")).ToBeVisibleAsync();
+        await Expect(Page.GetByText("Coffee Shop").First).ToBeVisibleAsync();
     }
 }

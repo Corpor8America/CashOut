@@ -223,6 +223,10 @@ public class CsvImportService
         }
 
         await _db.SaveChangesAsync();
+
+        var ruleService = new CategoryRuleService(_db);
+        await ruleService.ReprocessUncategorized();
+
         return new ImportResult(imported, skippedRows);
     }
 

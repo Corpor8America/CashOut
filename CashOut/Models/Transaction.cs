@@ -24,6 +24,13 @@ public class Transaction
     public decimal Amount => (Credit ?? 0) - (Debit ?? 0);
 
     public string Category { get; set; } = "";
+
+    public int? CategoryId { get; set; }
+    public Category? EffectiveCategory { get; set; }
+
+    public int? CategoryRuleId { get; set; }
+    public CategoryRule? AssignedByRule { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

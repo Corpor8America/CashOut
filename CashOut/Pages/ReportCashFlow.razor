@@ -193,7 +193,7 @@
     {
         try
         {
-            var result = await Http.GetFromJsonAsync<List<AccountDto>>("api/accounts");
+            var result = await Http.GetFromJsonAsync<List<ReportAccountDto>>("api/accounts");
             if (result is not null)
                 _accounts = result.Select(a => new ReportShell.AccountOption(a.Id, a.Name)).ToList();
         }
@@ -277,8 +277,4 @@
     private string NetClass(decimal value) => value > 0 ? "net-positive" : value < 0 ? "net-negative" : "";
     private string NetAlignClass(decimal value) => $"right-align {NetClass(value)}";
 
-    private record AccountDto(string Id, string Name);
-    private record CashFlowReportResult(int Year, int PreviousYear, decimal TotalIncome, decimal TotalExpenses, decimal NetCashFlow, decimal PreviousYearNet, decimal NetChangeAmount, decimal NetChangePercent, decimal AverageMonthlyNet, decimal BestMonthNet, string BestMonthLabel, decimal WorstMonthNet, string WorstMonthLabel, int TransactionCount, List<CashFlowMonthRow> Months);
-    private record CashFlowMonthRow(string Month, string Label, decimal Income, decimal Expenses, decimal Net, decimal RollingAverageNet, decimal PreviousYearNet, decimal ChangeAmount, decimal ChangePercent, int IncomeCount, int ExpenseCount, int TransactionCount, List<CashFlowTransactionRow> Transactions);
-    private record CashFlowTransactionRow(string TransactionId, string AccountId, string AccountName, DateOnly Date, string Name, string RawName, decimal Amount, decimal? Debit, decimal? Credit, string Category, TransactionSource Source);
 }

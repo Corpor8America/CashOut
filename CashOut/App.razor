@@ -1,7 +1,8 @@
 @using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Web
 @using CashOut.Shared
 
-<Router AppAssembly="@typeof(App).Assembly">
+<Router @rendermode="RenderMode.InteractiveServer" AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
         <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
     </Found>

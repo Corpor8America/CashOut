@@ -81,3 +81,16 @@ public record CashFlowTransactionRow(
     decimal? Credit,
     string Category,
     TransactionSource Source);
+
+public record ReportAccountDto(string Id, string Name);
+
+public record AccountDto(Guid Id, string Name, string Description, DateTime CreatedAt);
+
+public record TransactionDto(
+    string TransactionId, string AccountId, string AccountName, DateOnly Date,
+    string Name, decimal? Credit, decimal? Debit, decimal Amount, string Category,
+    int? EffectiveCategoryId, string EffectiveCategoryName, bool IsManualAssignment);
+
+public record CategoryDto(int Id, string Name);
+
+public record RuleDto(int Id, string Pattern, string CategoryName, int CategoryId, int MatchCount);

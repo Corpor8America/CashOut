@@ -18,9 +18,12 @@ public class TransactionService
     public async Task<List<Transaction>> Query(
         int? year = null, int? month = null, string? accountId = null,
         List<string>? categories = null,
-        TransactionSource? source = null)
+        TransactionSource? source = null,
+        List<int>? effectiveCategoryIds = null)
     {
-        var q = _db.Transactions.AsQueryable();
+        var q = _db.Transactions
+            .Include(t => t.EffectiveCategory)
+            .AsQueryable();
 
         if (year.HasValue)
             q = q.Where(t => t.Date.Year == year.Value);
@@ -37,6 +40,9 @@ public class TransactionService
         if (source.HasValue)
             q = q.Where(t => t.Source == source.Value);
 
+        if (effectiveCategoryIds is { Count: > 0 })
+            q = q.Where(t => t.CategoryId.HasValue && effectiveCategoryIds.Contains(t.CategoryId.Value));
+
         return await q.OrderByDescending(t => t.Date).ToListAsync();
     }
 
@@ -46,6 +52,19 @@ public class TransactionService
         if (txn == null) return null;
 
         txn.Category = category;
+        txn.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return txn;
+    }
+
+    public async Task<Transaction?> AssignEffectiveCategory(
+        string transactionId, int? categoryId, int? categoryRuleId = null)
+    {
+        var txn = await _db.Transactions.FindAsync(transactionId);
+        if (txn == null) return null;
+
+        txn.CategoryId = categoryId;
+        txn.CategoryRuleId = categoryRuleId;
         txn.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
         return txn;
