@@ -74,10 +74,10 @@
                         <col style="width: 20%" />
                     </ColGroup>
                     <HeaderContent>
-                        <MudTh>Category</MudTh>
-                        <MudTh Class="right-align">Total</MudTh>
-                        <MudTh Class="right-align">Avg/Mo</MudTh>
-                        <MudTh Class="right-align">% of Income</MudTh>
+                        <MudTh><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.Category">Category</MudTableSortLabel></MudTh>
+                        <MudTh Class="right-align"><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.Total">Total</MudTableSortLabel></MudTh>
+                        <MudTh Class="right-align"><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.AvgPerMonth">Avg/Mo</MudTableSortLabel></MudTh>
+                        <MudTh Class="right-align"><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.PctOfIncome">% of Income</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate Context="cat">
                         <MudTd DataLabel="Category">@cat.Category</MudTd>
@@ -116,10 +116,10 @@
                         <col style="width: 20%" />
                     </ColGroup>
                     <HeaderContent>
-                        <MudTh>Category</MudTh>
-                        <MudTh Class="right-align">Total</MudTh>
-                        <MudTh Class="right-align">Avg/Mo</MudTh>
-                        <MudTh Class="right-align">% of Expenses</MudTh>
+                        <MudTh><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.Category">Category</MudTableSortLabel></MudTh>
+                        <MudTh Class="right-align"><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.Total">Total</MudTableSortLabel></MudTh>
+                        <MudTh Class="right-align"><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.AvgPerMonth">Avg/Mo</MudTableSortLabel></MudTh>
+                        <MudTh Class="right-align"><MudTableSortLabel T="CategoryDetailRow" SortBy="c => c.PctOfExpenses">% of Expenses</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate Context="cat">
                         <MudTd DataLabel="Category">@cat.Category</MudTd>
@@ -151,17 +151,18 @@
             }
             else
             {
-                <MudTable Items="@_selectedCategory.Transactions"
+                <MudTable T="CategoryDetailTransactionRow"
+                          Items="@_selectedCategory.Transactions"
                           Dense="true"
                           Hover="true"
                           Breakpoint="Breakpoint.Sm"
                           Elevation="0"
                           Class="mt-2">
                     <HeaderContent>
-                        <MudTh>Date</MudTh>
-                        <MudTh>Name</MudTh>
-                        <MudTh>Account</MudTh>
-                        <MudTh Class="right-align">Amount</MudTh>
+                        <MudTh><MudTableSortLabel T="CategoryDetailTransactionRow" SortBy="t => t.Date">Date</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel T="CategoryDetailTransactionRow" SortBy="t => t.Name">Name</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel T="CategoryDetailTransactionRow" SortBy="t => t.AccountName">Account</MudTableSortLabel></MudTh>
+                        <MudTh Class="right-align"><MudTableSortLabel T="CategoryDetailTransactionRow" SortBy="t => t.Amount">Amount</MudTableSortLabel></MudTh>
                     </HeaderContent>
                     <RowTemplate Context="txn">
                         <MudTd DataLabel="Date">@txn.Date.ToString("MMM dd, yyyy")</MudTd>

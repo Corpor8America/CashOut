@@ -318,7 +318,18 @@ else
     private bool IsSearching => !string.IsNullOrWhiteSpace(_search);
     private bool ShowAccountColumn => string.IsNullOrEmpty(_filterAccountId);
 
-    private List<string> ActiveFilterOptions => _useTrackedCategory ? _trackedCategories : _categories;
+    private const string UncategorizedLabel = "(uncategorized)";
+
+    private List<string> ActiveFilterOptions
+    {
+        get
+        {
+            var options = new List<string>(_useTrackedCategory ? _trackedCategories : _categories);
+            if (!options.Contains(UncategorizedLabel))
+                options.Add(UncategorizedLabel);
+            return options;
+        }
+    }
     private int ActiveFilterCount => _selectedFilterCategories.Count;
 
     protected override async Task OnInitializedAsync()
@@ -448,9 +459,19 @@ else
         if (_selectedFilterCategories.Count > 0)
         {
             if (_useTrackedCategory)
-                query = query.Where(t => _selectedFilterCategories.Contains(t.EffectiveCategoryName));
+            {
+                query = query.Where(t =>
+                    _selectedFilterCategories.Contains(UncategorizedLabel)
+                        ? string.IsNullOrEmpty(t.EffectiveCategoryName)
+                        : _selectedFilterCategories.Contains(t.EffectiveCategoryName));
+            }
             else
-                query = query.Where(t => _selectedFilterCategories.Contains(t.Category));
+            {
+                query = query.Where(t =>
+                    _selectedFilterCategories.Contains(UncategorizedLabel)
+                        ? string.IsNullOrEmpty(t.Category)
+                        : _selectedFilterCategories.Contains(t.Category));
+            }
         }
 
         if (IsSearching)
