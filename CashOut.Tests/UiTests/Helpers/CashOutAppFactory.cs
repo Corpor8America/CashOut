@@ -45,6 +45,7 @@ public class CashOutAppFactory : IDisposable
         });
 
         builder.WebHost.UseWebRoot(Path.Combine(cashOutProjectDir, "wwwroot"));
+        builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 100L * 1024 * 1024);
 
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -66,7 +67,7 @@ public class CashOutAppFactory : IDisposable
         builder.Services.AddControllers();
         builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(o =>
         {
-            o.MultipartBodyLengthLimit = 11 * 1024 * 1024;
+            o.MultipartBodyLengthLimit = 100L * 1024 * 1024;
         });
 
         builder.Services.AddScoped<SettingsService>();
@@ -76,6 +77,7 @@ public class CashOutAppFactory : IDisposable
         builder.Services.AddScoped<ReportService>();
         builder.Services.AddScoped<CategoryService>();
         builder.Services.AddScoped<CategoryRuleService>();
+        builder.Services.AddScoped<DataTransferService>();
 
         builder.Services.AddMudServices();
 
