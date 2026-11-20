@@ -23,6 +23,7 @@ public class NavigationTests : UiTestBase
 
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Accounts" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Transactions" })).ToBeVisibleAsync();
+        await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Backup & Restore" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "Inflow vs Outflow" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "By Category" })).ToBeVisibleAsync();
         await Expect(Page.GetByRole(AriaRole.Link, new() { Name = "By Tracked Category" })).ToBeVisibleAsync();
@@ -38,6 +39,17 @@ public class NavigationTests : UiTestBase
         await Page.GetByRole(AriaRole.Link, new() { Name = "Transactions" }).ClickAsync();
         await Page.WaitForURLAsync("**/transactions");
         await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Transactions" })).ToBeVisibleAsync();
+    }
+
+    [TestMethod]
+    public async Task Sidebar_NavigateToDataTransfer()
+    {
+        await Page.GotoAsync($"{BaseUrl}/accounts");
+        await WaitForBlazorContent();
+
+        await Page.GetByRole(AriaRole.Link, new() { Name = "Backup & Restore" }).ClickAsync();
+        await Page.WaitForURLAsync("**/data-transfer");
+        await Expect(Page.GetByRole(AriaRole.Heading, new() { Name = "Backup & Restore" })).ToBeVisibleAsync();
     }
 
     [TestMethod]

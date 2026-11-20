@@ -7,6 +7,9 @@ using MudBlazor.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Backups are a single zip file; Kestrel's ~30 MB default would reject large ones.
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 100L * 1024 * 1024);
+
 var culture = new CultureInfo("en-US");
 CultureInfo.DefaultThreadCurrentCulture = culture;
 CultureInfo.DefaultThreadCurrentUICulture = culture;
@@ -27,7 +30,7 @@ builder.Services.AddControllers();
 
 builder.Services.Configure<FormOptions>(o =>
 {
-    o.MultipartBodyLengthLimit = 11 * 1024 * 1024;
+    o.MultipartBodyLengthLimit = 100L * 1024 * 1024;
 });
 
 // ── Services ──────────────────────────────────────────────────────────────
@@ -39,6 +42,7 @@ builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ReportService>();
 builder.Services.AddScoped<CategoryService>();
 builder.Services.AddScoped<CategoryRuleService>();
+builder.Services.AddScoped<DataTransferService>();
 
 builder.Services.AddMudServices();
 
