@@ -1,0 +1,130 @@
+@page "/data-transfer"
+@using System.Net.Http.Headers
+@using System.Text.Json
+@inject HttpClient Http
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h4" GutterBottom="true">Backup &amp; Restore</MudText>
+<MudText Typo="Typo.body2" Class="mb-6">
+    Download a single file containing all accounts, transactions, mapping profiles, categories and
+    category rules. Upload that file in another CashOut instance to replace its data with a copy.
+</MudText>
+
+<MudPaper Elevation="1" Class="pa-4 mb-4">
+    <MudText Typo="Typo.h6" Class="mb-1">Export</MudText>
+    <MudText Typo="Typo.body2" Class="mb-3">
+        Saves every record as one <code>.zip</code> file. Nothing is changed in this instance.
+    </MudText>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Download"
+               Href="api/data-transfer/export" download="cashout-backup.zip">
+        Download Backup (.zip)
+    </MudButton>
+</MudPaper>
+
+<MudPaper Elevation="1" Class="pa-4">
+    <MudText Typo="Typo.h6" Class="mb-1">Import</MudText>
+    <MudText Typo="Typo.body2" Class="mb-3">
+        This <strong>deletes all current data</strong> and replaces it with the backup. The import is
+        atomic — if the file is invalid, nothing is changed.
+    </MudText>
+
+    @if (_error != null)
+    {
+        <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mb-4">@_error</MudAlert>
+    }
+    @if (_result != null)
+    {
+        <MudAlert Severity="Severity.Success" Variant="Variant.Filled" Class="mb-4">
+            Backup imported: @_result.Accounts accounts, @_result.Transactions transactions,
+            @_result.CsvMappingProfiles profiles, @_result.Categories categories,
+            @_result.CategoryRules category rules.
+        </MudAlert>
+    }
+
+    <div class="mb-3">
+        <InputFile id="backupFileInput" OnChange="OnFileSelected" accept=".zip" />
+        @if (_file != null)
+        {
+            <MudText Typo="Typo.caption" Class="mt-1">Selected: @_file.Name</MudText>
+        }
+    </div>
+
+    <MudCheckBox T="bool" @bind-Value="_confirmed" Color="Color.Error" Class="mb-3"
+                 Label="I understand that importing will permanently delete all current data and replace it with this backup." />
+
+    <MudButton Variant="Variant.Filled" Color="Color.Error"
+               StartIcon="@Icons.Material.Filled.Upload"
+               Disabled="@(_file == null || !_confirmed || _busy)"
+               OnClick="ImportAsync">
+        @(_busy ? "Importing..." : "Import Backup")
+    </MudButton>
+</MudPaper>
+
+@code {
+    private const long MaxUploadBytes = 100L * 1024 * 1024;
+
+    private IBrowserFile? _file;
+    private bool _confirmed;
+    private bool _busy;
+    private string? _error;
+    private BackupImportResult? _result;
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        _file = e.File;
+        _error = null;
+        _result = null;
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_file == null || !_confirmed || _busy) return;
+
+        _busy = true;
+        _error = null;
+        _result = null;
+
+        try
+        {
+            using var content = new MultipartFormDataContent();
+            using var stream = _file.OpenReadStream(MaxUploadBytes);
+            using var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue("application/zip");
+            content.Add(fileContent, "file", _file.Name);
+
+            var response = await Http.PostAsync("api/data-transfer/import", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _error = ExtractError(body) ?? $"Import failed ({(int)response.StatusCode}).";
+                return;
+            }
+
+            _result = await response.Content.ReadFromJsonAsync<BackupImportResult>();
+            _confirmed = false;
+            _file = null;
+            Snackbar.Add("Backup imported successfully.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Import failed: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private static string? ExtractError(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("error", out var error)) return error.GetString();
+            if (doc.RootElement.TryGetProperty("title", out var title)) return title.GetString();
+        }
+        catch (JsonException) { }
+        return null;
+    }
+}

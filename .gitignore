@@ -3,3 +3,5 @@ bin/
 obj/
 *.user
 .vs/
+# Copied from NuGet by the UI test host at runtime
+CashOut/wwwroot/_content/
