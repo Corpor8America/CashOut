@@ -11,7 +11,7 @@
     <PackageReference Include="MSTest" Version="4.4.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.*" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="11.0.0" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="9.*" />
     <PackageReference Include="Microsoft.Playwright.MSTest.v4" Version="1.63.0" />
     <PackageReference Include="MudBlazor" Version="9.10.0" />
